@@ -9,6 +9,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.FlashlightOn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.EventNote
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.ArrowForwardIos
+import com.example.repsgrams.ui.theme.AppColors
+import com.example.repsgrams.ui.components.IconBadge
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.Icon
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -95,14 +106,16 @@ fun SettingsScreen(
                     Text("DATA & TEMPLATES", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
                     IosCard {
                         Column {
-                            Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToTemplates() }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Edit Workout Programs", style = MaterialTheme.typography.bodyLarge)
-                                Text(">", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToTemplates() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                IconBadge(icon = Icons.Outlined.EventNote, tint = MaterialTheme.colorScheme.primary)
+                                Text("Edit Workout Programs", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                            Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToExercises() }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Exercise Dictionary", style = MaterialTheme.typography.bodyLarge)
-                                Text(">", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToExercises() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                IconBadge(icon = Icons.Outlined.FitnessCenter, tint = MaterialTheme.colorScheme.primary)
+                                Text("Exercise Dictionary", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -188,6 +201,8 @@ fun SettingsScreen(
                             SettingToggle(
                                 "Master Reminders",
                                 "Allow workout and supplement notifications",
+                                Icons.Outlined.NotificationsActive,
+                                MaterialTheme.colorScheme.primary,
                                 settings.remindersEnabled,
                                 true,
                                 onMasterChanged,
@@ -201,6 +216,8 @@ fun SettingsScreen(
                 ReminderCard(
                     title = "Workout Day",
                     description = "Only if today's workout hasn't started",
+                    icon = Icons.Outlined.FitnessCenter,
+                    iconTint = AppColors.workout,
                     enabled = settings.workoutReminderEnabled,
                     masterEnabled = settings.remindersEnabled,
                     onEnabled = onWorkoutEnabled,
@@ -211,6 +228,8 @@ fun SettingsScreen(
                 ReminderCard(
                     title = "Daily Creatine",
                     description = "Only if 5 g hasn't been logged today",
+                    icon = Icons.Outlined.Science,
+                    iconTint = AppColors.creatineTeal,
                     enabled = settings.creatineReminderEnabled,
                     masterEnabled = settings.remindersEnabled,
                     onEnabled = onCreatineEnabled,
@@ -221,6 +240,8 @@ fun SettingsScreen(
                 ReminderCard(
                     title = "Post-Workout Whey",
                     description = "Scheduled when a workout is completed",
+                    icon = Icons.Outlined.FlashlightOn,
+                    iconTint = AppColors.wheyGreen,
                     enabled = settings.postWorkoutWheyReminderEnabled,
                     masterEnabled = settings.remindersEnabled,
                     onEnabled = onWheyEnabled,
@@ -249,6 +270,8 @@ fun SettingsScreen(
 private fun ReminderCard(
     title: String,
     description: String,
+    icon: ImageVector,
+    iconTint: Color,
     enabled: Boolean,
     masterEnabled: Boolean,
     onEnabled: (Boolean) -> Unit,
@@ -256,7 +279,7 @@ private fun ReminderCard(
 ) {
     IosCard {
         Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            SettingToggle(title, description, enabled, masterEnabled, onEnabled)
+            SettingToggle(title, description, icon, iconTint, enabled, masterEnabled, onEnabled)
             if (enabled && masterEnabled) {
                 HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Box(modifier = Modifier.padding(16.dp)) {
@@ -271,11 +294,14 @@ private fun ReminderCard(
 private fun SettingToggle(
     title: String,
     description: String,
+    icon: ImageVector,
+    iconTint: Color,
     checked: Boolean,
     enabled: Boolean,
     onChecked: (Boolean) -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        IconBadge(icon = icon, tint = iconTint)
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
