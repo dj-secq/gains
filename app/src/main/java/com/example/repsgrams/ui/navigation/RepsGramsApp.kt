@@ -69,6 +69,7 @@ fun RepsGramsApp(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (isTopLevel) {
                 Column {
@@ -120,7 +121,7 @@ fun RepsGramsApp(
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.TODAY.route,
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
         ) {
             composable(TopLevelDestination.TODAY.route) {
                 val todayViewModel: TodayViewModel = viewModel(
