@@ -21,6 +21,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import com.example.repsgrams.service.RestTimerService
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.IconButton
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -67,6 +74,8 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onAdjustWeight = viewModel::adjustWeight,
         onLog = viewModel::logCurrent,
         onSkipBlock = viewModel::skipOptionalBlock,
+        onNotesChanged = viewModel::updateNotes,
+        onRpeTagChanged = viewModel::updateRpeTag,
         onAddRest = viewModel::addRestSeconds,
         onSkipRest = viewModel::skipRest,
         onFinish = viewModel::finishWorkout,
@@ -93,6 +102,8 @@ fun WorkoutSessionScreen(
     onWheyChanged: (Boolean) -> Unit,
     onCreatineChanged: (Boolean) -> Unit,
     onDone: () -> Unit,
+    onNotesChanged: (String) -> Unit = {},
+    onRpeTagChanged: (String?) -> Unit = {},
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -129,6 +140,7 @@ fun WorkoutSessionScreen(
                 is WorkoutSessionUiState.Active -> ActiveSession(
                     state, onValueChanged, onWeightChanged, onAdjustValue, onLog,
                     onAdjustWeight, onSkipBlock, onAddRest, onSkipRest, onFinish,
+                    onNotesChanged, onRpeTagChanged,
                 )
                 is WorkoutSessionUiState.Summary -> SummaryScreen(
                     state, onWheyChanged, onCreatineChanged, onDone,
@@ -150,6 +162,8 @@ private fun ActiveSession(
     onAddRest: (Int) -> Unit,
     onSkipRest: () -> Unit,
     onFinish: () -> Unit,
+    onNotesChanged: (String) -> Unit = {},
+    onRpeTagChanged: (String?) -> Unit = {},
 ) {
     var showFinishDialog by remember { mutableStateOf(false) }
 
@@ -161,7 +175,30 @@ private fun ActiveSession(
         if (rest != null) {
             RestCard(rest, state.exercise.name, state.roundNumber, state.roundCount, onAddRest, onSkipRest)
         } else {
-            ExerciseCard(state, onValueChanged, onWeightChanged, onAdjustValue, onAdjustWeight, onLog)
+            ExerciseCard(state, onValueChanged, onWeightChanged, onAdjustValue, onAdjustWeight, onLog, onRpeTagChanged)
+            
+
+        if (state.upNextExercises.isNotEmpty()) {
+            IosCard {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text("Up Next", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    state.upNextExercises.forEach {
+                        Text("• $it", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+
+            // In-session notes
+            OutlinedTextField(
+                value = state.notesInput,
+                onValueChange = onNotesChanged,
+                label = { Text("Session Notes") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4
+            )
         }
         
         Spacer(modifier = Modifier.weight(1f))
@@ -196,8 +233,10 @@ private fun ExerciseCard(
     onAdjustValue: (Int) -> Unit,
     onAdjustWeight: (Float) -> Unit,
     onLog: () -> Unit,
+    onRpeTagChanged: (String?) -> Unit,
 ) {
     val exercise = state.exercise
+    val haptic = LocalHapticFeedback.current
     IosCard {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("${state.blockLabel} · Set ${state.roundNumber} of ${state.roundCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -218,7 +257,7 @@ private fun ExerciseCard(
             if (exercise.perSide) Text("Per side", style = MaterialTheme.typography.labelLarge)
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton(onClick = { onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                 OutlinedTextField(
                     value = state.valueInput,
                     onValueChange = onValueChanged,
@@ -227,12 +266,12 @@ private fun ExerciseCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                 )
-                FilledTonalIconButton(onClick = { onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
             }
             if (exercise.tracksWeight) {
                 val step = if (state.unitSystem == UnitSystem.KG) 1f else 2.5f
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalIconButton(onClick = { onAdjustWeight(-step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustWeight(-step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                     OutlinedTextField(
                         value = state.weightInput,
                         onValueChange = onWeightChanged,
@@ -241,13 +280,30 @@ private fun ExerciseCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
-                    FilledTonalIconButton(onClick = { onAdjustWeight(step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustWeight(step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
+
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Easy", "Right", "Hard").forEach { tag ->
+                    FilterChip(
+                        selected = state.rpeTagInput == tag,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onRpeTagChanged(if (state.rpeTagInput == tag) null else tag)
+                        },
+                        label = { Text(tag) }
+                    )
+                }
+            }
             IosButton(
                 text = if (state.blockKind == BlockKind.WARM_UP) "Done" else "Log set",
-                onClick = onLog,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLog()
+                },
                 enabled = state.valueInput.isNotBlank() && !state.isSaving
             )
         }

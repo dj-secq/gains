@@ -57,6 +57,10 @@ sealed interface WorkoutSessionUiState {
         val isOptionalBlock: Boolean,
         val isSaving: Boolean,
         val progressionSuggestion: ProgressionSuggestion?,
+        val lastTimeRound: PriorRound?,
+        val upNextExercises: List<String>,
+        val rpeTagInput: String?,
+        val notesInput: String,
     ) : WorkoutSessionUiState
 
     data class Summary(
@@ -97,6 +101,9 @@ class WorkoutSessionViewModel(
     private var isSaving = false
     private var unitSystem = UnitSystem.KG
     private var progressionSuggestion: ProgressionSuggestion? = null
+    private var rpeTagInput: String? = null
+    private var notesInput: String = ""
+    private var lastTimeRound: PriorRound? = null
 
     init {
         viewModelScope.launch {
@@ -157,6 +164,14 @@ class WorkoutSessionViewModel(
         publishActive()
     }
 
+    fun updateNotes(notes: String) {
+        notesInput = notes
+        publishActive()
+    }
+    fun updateRpeTag(tag: String?) {
+        rpeTagInput = tag
+        publishActive()
+    }
     fun adjustWeight(delta: Float) {
         weightInput = ((weightInput.toFloatOrNull() ?: 0f) + delta).coerceAtLeast(0f).let(::formatWeight)
         publishActive()
@@ -259,7 +274,7 @@ class WorkoutSessionViewModel(
     }
 
     private suspend fun finishAndSummarize() {
-        session = workoutRepository.finishSession(sessionId)
+        session = workoutRepository.finishSession(sessionId, notesInput.takeIf { it.isNotBlank() })
         progressStore.clear()
         restEndEpochMillis = null
         showSummary()
@@ -319,6 +334,20 @@ class WorkoutSessionViewModel(
     private fun publishActive() {
         if (!::plan.isInitialized || session.completed) return
         val block = plan.blocks[cursor.blockIndex]
+        
+        val upNext = mutableListOf<String>()
+        var nextCursor = SessionNavigator.afterExercise(plan, cursor)
+        var i = 0
+        while (nextCursor is SessionAdvance.Continue && i < 2) {
+            upNext.add(plan.blocks[nextCursor.cursor.blockIndex].exercises[nextCursor.cursor.exerciseIndex].name)
+            nextCursor = SessionNavigator.afterExercise(plan, nextCursor.cursor)
+            i++
+        }
+        if (nextCursor is SessionAdvance.Rest) {
+             val c = nextCursor.cursorAfterRest
+             upNext.add(plan.blocks[c.blockIndex].exercises[c.exerciseIndex].name)
+        }
+
         _uiState.value = WorkoutSessionUiState.Active(
             workoutName = plan.name,
             dayLabel = plan.dayLabel,
@@ -340,6 +369,10 @@ class WorkoutSessionViewModel(
             isOptionalBlock = block.isOptional,
             isSaving = isSaving,
             progressionSuggestion = progressionSuggestion,
+            lastTimeRound = lastTimeRound,
+            upNextExercises = upNext,
+            rpeTagInput = rpeTagInput,
+            notesInput = notesInput,
         )
     }
 

@@ -103,14 +103,14 @@ class WorkoutRepository(
         )
     }
 
-    suspend fun finishSession(sessionId: Long): WorkoutSessionEntity {
+    suspend fun finishSession(sessionId: Long, notes: String? = null): WorkoutSessionEntity {
         val session = requireNotNull(database.workoutSessionDao().getById(sessionId))
         if (session.completed) return session
         val end = Instant.now(clock)
         val duration = session.startTime?.let { start ->
             ((end.toEpochMilli() - start.toEpochMilli()).coerceAtLeast(0) / 1_000).toInt()
         }
-        val finished = session.copy(endTime = end, completed = true, durationSeconds = duration)
+        val finished = session.copy(endTime = end, completed = true, durationSeconds = duration, notes = notes)
         database.workoutSessionDao().update(finished)
         onSessionFinished(finished)
         return finished
