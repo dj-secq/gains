@@ -8,6 +8,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBackIosNew
+import androidx.compose.material.icons.outlined.ArrowForwardIos
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.FlashlightOn
+import com.example.repsgrams.ui.theme.AppColors
+import com.example.repsgrams.ui.components.IconBadge
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -103,13 +114,13 @@ fun CalendarScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        TextButton(onClick = onPreviousMonth) { Text("‹ Previous", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+                        IconButton(onClick = onPreviousMonth) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous", tint = MaterialTheme.colorScheme.primary) }
                         Text(
                             month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             textAlign = TextAlign.Center,
                         )
-                        TextButton(onClick = onNextMonth) { Text("Next ›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+                        IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.primary) }
                     }
                     
                     IosCard {
@@ -139,9 +150,18 @@ fun CalendarScreen(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                         horizontalArrangement = Arrangement.SpaceAround,
                     ) {
-                        Text("✓ Complete", style = MaterialTheme.typography.bodySmall)
-                        Text("! Missed", style = MaterialTheme.typography.bodySmall)
-                        Text("○ Pending", style = MaterialTheme.typography.bodySmall)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconBadge(icon = Icons.Outlined.CheckCircle, tint = AppColors.successGreen)
+                            Text("Complete", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconBadge(icon = Icons.Outlined.ErrorOutline, tint = AppColors.warningRed)
+                            Text("Missed", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconBadge(icon = Icons.Outlined.Circle, tint = MaterialTheme.colorScheme.outlineVariant)
+                            Text("Pending", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
@@ -175,8 +195,8 @@ private fun DayCell(
 ) {
     val colors = MaterialTheme.colorScheme
     val background = when (day.status) {
-        CalendarDayStatus.COMPLETE -> colors.primary.copy(alpha = 0.15f)
-        CalendarDayStatus.MISSED -> colors.error.copy(alpha = 0.15f)
+        CalendarDayStatus.COMPLETE -> AppColors.successGreen.copy(alpha = 0.15f)
+        CalendarDayStatus.MISSED -> AppColors.warningRed.copy(alpha = 0.15f)
         CalendarDayStatus.PENDING -> colors.secondaryContainer
         CalendarDayStatus.UPCOMING -> colors.surface
     }
@@ -199,20 +219,24 @@ private fun DayCell(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            Text(
-                when (day.status) {
-                    CalendarDayStatus.COMPLETE -> "✓"
-                    CalendarDayStatus.MISSED -> "!"
-                    CalendarDayStatus.PENDING -> "○"
-                    CalendarDayStatus.UPCOMING -> "·"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = when (day.status) {
-                    CalendarDayStatus.MISSED -> colors.error
-                    CalendarDayStatus.COMPLETE -> colors.primary
-                    else -> colors.onSurfaceVariant
-                },
-            )
+            if (day.status == CalendarDayStatus.UPCOMING) {
+                Text("·", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            } else {
+                Icon(
+                    imageVector = when (day.status) {
+                        CalendarDayStatus.COMPLETE -> Icons.Outlined.CheckCircle
+                        CalendarDayStatus.MISSED -> Icons.Outlined.ErrorOutline
+                        else -> Icons.Outlined.Circle
+                    },
+                    contentDescription = null,
+                    tint = when (day.status) {
+                        CalendarDayStatus.COMPLETE -> AppColors.successGreen
+                        CalendarDayStatus.MISSED -> AppColors.warningRed
+                        else -> colors.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }
@@ -247,10 +271,16 @@ private fun DayDetail(
         
         Text("Supplements", style = MaterialTheme.typography.titleMedium)
         IosCard {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Creatine: ${if (detail.supplements?.creatineTaken == true) "Logged · 5 g" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("Whey: ${if (detail.supplements?.wheyTaken == true) "Logged · ${detail.supplements.wheyServings} serving" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    IconBadge(icon = Icons.Outlined.Science, tint = AppColors.creatineTeal)
+                    Text("Creatine: ${if (detail.supplements?.creatineTaken == true) "Logged · 5 g" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                }
+                HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    IconBadge(icon = Icons.Outlined.FlashlightOn, tint = AppColors.wheyGreen)
+                    Text("Whey: ${if (detail.supplements?.wheyTaken == true) "Logged · ${detail.supplements.wheyServings} serving" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
         
