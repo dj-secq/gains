@@ -8,6 +8,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBackIosNew
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.FlashlightOn
+import com.example.repsgrams.ui.theme.AppColors
+import com.example.repsgrams.ui.components.IconBadge
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -77,8 +86,8 @@ fun WorkoutSessionScreen(
                 },
                 navigationIcon = {
                     if (state !is WorkoutSessionUiState.Summary) {
-                        TextButton(onClick = onBack) {
-                            Text("< Back", style = MaterialTheme.typography.bodyLarge)
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                 },
@@ -188,7 +197,7 @@ private fun ExerciseCard(
             if (exercise.perSide) Text("Per side", style = MaterialTheme.typography.labelLarge)
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small) { Text("−") }
+                FilledTonalIconButton(onClick = { onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                 OutlinedTextField(
                     value = state.valueInput,
                     onValueChange = onValueChanged,
@@ -197,12 +206,12 @@ private fun ExerciseCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                 )
-                OutlinedButton(onClick = { onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small) { Text("+") }
+                FilledTonalIconButton(onClick = { onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
             }
             if (exercise.tracksWeight) {
                 val step = if (state.unitSystem == UnitSystem.KG) 1f else 2.5f
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { onAdjustWeight(-step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small) { Text("−") }
+                    FilledTonalIconButton(onClick = { onAdjustWeight(-step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                     OutlinedTextField(
                         value = state.weightInput,
                         onValueChange = onWeightChanged,
@@ -211,7 +220,7 @@ private fun ExerciseCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
-                    OutlinedButton(onClick = { onAdjustWeight(step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small) { Text("+") }
+                    FilledTonalIconButton(onClick = { onAdjustWeight(step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
@@ -276,9 +285,9 @@ private fun SummaryScreen(
         Text("Post-workout check-in", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
         IosCard {
             Column {
-                CheckRow("Whey protein taken", state.wheyTaken, onWheyChanged)
+                CheckRow("Whey protein taken", Icons.Outlined.FlashlightOn, AppColors.wheyGreen, state.wheyTaken, onWheyChanged)
                 HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                CheckRow("Creatine taken", state.creatineTaken, onCreatineChanged)
+                CheckRow("Creatine taken", Icons.Outlined.Science, AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
             }
         }
         Text("1 whey serving and 5 g creatine are selected by default. Adjust if needed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -297,18 +306,20 @@ private fun SummaryMetric(value: String, label: String) {
 }
 
 @Composable
-private fun CheckRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+private fun CheckRow(label: String, icon: ImageVector, iconTint: Color, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(role = Role.Switch) { onChecked(!checked) }.padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        IconBadge(icon = icon, tint = iconTint)
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         Switch(
             checked = checked, 
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                checkedTrackColor = iconTint,
                 uncheckedThumbColor = Color.White,
                 uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
                 uncheckedBorderColor = Color.Transparent
