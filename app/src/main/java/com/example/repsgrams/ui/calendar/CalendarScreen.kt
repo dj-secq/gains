@@ -2,71 +2,60 @@ package com.example.repsgrams.ui.calendar
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.datastore.UnitSystem
+import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.data.repository.CalendarDayDetail
+import com.example.repsgrams.domain.calendar.CalendarDayStatus
 import com.example.repsgrams.data.repository.CalendarMonth
 import com.example.repsgrams.data.repository.CalendarSessionDetail
-import com.example.repsgrams.domain.calendar.CalendarDay
-import com.example.repsgrams.domain.calendar.CalendarDayStatus
+import com.example.repsgrams.ui.components.IosAlertDialog
+import com.example.repsgrams.ui.components.IosButton
+import com.example.repsgrams.ui.components.IosCard
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
+import java.util.Locale
 
 @Composable
 fun CalendarRoute(viewModel: CalendarViewModel) {
     val month by viewModel.month.collectAsStateWithLifecycle()
     val selectedDay by viewModel.selectedDay.collectAsStateWithLifecycle()
     val loadingDay by viewModel.loadingDay.collectAsStateWithLifecycle()
+    val today = viewModel.today
+    val locale = Locale.getDefault()
+    
     CalendarScreen(
         month = month,
         selectedDay = selectedDay,
         loadingDay = loadingDay,
-        today = viewModel.today,
+        today = today,
         onPreviousMonth = viewModel::previousMonth,
         onNextMonth = viewModel::nextMonth,
         onToday = viewModel::showToday,
         onSelectDate = viewModel::selectDate,
         onDismissDay = viewModel::closeDay,
         onReschedule = viewModel::rescheduleSelectedAs,
+        locale = locale,
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CalendarScreen(
+fun CalendarScreen(
     month: CalendarMonth?,
     selectedDay: CalendarDayDetail?,
     loadingDay: Boolean,
@@ -77,67 +66,102 @@ private fun CalendarScreen(
     onSelectDate: (LocalDate) -> Unit,
     onDismissDay: () -> Unit,
     onReschedule: (String) -> Unit,
+    locale: Locale,
 ) {
-    val locale = LocalConfiguration.current.locales[0]
-    if (month == null) {
-        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onPreviousMonth) { Text("‹") }
-            Text(
-                month.month.month.getDisplayName(TextStyle.FULL, locale) +
-                    " ${month.month.year}",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            TextButton(onClick = onNextMonth) { Text("›") }
-        }
-        TextButton(onClick = onToday, modifier = Modifier.align(Alignment.End)) { Text("Today") }
-        Row(modifier = Modifier.fillMaxWidth()) {
-            listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
-                Text(
-                    it,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            LargeTopAppBar(
+                title = { Text("Calendar", fontWeight = FontWeight.Bold) },
+                actions = {
+                    TextButton(onClick = onToday) {
+                        Text("Today", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background
                 )
-            }
-        }
-        month.days.chunked(7).forEach { week ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                week.forEach { day ->
-                    DayCell(day, day.date == today, Modifier.weight(1f), onSelectDate)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (month == null) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) { CircularProgressIndicator() }
+            } else {
+                Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = onPreviousMonth) { Text("‹ Previous", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+                        Text(
+                            month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = onNextMonth) { Text("Next ›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+                    }
+                    
+                    IosCard {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
+                                    Text(
+                                        it,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            month.days.chunked(7).forEach { week ->
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    week.forEach { day ->
+                                        DayCell(day, day.date == today, Modifier.weight(1f), onSelectDate)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        Text("✓ Complete", style = MaterialTheme.typography.bodySmall)
+                        Text("! Missed", style = MaterialTheme.typography.bodySmall)
+                        Text("○ Pending", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-        ) {
-            Text("✓ Complete", style = MaterialTheme.typography.labelSmall)
-            Text("! Missed", style = MaterialTheme.typography.labelSmall)
-            Text("○ Pending", style = MaterialTheme.typography.labelSmall)
-        }
-    }
 
-    if (loadingDay && selectedDay == null) {
-        AlertDialog(
-            onDismissRequest = {},
-            confirmButton = {},
-            text = { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() } },
-        )
-    }
-    selectedDay?.let { detail ->
-        ModalBottomSheet(onDismissRequest = onDismissDay) {
-            DayDetail(detail, today, onReschedule)
+            if (loadingDay && selectedDay == null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(shape = MaterialTheme.shapes.medium, shadowElevation = 8.dp) {
+                        CircularProgressIndicator(modifier = Modifier.padding(24.dp))
+                    }
+                }
+            }
+            
+            selectedDay?.let { detail ->
+                ModalBottomSheet(onDismissRequest = onDismissDay, containerColor = MaterialTheme.colorScheme.background) {
+                    DayDetail(detail, today, onReschedule)
+                }
+            }
         }
     }
 }
@@ -151,25 +175,25 @@ private fun DayCell(
 ) {
     val colors = MaterialTheme.colorScheme
     val background = when (day.status) {
-        CalendarDayStatus.COMPLETE -> colors.primaryContainer
-        CalendarDayStatus.MISSED -> colors.errorContainer.copy(alpha = 0.55f)
+        CalendarDayStatus.COMPLETE -> colors.primary.copy(alpha = 0.15f)
+        CalendarDayStatus.MISSED -> colors.error.copy(alpha = 0.15f)
         CalendarDayStatus.PENDING -> colors.secondaryContainer
         CalendarDayStatus.UPCOMING -> colors.surface
     }
     Surface(
         modifier = modifier.aspectRatio(0.9f).padding(2.dp)
-            .alpha(if (day.inDisplayedMonth) 1f else 0.4f)
+            .alpha(if (day.inDisplayedMonth) 1f else 0.3f)
             .clickable { onSelectDate(day.date) },
         shape = MaterialTheme.shapes.small,
         color = background,
-        border = if (isToday) BorderStroke(2.dp, colors.primary) else null,
+        border = if (isToday) BorderStroke(1.5.dp, colors.primary) else null,
     ) {
         Column(
-            modifier = Modifier.padding(5.dp),
+            modifier = Modifier.padding(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.labelMedium)
+            Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
             Text(
                 day.slot.workoutDayLabel ?: "R",
                 style = MaterialTheme.typography.titleMedium,
@@ -182,10 +206,11 @@ private fun DayCell(
                     CalendarDayStatus.PENDING -> "○"
                     CalendarDayStatus.UPCOMING -> "·"
                 },
+                style = MaterialTheme.typography.bodySmall,
                 color = when (day.status) {
                     CalendarDayStatus.MISSED -> colors.error
                     CalendarDayStatus.COMPLETE -> colors.primary
-                    else -> Color.Unspecified
+                    else -> colors.onSurfaceVariant
                 },
             )
         }
@@ -200,57 +225,73 @@ private fun DayDetail(
 ) {
     var pendingLabel by remember { mutableStateOf<String?>(null) }
     Column(
-        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(detail.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")), style = MaterialTheme.typography.headlineSmall)
-        Text(
-            detail.slot.workoutDayLabel?.let { "Planned: Workout $it" } ?: "Planned: Rest day",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        if (detail.date.isAfter(today)) {
-            Text("No entries yet. This is the current plan for this date.")
-        } else if (detail.sessions.isEmpty() && detail.slot.isWorkoutDay) {
-            Text("Workout not done", color = MaterialTheme.colorScheme.error)
+        Text(detail.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+        
+        IosCard {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    detail.slot.workoutDayLabel?.let { "Planned: Workout $it" } ?: "Planned: Rest day",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (detail.date.isAfter(today)) {
+                    Text("No entries yet. This is the current plan for this date.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (detail.sessions.isEmpty() && detail.slot.isWorkoutDay) {
+                    Text("Workout not done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                }
+                detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
+            }
         }
-        detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
-        HorizontalDivider()
+        
         Text("Supplements", style = MaterialTheme.typography.titleMedium)
-        Text("Creatine: ${if (detail.supplements?.creatineTaken == true) "Logged · 5 g" else "Not logged"}")
-        Text("Whey: ${if (detail.supplements?.wheyTaken == true) "Logged · ${detail.supplements.wheyServings} serving" else "Not logged"}")
-        HorizontalDivider()
-        Text("Reschedule from here", style = MaterialTheme.typography.titleMedium)
-        Text("Choose the workout this date should represent. Logged history is preserved.", style = MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { pendingLabel = "A" }) { Text("Workout A") }
-            Button(onClick = { pendingLabel = "B" }) { Text("Workout B") }
+        IosCard {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Creatine: ${if (detail.supplements?.creatineTaken == true) "Logged · 5 g" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text("Whey: ${if (detail.supplements?.wheyTaken == true) "Logged · ${detail.supplements.wheyServings} serving" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+            }
         }
-        Spacer(Modifier.padding(bottom = 12.dp))
+        
+        Text("Reschedule from here", style = MaterialTheme.typography.titleMedium)
+        IosCard {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Choose the workout this date should represent. Logged history is preserved.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    IosButton(text = "Workout A", onClick = { pendingLabel = "A" }, modifier = Modifier.weight(1f))
+                    IosButton(text = "Workout B", onClick = { pendingLabel = "B" }, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        Spacer(Modifier.padding(bottom = 24.dp))
     }
     pendingLabel?.let { label ->
-        AlertDialog(
-            onDismissRequest = { pendingLabel = null },
-            title = { Text("Shift the cycle?") },
-            text = { Text("${detail.date.format(DateTimeFormatter.ofPattern("MMM d"))} will become Workout $label. Future slots will follow from it.") },
-            confirmButton = {
-                TextButton(onClick = { onReschedule(label); pendingLabel = null }) { Text("Shift cycle") }
-            },
-            dismissButton = { TextButton(onClick = { pendingLabel = null }) { Text("Cancel") } },
+        IosAlertDialog(
+            title = "Shift the cycle?",
+            message = "${detail.date.format(DateTimeFormatter.ofPattern("MMM d"))} will become Workout $label. Future slots will follow from it.",
+            confirmText = "Shift cycle",
+            onConfirm = { onReschedule(label); pendingLabel = null },
+            dismissText = "Cancel",
+            onDismiss = { pendingLabel = null }
         )
     }
 }
 
 @Composable
 private fun SessionDetail(session: CalendarSessionDetail, unitSystem: UnitSystem) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Text(session.workoutName, style = MaterialTheme.typography.titleMedium)
         Text(
             (if (session.completed) "Completed" else "Not completed") +
                 (session.durationSeconds?.let { " · ${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: ""),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (session.sets.isEmpty()) Text("No sets logged", style = MaterialTheme.typography.bodySmall)
+        if (session.sets.isEmpty()) Text("No sets logged", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         session.sets.groupBy { it.exerciseName }.forEach { (exercise, sets) ->
-            Text(exercise, fontWeight = FontWeight.SemiBold)
+            Text(exercise, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(top = 8.dp))
             sets.forEach { set ->
                 val performance = set.reps?.let { "$it reps" }
                     ?: set.durationSeconds?.let { "$it sec" }
@@ -259,7 +300,7 @@ private fun SessionDetail(session: CalendarSessionDetail, unitSystem: UnitSystem
                     val shown = if (unitSystem == UnitSystem.LB) it * 2.2046226f else it
                     " · ${"%.1f".format(shown)} ${unitSystem.name.lowercase()}"
                 } ?: ""
-                Text("Round ${set.roundNumber}: $performance$weight", style = MaterialTheme.typography.bodySmall)
+                Text("Round ${set.roundNumber}: $performance$weight", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

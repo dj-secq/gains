@@ -1,34 +1,32 @@
 package com.example.repsgrams.ui.today
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.repsgrams.ui.components.IosCard
+import com.example.repsgrams.ui.components.IosButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.repsgrams.ui.theme.iosSpring
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayRoute(
     viewModel: TodayViewModel,
@@ -38,15 +36,34 @@ fun TodayRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.openSession.collect(onOpenSession) }
-    TodayScreen(
-        state = state,
-        onCreatineChanged = viewModel::setCreatineTaken,
-        onWheyChanged = viewModel::setWheyTaken,
-        onStartWorkout = viewModel::startWorkout,
-        onResumeWorkout = viewModel::resumeWorkout,
-        notificationTarget = notificationTarget,
-        onNotificationHandled = onNotificationHandled,
-    )
+    
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            LargeTopAppBar(
+                title = { Text("Today", fontWeight = FontWeight.Bold) },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        TodayScreen(
+            state = state,
+            onCreatineChanged = viewModel::setCreatineTaken,
+            onWheyChanged = viewModel::setWheyTaken,
+            onStartWorkout = viewModel::startWorkout,
+            onResumeWorkout = viewModel::resumeWorkout,
+            notificationTarget = notificationTarget,
+            onNotificationHandled = onNotificationHandled,
+            modifier = Modifier.padding(padding)
+        )
+    }
 }
 
 @Composable
@@ -58,23 +75,24 @@ fun TodayScreen(
     onResumeWorkout: (Long) -> Unit,
     notificationTarget: String?,
     onNotificationHandled: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     when (state) {
         TodayUiState.Loading -> Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) { CircularProgressIndicator() }
 
         is TodayUiState.Error -> Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) { Text(state.message, color = MaterialTheme.colorScheme.error) }
 
         is TodayUiState.Content -> TodayContent(
             state, onCreatineChanged, onWheyChanged, onStartWorkout, onResumeWorkout,
-            notificationTarget, onNotificationHandled,
+            notificationTarget, onNotificationHandled, modifier,
         )
     }
 }
@@ -88,74 +106,65 @@ private fun TodayContent(
     onResumeWorkout: (Long) -> Unit,
     notificationTarget: String?,
     onNotificationHandled: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(notificationTarget) {
         if (notificationTarget != null) {
             if (notificationTarget == "creatine" || notificationTarget == "whey") {
-                listState.animateScrollToItem(2)
+                listState.animateScrollToItem(1) // Approximate
             }
             onNotificationHandled()
         }
     }
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(vertical = 24.dp),
+        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { Text("Today", style = MaterialTheme.typography.headlineLarge) }
         if (state.lowSupplyWarnings.isNotEmpty()) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                ) {
+                IosCard {
                     Column(modifier = Modifier.padding(16.dp)) {
                         state.lowSupplyWarnings.forEach { warning ->
-                            Text(warning, style = MaterialTheme.typography.bodyMedium)
+                            Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
             }
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Day ${state.slot.dayNumber} of 5", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(8.dp))
+            IosCard {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Day ${state.slot.dayNumber} of 5", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant))
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = state.slot.workoutDayLabel?.let { "Workout $it" } ?: "Rest day",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
                     )
+                    Spacer(Modifier.height(16.dp))
                     if (state.activeSessionId != null) {
-                        Spacer(Modifier.height(20.dp))
-                        Button(
-                            onClick = { onResumeWorkout(state.activeSessionId) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Resume Workout")
-                        }
+                        IosButton(
+                            text = "Resume Workout",
+                            onClick = { onResumeWorkout(state.activeSessionId) }
+                        )
                     } else if (state.slot.isWorkoutDay) {
-                        Spacer(Modifier.height(20.dp))
-                        Button(
-                            onClick = { onStartWorkout(requireNotNull(state.slot.workoutDayLabel)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Start Workout ${state.slot.workoutDayLabel}") }
+                        IosButton(
+                            text = "Start Workout ${state.slot.workoutDayLabel}",
+                            onClick = { onStartWorkout(requireNotNull(state.slot.workoutDayLabel)) }
+                        )
                     } else {
                         Text(
                             "Recover and keep your daily creatine routine.",
-                            modifier = Modifier.padding(top = 8.dp),
                             style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     if (state.activeSessionId == null) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { onStartWorkout("A") }) { Text("Workout A") }
-                            TextButton(onClick = { onStartWorkout("B") }) { Text("Workout B") }
+                        Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onStartWorkout("A") }) { Text("Workout A", style = MaterialTheme.typography.bodyMedium) }
+                            TextButton(onClick = { onStartWorkout("B") }) { Text("Workout B", style = MaterialTheme.typography.bodyMedium) }
                         }
                     }
                 }
@@ -163,10 +172,11 @@ private fun TodayContent(
         }
         item { SupplementCard(state, onCreatineChanged, onWheyChanged) }
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp)) {
+            IosCard {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text("Current streak", style = MaterialTheme.typography.titleMedium)
-                    Text("🔥 ${state.currentStreak} day${if (state.currentStreak != 1) "s" else ""}", style = MaterialTheme.typography.headlineMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text("🔥 ${state.currentStreak} day${if (state.currentStreak != 1) "s" else ""}", style = MaterialTheme.typography.headlineLarge)
                 }
             }
         }
@@ -179,17 +189,18 @@ private fun SupplementCard(
     onCreatineChanged: (Boolean) -> Unit,
     onWheyChanged: (Boolean) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    IosCard {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text("Supplements today", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (state.creatineTaken && state.wheyTaken) "All logged" else "Tap a row to update",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             SupplementRow("Creatine", "5 g · daily", state.creatineTaken, onCreatineChanged)
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
+            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
             SupplementRow(
                 label = "Whey protein",
                 supportingText = if (state.slot.isWorkoutDay) {
@@ -214,14 +225,25 @@ private fun SupplementRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(role = Role.Checkbox) { onCheckedChange(!checked) }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Column(modifier = Modifier.padding(start = 8.dp)) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(supportingText, style = MaterialTheme.typography.bodySmall)
+            Text(supportingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Switch(
+            checked = checked, 
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
     }
 }
+
