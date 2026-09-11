@@ -84,7 +84,7 @@ fun CalendarScreen(
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = { Text("Calendar", fontWeight = FontWeight.Bold) },
                 actions = {
                     TextButton(onClick = onToday) {
