@@ -12,6 +12,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.FlashlightOn
+import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -136,35 +141,46 @@ private fun TodayContent(
         }
         item {
             IosCard {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Day ${state.slot.dayNumber} of 5", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant))
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = state.slot.workoutDayLabel?.let { "Workout $it" } ?: "Rest day",
-                        style = MaterialTheme.typography.titleLarge,
+                Box(
+                    modifier = Modifier.background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            colors = listOf(
+                                com.example.repsgrams.ui.theme.AppColors.workout.copy(alpha = 0.1f), 
+                                androidx.compose.ui.graphics.Color.Transparent
+                            )
+                        )
                     )
-                    Spacer(Modifier.height(16.dp))
-                    if (state.activeSessionId != null) {
-                        IosButton(
-                            text = "Resume Workout",
-                            onClick = { onResumeWorkout(state.activeSessionId) }
-                        )
-                    } else if (state.slot.isWorkoutDay) {
-                        IosButton(
-                            text = "Start Workout ${state.slot.workoutDayLabel}",
-                            onClick = { onStartWorkout(requireNotNull(state.slot.workoutDayLabel)) }
-                        )
-                    } else {
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Day ${state.slot.dayNumber} of 5", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant))
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            "Recover and keep your daily creatine routine.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = state.slot.workoutDayLabel?.let { "Workout $it" } ?: "Rest day",
+                            style = MaterialTheme.typography.titleLarge,
                         )
-                    }
-                    if (state.activeSessionId == null) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { onStartWorkout("A") }) { Text("Workout A", style = MaterialTheme.typography.bodyMedium) }
-                            TextButton(onClick = { onStartWorkout("B") }) { Text("Workout B", style = MaterialTheme.typography.bodyMedium) }
+                        Spacer(Modifier.height(16.dp))
+                        if (state.activeSessionId != null) {
+                            IosButton(
+                                text = "Resume Workout",
+                                onClick = { onResumeWorkout(state.activeSessionId) }
+                            )
+                        } else if (state.slot.isWorkoutDay) {
+                            IosButton(
+                                text = "Start Workout ${state.slot.workoutDayLabel}",
+                                onClick = { onStartWorkout(requireNotNull(state.slot.workoutDayLabel)) }
+                            )
+                        } else {
+                            Text(
+                                "Recover and keep your daily creatine routine.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (state.activeSessionId == null) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
+                                TextButton(onClick = { onStartWorkout("A") }) { Text("Workout A", style = MaterialTheme.typography.bodyMedium) }
+                                TextButton(onClick = { onStartWorkout("B") }) { Text("Workout B", style = MaterialTheme.typography.bodyMedium) }
+                            }
                         }
                     }
                 }
@@ -173,10 +189,37 @@ private fun TodayContent(
         item { SupplementCard(state, onCreatineChanged, onWheyChanged) }
         item {
             IosCard {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Current streak", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(4.dp))
-                    Text("🔥 ${state.currentStreak} day${if (state.currentStreak != 1) "s" else ""}", style = MaterialTheme.typography.headlineLarge)
+                Row(
+                    modifier = Modifier.padding(16.dp), 
+                    verticalAlignment = Alignment.CenterVertically, 
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .background(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colors = listOf(
+                                        com.example.repsgrams.ui.theme.AppColors.streakAmber, 
+                                        com.example.repsgrams.ui.theme.AppColors.streakAmber.copy(alpha = 0.7f)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material3.Icon(
+                            if (state.currentStreak > 0) androidx.compose.material.icons.Icons.Rounded.LocalFireDepartment else androidx.compose.material.icons.Icons.Outlined.LocalFireDepartment,
+                            contentDescription = null,
+                            tint = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Column {
+                        Text("Current streak", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.height(4.dp))
+                        Text("${state.currentStreak} day${if (state.currentStreak != 1) "s" else ""}", style = MaterialTheme.typography.headlineMedium)
+                    }
                 }
             }
         }
@@ -199,7 +242,7 @@ private fun SupplementCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            SupplementRow("Creatine", "5 g · daily", state.creatineTaken, onCreatineChanged)
+            SupplementRow("Creatine", "5 g · daily", androidx.compose.material.icons.Icons.Outlined.Science, com.example.repsgrams.ui.theme.AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
             SupplementRow(
                 label = "Whey protein",
@@ -208,6 +251,8 @@ private fun SupplementCard(
                 } else {
                     "1 serving · optional today"
                 },
+                icon = androidx.compose.material.icons.Icons.Outlined.FlashlightOn,
+                iconTint = com.example.repsgrams.ui.theme.AppColors.wheyGreen,
                 checked = state.wheyTaken,
                 onCheckedChange = onWheyChanged,
             )
@@ -219,6 +264,8 @@ private fun SupplementCard(
 private fun SupplementRow(
     label: String,
     supportingText: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: androidx.compose.ui.graphics.Color,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
@@ -228,7 +275,9 @@ private fun SupplementRow(
             .clickable(role = Role.Switch) { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        com.example.repsgrams.ui.components.IconBadge(icon = icon, tint = iconTint)
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             Text(supportingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -237,11 +286,11 @@ private fun SupplementRow(
             checked = checked, 
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = Color.White,
+                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                checkedTrackColor = iconTint,
+                uncheckedThumbColor = androidx.compose.ui.graphics.Color.White,
                 uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                uncheckedBorderColor = Color.Transparent
+                uncheckedBorderColor = androidx.compose.ui.graphics.Color.Transparent
             )
         )
     }
