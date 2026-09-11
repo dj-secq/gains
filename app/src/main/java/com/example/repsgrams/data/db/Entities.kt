@@ -13,6 +13,9 @@ data class ExerciseEntity(
     val name: String,
     val notes: String? = null,
     val tracksWeight: Boolean,
+    val muscleGroup: String = "Uncategorized",
+    val imageAssetName: String? = null,
+    val isCustom: Boolean = false,
 )
 
 @Entity(
@@ -103,6 +106,7 @@ data class WorkoutSessionEntity(
     val endTime: Instant? = null,
     val completed: Boolean = false,
     val durationSeconds: Int? = null,
+    val notes: String? = null,
 )
 
 @Entity(
@@ -120,8 +124,14 @@ data class WorkoutSessionEntity(
             childColumns = ["exerciseId"],
             onDelete = ForeignKey.RESTRICT,
         ),
+        ForeignKey(
+            entity = ExerciseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["substitutedFrom"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
     ],
-    indices = [Index("sessionId"), Index("exerciseId")],
+    indices = [Index("sessionId"), Index("exerciseId"), Index("substitutedFrom")],
 )
 data class SetLogEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -132,6 +142,8 @@ data class SetLogEntity(
     val durationSeconds: Int? = null,
     val weightKg: Float? = null,
     val loggedAt: Instant,
+    val rpeTag: String? = null,
+    val substitutedFrom: Long? = null,
 )
 
 @Entity(

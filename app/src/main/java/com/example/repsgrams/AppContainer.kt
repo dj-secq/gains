@@ -48,7 +48,7 @@ class DefaultAppContainer(
         appContext,
         AppDatabase::class.java,
         "reps-and-grams.db",
-    ).build()
+    ).addMigrations(AppDatabase.MIGRATION_1_2).build()
 
     override val cycleSettingsRepository: CycleSettingsRepository =
         PreferencesCycleSettingsRepository(appContext, clock)
