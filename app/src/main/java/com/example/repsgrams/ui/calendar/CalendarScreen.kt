@@ -19,6 +19,11 @@ import androidx.compose.material.icons.outlined.FlashlightOn
 import com.example.repsgrams.ui.theme.AppColors
 import com.example.repsgrams.ui.components.IconBadge
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material.icons.outlined.Coffee
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -214,17 +219,26 @@ private fun DayCell(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
-            Text(
-                day.slot.workoutDayLabel ?: "R",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            if (day.slot.workoutDayLabel != null) {
+                Text(
+                    day.slot.workoutDayLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.Coffee,
+                    contentDescription = "Rest",
+                    modifier = Modifier.size(20.dp),
+                    tint = colors.onSurfaceVariant
+                )
+            }
             if (day.status == CalendarDayStatus.UPCOMING) {
                 Text("·", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             } else {
                 Icon(
                     imageVector = when (day.status) {
-                        CalendarDayStatus.COMPLETE -> Icons.Outlined.CheckCircle
+                        CalendarDayStatus.COMPLETE -> Icons.Filled.CheckCircle
                         CalendarDayStatus.MISSED -> Icons.Outlined.ErrorOutline
                         else -> Icons.Outlined.Circle
                     },
@@ -273,13 +287,15 @@ private fun DayDetail(
         IosCard {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    IconBadge(icon = Icons.Outlined.Science, tint = AppColors.creatineTeal)
-                    Text("Creatine: ${if (detail.supplements?.creatineTaken == true) "Logged · 5 g" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                    val crTaken = detail.supplements?.creatineTaken == true
+                    IconBadge(icon = if (crTaken) Icons.Filled.Science else Icons.Outlined.Science, tint = AppColors.creatineTeal)
+                    Text("Creatine: ${if (crTaken) "Logged · 5 g" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
                 }
                 HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    IconBadge(icon = Icons.Outlined.FlashlightOn, tint = AppColors.wheyGreen)
-                    Text("Whey: ${if (detail.supplements?.wheyTaken == true) "Logged · ${detail.supplements.wheyServings} serving" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                    val whTaken = detail.supplements?.wheyTaken == true
+                    IconBadge(icon = if (whTaken) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop, tint = AppColors.wheyGreen)
+                    Text("Whey: ${if (whTaken) "Logged · ${detail.supplements?.wheyServings} serving" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }

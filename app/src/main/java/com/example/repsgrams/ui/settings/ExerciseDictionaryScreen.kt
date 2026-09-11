@@ -10,6 +10,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBackIosNew
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.outlined.FitnessCenter
+import com.example.repsgrams.ui.theme.AppColors
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,7 +42,7 @@ fun ExerciseDictionaryRoute(
             TopAppBar(
                 title = { Text("Exercise Dictionary") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Text("<") }
+                    IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Back") }
                 }
             )
         },
@@ -52,7 +60,30 @@ fun ExerciseDictionaryRoute(
             items(exercises) { ex ->
                 ListItem(
                     headlineContent = { Text(ex.name) },
-                    supportingContent = { Text(if (ex.tracksWeight) "Weighted" else "Bodyweight") },
+                    supportingContent = { 
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (ex.tracksWeight) "Weighted" else "Bodyweight")
+                            Surface(
+                                color = AppColors.wheyGreen.copy(alpha = 0.2f),
+                                shape = CircleShape,
+                            ) {
+                                Text(
+                                    ex.muscleGroup,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AppColors.wheyGreen,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    },
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(AppColors.workout.copy(alpha=0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.FitnessCenter, contentDescription = null, tint = AppColors.workout)
+                        }
+                    },
                     modifier = Modifier.clickable {
                         editingExercise = ex
                         showDialog = true
@@ -67,11 +98,11 @@ fun ExerciseDictionaryRoute(
         ExerciseDialog(
             exercise = editingExercise,
             onDismiss = { showDialog = false },
-            onSave = { name, tracks, notes ->
+            onSave = { name, tracks, notes, muscleGroup ->
                 if (editingExercise == null) {
-                    viewModel.addExercise(name, tracks, notes)
+                    viewModel.addExercise(name, tracks, notes, muscleGroup)
                 } else {
-                    viewModel.updateExercise(editingExercise!!, name, tracks, notes)
+                    viewModel.updateExercise(editingExercise!!, name, tracks, notes, muscleGroup)
                 }
                 showDialog = false
             },
@@ -89,16 +120,19 @@ fun ExerciseDictionaryRoute(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExerciseDialog(
     exercise: ExerciseEntity?,
     onDismiss: () -> Unit,
-    onSave: (String, Boolean, String?) -> Unit,
+    onSave: (String, Boolean, String?, String) -> Unit,
     onDelete: () -> Unit
 ) {
     var name by remember { mutableStateOf(exercise?.name ?: "") }
     var tracksWeight by remember { mutableStateOf(exercise?.tracksWeight ?: true) }
     var notes by remember { mutableStateOf(exercise?.notes ?: "") }
+    var muscleGroup by remember { mutableStateOf(exercise?.muscleGroup ?: "Back") }
+    var expanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -120,10 +154,33 @@ private fun ExerciseDialog(
                     Checkbox(checked = tracksWeight, onCheckedChange = { tracksWeight = it })
                     Text("Tracks Weight")
                 }
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = muscleGroup,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Muscle Group") },
+                        modifier = Modifier.menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        listOf("Back", "Chest", "Legs", "Arms", "Shoulders", "Core", "Full Body", "Uncategorized").forEach { group ->
+                            DropdownMenuItem(
+                                text = { Text(group) },
+                                onClick = { muscleGroup = group; expanded = false }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, tracksWeight, notes) }, enabled = name.isNotBlank()) {
+            Button(onClick = { onSave(name, tracksWeight, notes, muscleGroup) }, enabled = name.isNotBlank()) {
                 Text("Save")
             }
         },

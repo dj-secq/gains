@@ -17,6 +17,9 @@ import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.FlashlightOn
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -242,7 +245,7 @@ private fun SupplementCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            SupplementRow("Creatine", "5 g · daily", androidx.compose.material.icons.Icons.Outlined.Science, com.example.repsgrams.ui.theme.AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
+            SupplementRow("Creatine", "5 g · daily", androidx.compose.material.icons.Icons.Outlined.Science, androidx.compose.material.icons.Icons.Filled.Science, com.example.repsgrams.ui.theme.AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
             SupplementRow(
                 label = "Whey protein",
@@ -251,7 +254,8 @@ private fun SupplementCard(
                 } else {
                     "1 serving · optional today"
                 },
-                icon = androidx.compose.material.icons.Icons.Outlined.FlashlightOn,
+                iconOutlined = androidx.compose.material.icons.Icons.Outlined.WaterDrop,
+                iconFilled = androidx.compose.material.icons.Icons.Filled.WaterDrop,
                 iconTint = com.example.repsgrams.ui.theme.AppColors.wheyGreen,
                 checked = state.wheyTaken,
                 onCheckedChange = onWheyChanged,
@@ -264,7 +268,8 @@ private fun SupplementCard(
 private fun SupplementRow(
     label: String,
     supportingText: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconOutlined: androidx.compose.ui.graphics.vector.ImageVector,
+    iconFilled: androidx.compose.ui.graphics.vector.ImageVector,
     iconTint: androidx.compose.ui.graphics.Color,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -277,7 +282,7 @@ private fun SupplementRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        com.example.repsgrams.ui.components.IconBadge(icon = icon, tint = iconTint)
+        com.example.repsgrams.ui.components.IconBadge(icon = if (checked) iconFilled else iconOutlined, tint = iconTint)
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             Text(supportingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

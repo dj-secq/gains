@@ -27,6 +27,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.Icon
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -45,11 +57,11 @@ import com.example.repsgrams.ui.session.WorkoutSessionViewModel
 import com.example.repsgrams.ui.calendar.CalendarRoute
 import com.example.repsgrams.ui.calendar.CalendarViewModel
 
-private enum class TopLevelDestination(val route: String, val label: String, val symbol: String) {
-    TODAY("today", "Today", "●"),
-    CALENDAR("calendar", "Calendar", "□"),
-    PROGRESS("progress", "Progress", "↗"),
-    SETTINGS("settings", "Settings", "⚙"),
+private enum class TopLevelDestination(val route: String, val label: String, val iconOutlined: ImageVector, val iconFilled: ImageVector) {
+    TODAY("today", "Today", Icons.Outlined.Home, Icons.Filled.Home),
+    CALENDAR("calendar", "Calendar", Icons.Outlined.CalendarMonth, Icons.Filled.CalendarMonth),
+    PROGRESS("progress", "Progress", Icons.Outlined.TrendingUp, Icons.Filled.TrendingUp),
+    SETTINGS("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings),
 }
 
 @Composable
@@ -100,10 +112,10 @@ fun RepsGramsApp(
                                     },
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(
-                                    text = destination.symbol,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = contentColor
+                                Icon(
+                                    imageVector = if (selected) destination.iconFilled else destination.iconOutlined,
+                                    contentDescription = destination.label,
+                                    tint = contentColor
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
@@ -227,9 +239,11 @@ fun RepsGramsApp(
                 arguments = listOf(navArgument("sessionId") { type = NavType.LongType }),
             ) { entry ->
                 val sessionId = requireNotNull(entry.arguments?.getLong("sessionId"))
+                val context = LocalContext.current.applicationContext
                 val sessionViewModel: WorkoutSessionViewModel = viewModel(
                     key = "session-$sessionId",
                     factory = WorkoutSessionViewModel.factory(
+                        context = context,
                         sessionId = sessionId,
                         workoutRepository = container.workoutRepository,
                         progressStore = container.sessionProgressStore,

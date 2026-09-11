@@ -17,21 +17,21 @@ class ExerciseDictionaryViewModel(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
     )
 
-    fun addExercise(name: String, tracksWeight: Boolean, notes: String?) {
+    fun addExercise(name: String, tracksWeight: Boolean, notes: String?, muscleGroup: String) {
         viewModelScope.launch {
             if (name.isNotBlank()) {
                 repository.insertExercise(
-                    ExerciseEntity(name = name.trim(), tracksWeight = tracksWeight, notes = notes?.takeIf { it.isNotBlank() })
+                    ExerciseEntity(name = name.trim(), tracksWeight = tracksWeight, notes = notes?.takeIf { it.isNotBlank() }, muscleGroup = muscleGroup, isCustom = true)
                 )
             }
         }
     }
 
-    fun updateExercise(exercise: ExerciseEntity, newName: String, tracksWeight: Boolean, notes: String?) {
+    fun updateExercise(exercise: ExerciseEntity, newName: String, tracksWeight: Boolean, notes: String?, muscleGroup: String) {
         viewModelScope.launch {
             if (newName.isNotBlank()) {
                 repository.updateExercise(
-                    exercise.copy(name = newName.trim(), tracksWeight = tracksWeight, notes = notes?.takeIf { it.isNotBlank() })
+                    exercise.copy(name = newName.trim(), tracksWeight = tracksWeight, notes = notes?.takeIf { it.isNotBlank() }, muscleGroup = muscleGroup)
                 )
             }
         }
