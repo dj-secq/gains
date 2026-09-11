@@ -17,6 +17,10 @@ import androidx.compose.material.icons.outlined.FlashlightOn
 import com.example.repsgrams.ui.theme.AppColors
 import com.example.repsgrams.ui.components.IconBadge
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Lifecycle
+import com.example.repsgrams.service.RestTimerService
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -37,6 +41,23 @@ import com.example.repsgrams.ui.components.IosCard
 fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.summaryDone.collect { onFinished() } }
+    
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                RestTimerService.isSessionForeground = true
+            } else if (event == Lifecycle.Event.ON_PAUSE) {
+                RestTimerService.isSessionForeground = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            RestTimerService.isSessionForeground = false
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     
     WorkoutSessionScreen(
         state = state,

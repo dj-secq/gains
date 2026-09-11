@@ -30,6 +30,9 @@ data class CycleSettings(
     val workoutReminderTime: LocalTime,
     val creatineReminderTime: LocalTime,
     val postWorkoutWheyDelayMinutes: Int,
+    val restTimerSound: String,
+    val restTimerVibrationEnabled: Boolean,
+    val restTimerAutoAdvance: Boolean,
 )
 
 interface CycleSettingsRepository {
@@ -46,6 +49,9 @@ interface CycleSettingsRepository {
     suspend fun setWorkoutReminderTime(time: LocalTime)
     suspend fun setCreatineReminderTime(time: LocalTime)
     suspend fun setPostWorkoutWheyDelayMinutes(minutes: Int)
+    suspend fun setRestTimerSound(sound: String)
+    suspend fun setRestTimerVibrationEnabled(enabled: Boolean)
+    suspend fun setRestTimerAutoAdvance(enabled: Boolean)
 }
 
 val Context.cycleSettingsDataStore by preferencesDataStore(name = "cycle_settings")
@@ -78,6 +84,9 @@ class PreferencesCycleSettingsRepository(
             if (POST_WORKOUT_WHEY_DELAY_MINUTES !in preferences) {
                 preferences[POST_WORKOUT_WHEY_DELAY_MINUTES] = 25
             }
+            if (REST_TIMER_SOUND !in preferences) preferences[REST_TIMER_SOUND] = "default"
+            if (REST_TIMER_VIBRATION !in preferences) preferences[REST_TIMER_VIBRATION] = true
+            if (REST_TIMER_AUTO_ADVANCE !in preferences) preferences[REST_TIMER_AUTO_ADVANCE] = true
         }
     }
 
@@ -107,6 +116,10 @@ class PreferencesCycleSettingsRepository(
         require(minutes in 15..120) { "Whey reminder delay must be between 15 and 120 minutes" }
         update(POST_WORKOUT_WHEY_DELAY_MINUTES, minutes)
     }
+    
+    override suspend fun setRestTimerSound(sound: String) = update(REST_TIMER_SOUND, sound)
+    override suspend fun setRestTimerVibrationEnabled(enabled: Boolean) = update(REST_TIMER_VIBRATION, enabled)
+    override suspend fun setRestTimerAutoAdvance(enabled: Boolean) = update(REST_TIMER_AUTO_ADVANCE, enabled)
 
     private fun toSettings(preferences: Preferences) = CycleSettings(
         cycleStartDate = preferences[CYCLE_START_DATE]
@@ -123,6 +136,9 @@ class PreferencesCycleSettingsRepository(
         workoutReminderTime = preferences[WORKOUT_REMINDER_TIME].toLocalTimeOrDefault(LocalTime.of(18, 0)),
         creatineReminderTime = preferences[CREATINE_REMINDER_TIME].toLocalTimeOrDefault(LocalTime.of(20, 0)),
         postWorkoutWheyDelayMinutes = preferences[POST_WORKOUT_WHEY_DELAY_MINUTES] ?: 25,
+        restTimerSound = preferences[REST_TIMER_SOUND] ?: "default",
+        restTimerVibrationEnabled = preferences[REST_TIMER_VIBRATION] ?: true,
+        restTimerAutoAdvance = preferences[REST_TIMER_AUTO_ADVANCE] ?: true,
     )
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) {
@@ -144,6 +160,9 @@ class PreferencesCycleSettingsRepository(
         val POST_WORKOUT_WHEY_DELAY_MINUTES = androidx.datastore.preferences.core.intPreferencesKey(
             "post_workout_whey_delay_minutes",
         )
+        val REST_TIMER_SOUND = stringPreferencesKey("rest_timer_sound")
+        val REST_TIMER_VIBRATION = booleanPreferencesKey("rest_timer_vibration")
+        val REST_TIMER_AUTO_ADVANCE = booleanPreferencesKey("rest_timer_auto_advance")
     }
 }
 

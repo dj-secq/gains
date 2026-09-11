@@ -47,6 +47,18 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setProteinGoalMultipliers(low, high) }
     }
 
+    // Timer Settings
+    fun setRestTimerSound(sound: String) {
+        viewModelScope.launch { repository.setRestTimerSound(sound) }
+    }
+    fun setRestTimerVibrationEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setRestTimerVibrationEnabled(enabled) }
+    }
+    fun setRestTimerAutoAdvance(enabled: Boolean) {
+        viewModelScope.launch { repository.setRestTimerAutoAdvance(enabled) }
+    }
+
+
     private fun update(change: suspend () -> Unit) {
         viewModelScope.launch {
             change()

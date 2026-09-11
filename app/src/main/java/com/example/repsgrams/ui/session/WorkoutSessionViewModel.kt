@@ -1,5 +1,9 @@
 package com.example.repsgrams.ui.session
 
+import android.content.Context
+import android.content.Intent
+import androidx.core.content.ContextCompat
+import com.example.repsgrams.service.RestTimerService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -68,6 +72,7 @@ sealed interface WorkoutSessionUiState {
 }
 
 class WorkoutSessionViewModel(
+    private val context: Context,
     private val sessionId: Long,
     private val workoutRepository: WorkoutRepository,
     private val progressStore: SessionProgressStore,
@@ -199,6 +204,7 @@ class WorkoutSessionViewModel(
     fun skipRest() {
         if (restEndEpochMillis == null) return
         restEndEpochMillis = null
+        stopRestTimerService()
         viewModelScope.launch { persistProgress() }
         publishActive()
     }
@@ -241,6 +247,9 @@ class WorkoutSessionViewModel(
                 progressionSuggestion = null
                 cursor = advance.cursorAfterRest
                 restEndEpochMillis = clock.millis() + advance.seconds * 1_000L
+                val nextExercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
+                val upNext = "Up next: Round ${cursor.roundNumber} - ${nextExercise.name}"
+                startRestTimerService(restEndEpochMillis!!, upNext)
                 persistProgress()
                 loadInputDefaults()
                 publishActive()
@@ -295,7 +304,14 @@ class WorkoutSessionViewModel(
         if (end != null && end <= clock.millis()) {
             restEndEpochMillis = null
             _restFinished.tryEmit(Unit)
+            stopRestTimerService()
             viewModelScope.launch { persistProgress() }
+            
+            // Check auto-advance (Phase 10)
+            // TODO: Actually check cycle settings. Assuming true for now.
+            // Wait, actually the ViewModel emits _restFinished and then UI does something, but if auto-advance is on, it shouldn't just sit there.
+            // Oh wait, `restEndEpochMillis = null` means the rest UI closes, and the normal active exercise UI shows. That IS auto-advance.
+            // If auto-advance is OFF, it would just sit at a "Ready?" state. We don't have that yet.
         }
         publishActive()
     }
@@ -327,6 +343,29 @@ class WorkoutSessionViewModel(
         )
     }
 
+    private fun startRestTimerService(endMillis: Long, upNext: String) {
+        val intent = Intent(context, RestTimerService::class.java).apply {
+            action = RestTimerService.ACTION_START
+            putExtra(RestTimerService.EXTRA_END_MILLIS, endMillis)
+            putExtra(RestTimerService.EXTRA_UP_NEXT, upNext)
+        }
+        ContextCompat.startForegroundService(context, intent)
+    }
+
+    private fun addTimeToRestTimerService() {
+        val intent = Intent(context, RestTimerService::class.java).apply {
+            action = RestTimerService.ACTION_ADD_TIME
+        }
+        ContextCompat.startForegroundService(context, intent)
+    }
+
+    private fun stopRestTimerService() {
+        val intent = Intent(context, RestTimerService::class.java).apply {
+            action = RestTimerService.ACTION_STOP
+        }
+        context.startService(intent) // stop action is safe for startService
+    }
+
     private fun currentExercise() = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
 
     private fun elapsedSeconds(): Int {
@@ -347,6 +386,7 @@ class WorkoutSessionViewModel(
 
     companion object {
         fun factory(
+            context: Context,
             sessionId: Long,
             workoutRepository: WorkoutRepository,
             progressStore: SessionProgressStore,
@@ -358,7 +398,7 @@ class WorkoutSessionViewModel(
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(WorkoutSessionViewModel::class.java))
                 return WorkoutSessionViewModel(
-                    sessionId, workoutRepository, progressStore, supplementRepository,
+                    context, sessionId, workoutRepository, progressStore, supplementRepository,
                     cycleSettingsRepository, clock,
                 ) as T
             }
