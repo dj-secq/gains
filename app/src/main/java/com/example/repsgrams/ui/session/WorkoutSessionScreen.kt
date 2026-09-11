@@ -68,6 +68,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
     
     WorkoutSessionScreen(
         state = state,
+        prAchieved = viewModel.prAchieved,
         onValueChanged = viewModel::updateValue,
         onWeightChanged = viewModel::updateWeight,
         onAdjustValue = viewModel::adjustValue,
@@ -90,6 +91,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
 @Composable
 fun WorkoutSessionScreen(
     state: WorkoutSessionUiState,
+    prAchieved: kotlinx.coroutines.flow.SharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>>,
     onValueChanged: (String) -> Unit,
     onWeightChanged: (String) -> Unit,
     onAdjustValue: (Int) -> Unit,
@@ -106,7 +108,17 @@ fun WorkoutSessionScreen(
     onRpeTagChanged: (String?) -> Unit = {},
     onBack: () -> Unit
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(prAchieved) {
+        prAchieved.collect { prs ->
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            snackbarHostState.showSnackbar("🎉 New Personal Record!")
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { 

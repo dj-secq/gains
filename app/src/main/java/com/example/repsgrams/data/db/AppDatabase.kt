@@ -8,6 +8,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
+        PersonalRecordEntity::class,
+        BodyMeasurementLogEntity::class,
+        AchievementEntity::class,
         ExerciseEntity::class,
         WorkoutTemplateEntity::class,
         TemplateBlockEntity::class,
@@ -19,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SupplyInventoryEntity::class,
         DatabaseMetadataEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(DatabaseConverters::class)
@@ -33,9 +36,49 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun supplementLogDao(): SupplementLogDao
     abstract fun bodyweightLogDao(): BodyweightLogDao
     abstract fun supplyInventoryDao(): SupplyInventoryDao
+    abstract fun personalRecordDao(): PersonalRecordDao
+    abstract fun bodyMeasurementLogDao(): BodyMeasurementLogDao
+    abstract fun achievementDao(): AchievementDao
     abstract fun databaseMetadataDao(): DatabaseMetadataDao
 
     companion object {
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `personal_records` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `exerciseId` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `value` REAL NOT NULL,
+                        `achievedDate` INTEGER NOT NULL,
+                        `sourceSetLogId` INTEGER,
+                        FOREIGN KEY(`exerciseId`) REFERENCES `exercises`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`sourceSetLogId`) REFERENCES `set_logs`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_personal_records_exerciseId` ON `personal_records` (`exerciseId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_personal_records_sourceSetLogId` ON `personal_records` (`sourceSetLogId`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `body_measurements` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `date` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `valueCm` REAL NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_body_measurements_date_type` ON `body_measurements` (`date`, `type`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `achievements` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `key` TEXT NOT NULL,
+                        `unlockedDate` INTEGER NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_achievements_key` ON `achievements` (`key`)")
+            }
+        }
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // ExerciseEntity additions

@@ -89,8 +89,11 @@ class WorkoutRepository(
         reps: Int?,
         durationSeconds: Int?,
         weightKg: Float?,
-    ) {
-        database.setLogDao().insert(
+        rpeTag: String? = null,
+        substitutedFrom: Long? = null,
+    ): List<com.example.repsgrams.data.db.PersonalRecordEntity> {
+        val session = database.workoutSessionDao().getById(sessionId) ?: return emptyList()
+        val setId = database.setLogDao().insert(
             SetLogEntity(
                 sessionId = sessionId,
                 exerciseId = exerciseId,
@@ -99,8 +102,15 @@ class WorkoutRepository(
                 durationSeconds = durationSeconds,
                 weightKg = weightKg,
                 loggedAt = Instant.now(clock),
+                rpeTag = rpeTag,
+                substitutedFrom = substitutedFrom,
             ),
         )
+        if (reps != null && weightKg != null) {
+            val prManager = PRManager(database)
+            return prManager.checkAndSavePR(exerciseId, reps, weightKg, setId, session.date)
+        }
+        return emptyList()
     }
 
     suspend fun finishSession(sessionId: Long, notes: String? = null): WorkoutSessionEntity {

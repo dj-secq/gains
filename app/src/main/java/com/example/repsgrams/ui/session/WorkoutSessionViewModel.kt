@@ -91,6 +91,9 @@ class WorkoutSessionViewModel(
     val restFinished: SharedFlow<Unit> = _restFinished.asSharedFlow()
     private val _summaryDone = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val summaryDone: SharedFlow<Unit> = _summaryDone.asSharedFlow()
+    
+    private val _prAchieved = MutableSharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>>(extraBufferCapacity = 1)
+    val prAchieved: SharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>> = _prAchieved.asSharedFlow()
 
     private lateinit var session: WorkoutSessionEntity
     private lateinit var plan: WorkoutPlan
