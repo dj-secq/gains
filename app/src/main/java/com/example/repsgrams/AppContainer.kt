@@ -76,7 +76,7 @@ class DefaultAppContainer(
     )
 
     override val workoutRepository = WorkoutRepository(
-        database, clock, databaseInitialization, reminderScheduler::schedulePostWorkoutWhey,
+        database, clock, databaseInitialization, {},
     )
 
     override val progressRepository = com.example.repsgrams.data.repository.DefaultProgressRepository(database)

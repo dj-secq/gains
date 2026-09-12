@@ -28,7 +28,6 @@ interface ProgressRepository {
     fun observeSupplyInventory(): Flow<List<SupplyInventoryEntity>>
     
     suspend fun logBodyweight(date: LocalDate, weightKg: Float)
-    suspend fun restockSupply(type: SupplyType, totalServings: Int, date: LocalDate)
 }
 
 class DefaultProgressRepository(
@@ -39,10 +38,9 @@ class DefaultProgressRepository(
     override fun observeStreakInfo(today: LocalDate, graceDays: Int): Flow<StreakInfo> {
         return kotlinx.coroutines.flow.combine(
             database.workoutSessionDao().observeAll(),
-            database.supplementIntakeLogDao().observeAll(),
             database.workoutTemplateDao().observeAll()
-        ) { sessions, supplements, templates ->
-            streakCalculator.calculate(today, sessions, supplements, templates, graceDays)
+        ) { sessions, templates ->
+            com.example.repsgrams.domain.streak.StreakCalculator().calculate(today, sessions, templates, graceDays)
         }
     }
 
@@ -90,14 +88,4 @@ class DefaultProgressRepository(
         database.bodyweightLogDao().upsert(BodyweightLogEntity(date = date, weightKg = weightKg))
     }
 
-    override suspend fun restockSupply(type: SupplyType, totalServings: Int, date: LocalDate) {
-        database.supplyInventoryDao().upsert(
-            SupplyInventoryEntity(
-                type = type,
-                totalServings = totalServings,
-                servingsRemaining = totalServings.toFloat(),
-                startDate = date,
-            )
-        )
-    }
 }

@@ -4,14 +4,14 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.WeightRecord
-import androidx.health.connect.client.records.Mass
+import androidx.health.connect.client.units.Mass
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 
 class HealthConnectManager(private val context: Context) {
     private val client by lazy { 
-        if (HealthConnectClient.isProviderAvailable(context)) {
+        if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE) {
             HealthConnectClient.getOrCreate(context)
         } else {
             null
@@ -26,7 +26,7 @@ class HealthConnectManager(private val context: Context) {
                 startZoneOffset = ZoneId.systemDefault().rules.getOffset(startTime),
                 endTime = endTime,
                 endZoneOffset = ZoneId.systemDefault().rules.getOffset(endTime),
-                exerciseType = androidx.health.connect.client.records.ExerciseSessionRecord.EXERCISE_TYPE_WORKOUT,
+                exerciseType = 80,
                 title = title
             )
             hcClient.insertRecords(listOf(record))

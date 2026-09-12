@@ -1,4 +1,5 @@
-package com.example.repsgrams.ui.progress
+with open("app/src/main/java/com/example/repsgrams/ui/progress/ProgressViewModel.kt", "w") as f:
+    f.write("""package com.example.repsgrams.ui.progress
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -7,7 +8,7 @@ import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.CycleSettings
 import com.example.repsgrams.data.db.BodyweightLogEntity
 import com.example.repsgrams.data.db.ExerciseEntity
-import com.example.repsgrams.data.db.ExerciseSetHistoryRow
+import com.example.repsgrams.data.repository.ExerciseSetHistoryRow
 import com.example.repsgrams.data.repository.ProgressRepository
 import com.example.repsgrams.domain.streak.StreakInfo
 import java.time.LocalDate
@@ -15,8 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 
@@ -64,24 +63,18 @@ class ProgressViewModel(
         _isWeightView
     ) { exercises, selectedId, isWeight ->
         val chosenId = selectedId ?: exercises.firstOrNull()?.id
-        Triple(exercises, chosenId, isWeight)
-    }.flatMapLatest { (exercises, chosenId, isWeight) ->
-        val historyFlow = chosenId?.let { progressRepository.observeExerciseHistory(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList())
-        historyFlow.map { history ->
-            ExerciseData(exercises, chosenId, history, isWeight)
-        }
+        val history = chosenId?.let { progressRepository.getExerciseHistory(it) } ?: emptyList()
+        ExerciseData(exercises, chosenId, history, isWeight)
     }
 
     private val userStatsFlow = combine(
-        progressRepository.observeBodyweightHistory(today.minusMonths(3), today),
+        progressRepository.observeBodyweight(today.minusMonths(3), today),
         cycleSettingsRepository.settings.flatMapLatest { settings ->
             progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
         }
     ) { bw, streak ->
         UserStats(bw, streak)
     }
-
-    
 
     val uiState: StateFlow<ProgressUiState> = combine(
         exerciseDataFlow,
@@ -115,3 +108,4 @@ class ProgressViewModel(
         }
     }
 }
+""")

@@ -371,16 +371,6 @@ private fun SummaryScreen(
             }
         }
         
-        Text("Post-workout check-in", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-        IosCard {
-            Column {
-                CheckRow("Whey protein taken", Icons.Outlined.FlashlightOn, AppColors.wheyGreen, state.wheyTaken, onWheyChanged)
-                HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                CheckRow("Creatine taken", Icons.Outlined.Science, AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
-            }
-        }
-        Text("1 whey serving and 5 g creatine are selected by default. Adjust if needed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        
         Spacer(modifier = Modifier.height(16.dp))
         IosButton(text = "Save and return to Today", onClick = onDone)
     }

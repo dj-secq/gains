@@ -155,10 +155,10 @@ private fun TodayContent(
                     )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Day ${state.slot.dayNumber} of 5", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant))
+                        Text("Day ${1} of 5", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant))
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = state.slot.workoutDayLabel?.let { "Workout $it" } ?: "Rest day",
+                            text = state.suggestion.suggestedTemplate?.dayLabel?.let { "Workout $it" } ?: "Rest day",
                             style = MaterialTheme.typography.titleLarge,
                         )
                         Spacer(Modifier.height(16.dp))
@@ -167,10 +167,10 @@ private fun TodayContent(
                                 text = "Resume Workout",
                                 onClick = { onResumeWorkout(state.activeSessionId) }
                             )
-                        } else if (state.slot.isWorkoutDay) {
+                        } else if ((state.suggestion.status != com.example.repsgrams.domain.schedule.SuggestionStatus.REST_DAY)) {
                             IosButton(
-                                text = "Start Workout ${state.slot.workoutDayLabel}",
-                                onClick = { onStartWorkout(requireNotNull(state.slot.workoutDayLabel)) }
+                                text = "Start Workout ${state.suggestion.suggestedTemplate?.dayLabel}",
+                                onClick = { onStartWorkout(requireNotNull(state.suggestion.suggestedTemplate?.dayLabel)) }
                             )
                         } else {
                             Text(
@@ -189,7 +189,7 @@ private fun TodayContent(
                 }
             }
         }
-        item { SupplementCard(state,  onWheyChanged) }
+        item { SupplementCard(state) }
         item {
             IosCard {
                 Row(
@@ -230,60 +230,45 @@ private fun TodayContent(
 }
 
 @Composable
-private fun SupplementCard(state: TodayUiState.Content, viewModel: com.example.repsgrams.ui.today.TodayViewModel) {
-            SupplementRow("Creatine", "5 g · daily", androidx.compose.material.icons.Icons.Outlined.Science, androidx.compose.material.icons.Icons.Filled.Science, com.example.repsgrams.ui.theme.AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
-            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-            SupplementRow(
-                label = "Whey protein",
-                supportingText = if (state.slot.isWorkoutDay) {
-                    "1 serving · after workout"
-                } else {
-                    "1 serving · optional today"
-                },
-                iconOutlined = androidx.compose.material.icons.Icons.Outlined.WaterDrop,
-                iconFilled = androidx.compose.material.icons.Icons.Filled.WaterDrop,
-                iconTint = com.example.repsgrams.ui.theme.AppColors.wheyGreen,
-                checked = state.wheyTaken,
-                onCheckedChange = 
-            )
+private fun SupplementCard(state: TodayUiState.Content, ) {
+    com.example.repsgrams.ui.components.IosCard {
+        Column {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Supplements today", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            }
+            if (state.supplements.isEmpty()) {
+                Text("No supplements scheduled today", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+            }
+            state.supplements.forEachIndexed { index, suppState ->
+                val (supp, taken) = suppState
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    com.example.repsgrams.ui.components.IconBadge(
+                        icon = androidx.compose.material.icons.Icons.Outlined.Science, 
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(supp.name, style = MaterialTheme.typography.bodyLarge)
+                        Text("${supp.doseAmount} ${supp.unit}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = taken,
+                        onCheckedChange = { }
+                    )
+                }
+                if (index < state.supplements.lastIndex) {
+                    androidx.compose.material3.HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp), 
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
+            }
         }
     }
 }
-
-@Composable
-private fun SupplementRow(
-    label: String,
-    supportingText: String,
-    iconOutlined: androidx.compose.ui.graphics.vector.ImageVector,
-    iconFilled: androidx.compose.ui.graphics.vector.ImageVector,
-    iconTint: androidx.compose.ui.graphics.Color,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        com.example.repsgrams.ui.components.IconBadge(icon = if (checked) iconFilled else iconOutlined, tint = iconTint)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(supportingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(
-            checked = checked, 
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
-                checkedTrackColor = iconTint,
-                uncheckedThumbColor = androidx.compose.ui.graphics.Color.White,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                uncheckedBorderColor = androidx.compose.ui.graphics.Color.Transparent
-            )
-        )
-    }
-}
-

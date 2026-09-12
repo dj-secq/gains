@@ -1,4 +1,5 @@
-package com.example.repsgrams.reminder
+with open("app/src/main/java/com/example/repsgrams/reminder/ReminderScheduler.kt", "w") as f:
+    f.write("""package com.example.repsgrams.reminder
 
 import android.content.Context
 import androidx.work.ExistingWorkPolicy
@@ -52,3 +53,4 @@ class WorkManagerReminderScheduler(
         private const val WORKOUT_WORK = "next-workout-reminder"
     }
 }
+""")

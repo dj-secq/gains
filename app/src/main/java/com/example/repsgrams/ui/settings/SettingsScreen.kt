@@ -58,6 +58,7 @@ fun SettingsRoute(
     viewModel: SettingsViewModel,
     onNavigateToTemplates: () -> Unit,
     onNavigateToExercises: () -> Unit,
+    onNavigateToSupplements: () -> Unit,
     onExportData: (Uri) -> Unit,
     onImportData: (Uri) -> Unit,
 ) {
@@ -121,6 +122,7 @@ fun SettingsRoute(
             onProteinGoal = viewModel::setProteinGoalMultiplier,
             onNavigateToTemplates = onNavigateToTemplates,
             onNavigateToExercises = onNavigateToExercises,
+        onNavigateToSupplements = onNavigateToSupplements,
         )
     }
 }
@@ -151,6 +153,7 @@ fun SettingsScreen(
     onThemeMode: (com.example.repsgrams.data.datastore.ThemeMode) -> Unit,
     onNavigateToTemplates: () -> Unit,
     onNavigateToExercises: () -> Unit,
+    onNavigateToSupplements: () -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 

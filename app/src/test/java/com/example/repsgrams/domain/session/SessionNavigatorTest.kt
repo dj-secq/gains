@@ -11,6 +11,7 @@ class SessionNavigatorTest {
         templateId = 1,
         name = "Workout A",
         dayLabel = "A",
+        category = "Upper Body",
         maxDurationMinutes = 40,
         blocks = listOf(
             block(1, BlockKind.WARM_UP, rounds = 1, rest = null, exercises = 2),

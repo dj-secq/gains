@@ -205,10 +205,9 @@ fun RepsGramsApp(
             }
             composable(TopLevelDestination.PROGRESS.route) {
                 val progressViewModel: com.example.repsgrams.ui.progress.ProgressViewModel = viewModel(
-                    factory = com.example.repsgrams.ui.progress.ProgressViewModel.factory(
+                    factory = com.example.repsgrams.ui.progress.ProgressViewModel.provideFactory(
                         container.progressRepository,
                         container.cycleSettingsRepository,
-                        container.healthConnectManager,
                     ),
                 )
                 com.example.repsgrams.ui.progress.ProgressRoute(progressViewModel)
@@ -224,6 +223,7 @@ fun RepsGramsApp(
                     viewModel = settingsViewModel,
                     onNavigateToTemplates = { navController.navigate("templates") },
                     onNavigateToExercises = { navController.navigate("exercises") },
+                    onNavigateToSupplements = { navController.navigate("manage_supplements") },
                     onExportData = { uri ->
                         scope.launch { container.backupManager.exportDatabaseToZip(uri) }
                     },
@@ -269,6 +269,15 @@ fun RepsGramsApp(
                     blockId = blockId,
                     viewModel = editorViewModel,
                     onBack = { navController.popBackStack() }
+                )
+            }
+                        composable("manage_supplements") {
+                val supplementsViewModel: com.example.repsgrams.ui.settings.ManageSupplementsViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                    factory = com.example.repsgrams.ui.settings.ManageSupplementsViewModel.provideFactory(container.supplementRepository)
+                )
+                com.example.repsgrams.ui.settings.ManageSupplementsRoute(
+                    viewModel = supplementsViewModel,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable("exercises") {

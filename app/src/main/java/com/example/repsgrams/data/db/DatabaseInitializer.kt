@@ -63,24 +63,32 @@ class DatabaseInitializer(
             )
 
             val today = LocalDate.now(clock)
-            database.supplyInventoryDao().upsert(
-                SupplyInventoryEntity(
-                    type = SupplyType.WHEY,
-                    totalServings = 65,
-                    servingsRemaining = 65f,
-                    startDate = today,
-                ),
+            val wheyId = database.supplementDao().insert(
+                com.example.repsgrams.data.db.SupplementEntity(
+                    name = "Whey Protein",
+                    doseAmount = 1f,
+                    unit = "serving",
+                    scheduleType = "workoutDayOnly",
+                    containerSize = 65,
+                    lowSupplyThreshold = 10,
+                    colorToken = "green",
+                    iconName = "water_drop"
+                )
             )
-            database.supplyInventoryDao().upsert(
-                SupplyInventoryEntity(
-                    type = SupplyType.CREATINE,
-                    totalServings = 30,
-                    servingsRemaining = 30f,
-                    startDate = today,
-                ),
+            val creatineId = database.supplementDao().insert(
+                com.example.repsgrams.data.db.SupplementEntity(
+                    name = "Creatine",
+                    doseAmount = 5f,
+                    unit = "g",
+                    scheduleType = "daily",
+                    containerSize = 30,
+                    lowSupplyThreshold = 5,
+                    colorToken = "teal",
+                    iconName = "science"
+                )
             )
-            metadataDao.put(DatabaseMetadataEntity(SEED_VERSION_KEY, CURRENT_SEED_VERSION))
-        }
+            }
+
     }
 
     private suspend fun seedTemplate(
