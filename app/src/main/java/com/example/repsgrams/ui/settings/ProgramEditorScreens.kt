@@ -50,8 +50,21 @@ fun TemplateListRoute(
                     headlineContent = { Text(template.name) },
                     supportingContent = { Text("Day: ${template.dayLabel}") },
                     trailingContent = {
-                        IconButton(onClick = { viewModel.deleteTemplate(template) }) {
-                            Text("X", color = MaterialTheme.colorScheme.error)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val idx = templates.indexOf(template)
+                            if (idx > 0) {
+                                IconButton(onClick = { viewModel.swapTemplates(template.id, templates[idx - 1].id) }) {
+                                    Text("↑")
+                                }
+                            }
+                            if (idx < templates.size - 1) {
+                                IconButton(onClick = { viewModel.swapTemplates(template.id, templates[idx + 1].id) }) {
+                                    Text("↓")
+                                }
+                            }
+                            IconButton(onClick = { viewModel.deleteTemplate(template) }) {
+                                Text("X", color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     },
                     modifier = Modifier.clickable { onNavigateToTemplate(template.id) }
@@ -93,6 +106,8 @@ fun TemplateEditorRoute(
     val blocks by blocksFlow.collectAsStateWithLifecycle(emptyList())
     var showDialog by remember { mutableStateOf(false) }
 
+    val template by remember(templateId) { viewModel.observeTemplate(templateId) }.collectAsStateWithLifecycle(null)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -105,6 +120,44 @@ fun TemplateEditorRoute(
         }
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+            item {
+                template?.let { t ->
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Template Settings", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Category: ")
+                            var expanded by remember { mutableStateOf(false) }
+                            Box {
+                                TextButton(onClick = { expanded = true }) {
+                                    Text(t.category)
+                                }
+                                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                    com.example.repsgrams.ui.theme.CategoryColors.Categories.forEach { cat ->
+                                        DropdownMenuItem(
+                                            text = { Text(cat) },
+                                            onClick = {
+                                                viewModel.updateTemplateCategory(t.id, cat)
+                                                expanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Rest Days After: ${t.restDaysAfter}")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(onClick = { if (t.restDaysAfter > 0) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter - 1) }) { Text("-") }
+                            IconButton(onClick = { viewModel.updateTemplateRestDays(t.id, t.restDaysAfter + 1) }) { Text("+") }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+
             items(blocks.sortedBy { it.orderIndex }) { block ->
                 ListItem(
                     headlineContent = { Text(block.label) },
@@ -130,10 +183,11 @@ fun TemplateEditorRoute(
     }
 
     if (showDialog) {
+        val defaultRest by viewModel.defaultRestSeconds.collectAsStateWithLifecycle(90)
         var label by remember { mutableStateOf("") }
         var rMin by remember { mutableStateOf("3") }
         var rMax by remember { mutableStateOf("5") }
-        var rest by remember { mutableStateOf("90") }
+        var rest by remember(defaultRest) { mutableStateOf(defaultRest.toString()) }
         AlertDialog(
             onDismissRequest = { showDialog = false },
             title = { Text("New Block") },

@@ -63,8 +63,8 @@ fun TodayRoute(
     ) { padding ->
         TodayScreen(
             state = state,
-            onCreatineChanged = viewModel::setCreatineTaken,
-            onWheyChanged = viewModel::setWheyTaken,
+            
+            
             onStartWorkout = viewModel::startWorkout,
             onResumeWorkout = viewModel::resumeWorkout,
             notificationTarget = notificationTarget,
@@ -77,8 +77,8 @@ fun TodayRoute(
 @Composable
 fun TodayScreen(
     state: TodayUiState,
-    onCreatineChanged: (Boolean) -> Unit,
-    onWheyChanged: (Boolean) -> Unit,
+    
+    
     onStartWorkout: (String) -> Unit,
     onResumeWorkout: (Long) -> Unit,
     notificationTarget: String?,
@@ -99,7 +99,7 @@ fun TodayScreen(
         ) { Text(state.message, color = MaterialTheme.colorScheme.error) }
 
         is TodayUiState.Content -> TodayContent(
-            state, onCreatineChanged, onWheyChanged, onStartWorkout, onResumeWorkout,
+            state,   onStartWorkout, onResumeWorkout,
             notificationTarget, onNotificationHandled, modifier,
         )
     }
@@ -108,8 +108,8 @@ fun TodayScreen(
 @Composable
 private fun TodayContent(
     state: TodayUiState.Content,
-    onCreatineChanged: (Boolean) -> Unit,
-    onWheyChanged: (Boolean) -> Unit,
+    
+    
     onStartWorkout: (String) -> Unit,
     onResumeWorkout: (Long) -> Unit,
     notificationTarget: String?,
@@ -189,7 +189,7 @@ private fun TodayContent(
                 }
             }
         }
-        item { SupplementCard(state, onCreatineChanged, onWheyChanged) }
+        item { SupplementCard(state,  onWheyChanged) }
         item {
             IosCard {
                 Row(
@@ -230,21 +230,7 @@ private fun TodayContent(
 }
 
 @Composable
-private fun SupplementCard(
-    state: TodayUiState.Content,
-    onCreatineChanged: (Boolean) -> Unit,
-    onWheyChanged: (Boolean) -> Unit,
-) {
-    IosCard {
-        Column(modifier = Modifier.padding(vertical = 8.dp)) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Supplements today", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (state.creatineTaken && state.wheyTaken) "All logged" else "Tap a row to update",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+private fun SupplementCard(state: TodayUiState.Content, viewModel: com.example.repsgrams.ui.today.TodayViewModel) {
             SupplementRow("Creatine", "5 g · daily", androidx.compose.material.icons.Icons.Outlined.Science, androidx.compose.material.icons.Icons.Filled.Science, com.example.repsgrams.ui.theme.AppColors.creatineTeal, state.creatineTaken, onCreatineChanged)
             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
             SupplementRow(
@@ -258,7 +244,7 @@ private fun SupplementCard(
                 iconFilled = androidx.compose.material.icons.Icons.Filled.WaterDrop,
                 iconTint = com.example.repsgrams.ui.theme.AppColors.wheyGreen,
                 checked = state.wheyTaken,
-                onCheckedChange = onWheyChanged,
+                onCheckedChange = 
             )
         }
     }

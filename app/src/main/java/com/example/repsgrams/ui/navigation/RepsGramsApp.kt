@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
@@ -130,10 +132,48 @@ fun RepsGramsApp(
             }
         },
     ) { innerPadding ->
+        val navSpringSpec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+        )
+        val fadeSpec = androidx.compose.animation.core.tween<Float>(220)
+        
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.TODAY.route,
             modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
+            enterTransition = { 
+                if (targetState.destination.route in TopLevelDestination.entries.map { it.route }) {
+                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
+                } else {
+                    androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }, animationSpec = navSpringSpec) + 
+                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
+                }
+            },
+            exitTransition = {
+                if (initialState.destination.route in TopLevelDestination.entries.map { it.route }) {
+                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
+                } else {
+                    androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = navSpringSpec) + 
+                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
+                }
+            },
+            popEnterTransition = {
+                if (targetState.destination.route in TopLevelDestination.entries.map { it.route }) {
+                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
+                } else {
+                    androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = navSpringSpec) + 
+                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
+                }
+            },
+            popExitTransition = {
+                if (initialState.destination.route in TopLevelDestination.entries.map { it.route }) {
+                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
+                } else {
+                    androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }, animationSpec = navSpringSpec) + 
+                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
+                }
+            }
         ) {
             composable(TopLevelDestination.TODAY.route) {
                 val todayViewModel: TodayViewModel = viewModel(
@@ -168,6 +208,7 @@ fun RepsGramsApp(
                     factory = com.example.repsgrams.ui.progress.ProgressViewModel.factory(
                         container.progressRepository,
                         container.cycleSettingsRepository,
+                        container.healthConnectManager,
                     ),
                 )
                 com.example.repsgrams.ui.progress.ProgressRoute(progressViewModel)
@@ -178,15 +219,22 @@ fun RepsGramsApp(
                         container.cycleSettingsRepository, container.reminderScheduler,
                     ),
                 )
+                val scope = rememberCoroutineScope()
                 com.example.repsgrams.ui.settings.SettingsRoute(
                     viewModel = settingsViewModel,
                     onNavigateToTemplates = { navController.navigate("templates") },
-                    onNavigateToExercises = { navController.navigate("exercises") }
+                    onNavigateToExercises = { navController.navigate("exercises") },
+                    onExportData = { uri ->
+                        scope.launch { container.backupManager.exportDatabaseToZip(uri) }
+                    },
+                    onImportData = { uri ->
+                        scope.launch { container.backupManager.importDatabaseFromZip(uri) }
+                    }
                 )
             }
             composable("templates") {
                 val editorViewModel: com.example.repsgrams.ui.settings.ProgramEditorViewModel = viewModel(
-                    factory = com.example.repsgrams.ui.settings.ProgramEditorViewModel.factory(container.workoutRepository)
+                    factory = com.example.repsgrams.ui.settings.ProgramEditorViewModel.factory(container.workoutRepository, container.cycleSettingsRepository)
                 )
                 com.example.repsgrams.ui.settings.TemplateListRoute(
                     viewModel = editorViewModel,
@@ -200,7 +248,7 @@ fun RepsGramsApp(
             ) { entry ->
                 val templateId = requireNotNull(entry.arguments?.getLong("templateId"))
                 val editorViewModel: com.example.repsgrams.ui.settings.ProgramEditorViewModel = viewModel(
-                    factory = com.example.repsgrams.ui.settings.ProgramEditorViewModel.factory(container.workoutRepository)
+                    factory = com.example.repsgrams.ui.settings.ProgramEditorViewModel.factory(container.workoutRepository, container.cycleSettingsRepository)
                 )
                 com.example.repsgrams.ui.settings.TemplateEditorRoute(
                     templateId = templateId,
@@ -215,7 +263,7 @@ fun RepsGramsApp(
             ) { entry ->
                 val blockId = requireNotNull(entry.arguments?.getLong("blockId"))
                 val editorViewModel: com.example.repsgrams.ui.settings.ProgramEditorViewModel = viewModel(
-                    factory = com.example.repsgrams.ui.settings.ProgramEditorViewModel.factory(container.workoutRepository)
+                    factory = com.example.repsgrams.ui.settings.ProgramEditorViewModel.factory(container.workoutRepository, container.cycleSettingsRepository)
                 )
                 com.example.repsgrams.ui.settings.BlockEditorRoute(
                     blockId = blockId,

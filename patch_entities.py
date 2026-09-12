@@ -1,106 +1,90 @@
 import re
-
 with open("app/src/main/java/com/example/repsgrams/data/db/Entities.kt", "r") as f:
     text = f.read()
 
-# ExerciseEntity
-exercise_old = """@Entity(tableName = "exercises")
-data class ExerciseEntity(
+target_supp_logs = """@Entity(
+    tableName = "supplement_logs",
+    indices = [Index(value = ["date"], unique = true)],
+)
+data class SupplementLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val date: LocalDate,
+    val wheyTaken: Boolean = false,
+    val wheyServings: Float = 0f,
+    val creatineTaken: Boolean = false,
+    val creatineGrams: Float = 0f,
+)"""
+
+replacement_supp_logs = """@Entity(tableName = "supplements")
+data class SupplementEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val notes: String? = null,
-    val tracksWeight: Boolean,
-)"""
-exercise_new = """@Entity(tableName = "exercises")
-data class ExerciseEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val notes: String? = null,
-    val tracksWeight: Boolean,
-    val muscleGroup: String = "Uncategorized",
-    val imageAssetName: String? = null,
-    val isCustom: Boolean = false,
-)"""
-text = text.replace(exercise_old, exercise_new)
+    val doseAmount: Float,
+    val unit: String,
+    val scheduleType: String,
+    val customDays: String? = null,
+    val containerSize: Int,
+    val lowSupplyThreshold: Int,
+    val colorToken: String,
+    val iconName: String,
+    val isActive: Boolean = true,
+)
 
-# WorkoutSessionEntity
-session_old = """    val endTime: Instant? = null,
-    val completed: Boolean = false,
-    val durationSeconds: Int? = null,
-)"""
-session_new = """    val endTime: Instant? = null,
-    val completed: Boolean = false,
-    val durationSeconds: Int? = null,
-    val notes: String? = null,
-)"""
-text = text.replace(session_old, session_new)
-
-# SetLogEntity
-setlog_old = """@Entity(
-    tableName = "set_logs",
+@Entity(
+    tableName = "supplement_intake_logs",
     foreignKeys = [
         ForeignKey(
-            entity = WorkoutSessionEntity::class,
+            entity = SupplementEntity::class,
             parentColumns = ["id"],
-            childColumns = ["sessionId"],
+            childColumns = ["supplementId"],
             onDelete = ForeignKey.CASCADE,
         ),
-        ForeignKey(
-            entity = ExerciseEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["exerciseId"],
-            onDelete = ForeignKey.RESTRICT,
-        ),
     ],
-    indices = [Index("sessionId"), Index("exerciseId")],
+    indices = [
+        Index("supplementId"),
+        Index(value = ["date", "supplementId"], unique = true)
+    ],
 )
-data class SetLogEntity(
+data class SupplementIntakeLogEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val sessionId: Long,
-    val exerciseId: Long,
-    val roundNumber: Int,
-    val reps: Int? = null,
-    val durationSeconds: Int? = null,
-    val weightKg: Float? = null,
-    val loggedAt: Instant,
+    val supplementId: Long,
+    val date: LocalDate,
+    val taken: Boolean = false,
+    val actualAmount: Float,
 )"""
-setlog_new = """@Entity(
-    tableName = "set_logs",
+text = text.replace(target_supp_logs, replacement_supp_logs)
+
+target_inventory = """@Entity(
+    tableName = "supply_inventory",
+    indices = [Index(value = ["type"], unique = true)],
+)
+data class SupplyInventoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val type: SupplyType,
+    val totalServings: Int,
+    val servingsRemaining: Float,
+    val startDate: LocalDate,
+)"""
+replacement_inventory = """@Entity(
+    tableName = "supply_inventory",
     foreignKeys = [
         ForeignKey(
-            entity = WorkoutSessionEntity::class,
+            entity = SupplementEntity::class,
             parentColumns = ["id"],
-            childColumns = ["sessionId"],
+            childColumns = ["supplementId"],
             onDelete = ForeignKey.CASCADE,
         ),
-        ForeignKey(
-            entity = ExerciseEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["exerciseId"],
-            onDelete = ForeignKey.RESTRICT,
-        ),
-        ForeignKey(
-            entity = ExerciseEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["substitutedFrom"],
-            onDelete = ForeignKey.SET_NULL,
-        ),
     ],
-    indices = [Index("sessionId"), Index("exerciseId"), Index("substitutedFrom")],
+    indices = [Index(value = ["supplementId"], unique = true)],
 )
-data class SetLogEntity(
+data class SupplyInventoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val sessionId: Long,
-    val exerciseId: Long,
-    val roundNumber: Int,
-    val reps: Int? = null,
-    val durationSeconds: Int? = null,
-    val weightKg: Float? = null,
-    val loggedAt: Instant,
-    val rpeTag: String? = null,
-    val substitutedFrom: Long? = null,
+    val supplementId: Long,
+    val totalServings: Int,
+    val servingsRemaining: Float,
+    val startDate: LocalDate,
 )"""
-text = text.replace(setlog_old, setlog_new)
+text = text.replace(target_inventory, replacement_inventory)
 
 with open("app/src/main/java/com/example/repsgrams/data/db/Entities.kt", "w") as f:
     f.write(text)

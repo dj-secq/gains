@@ -53,35 +53,13 @@ class WorkManagerReminderScheduler(
         }
     }
 
-    override suspend fun scheduleNextCreatineReminder() {
-        val settings = settingsRepository.settings.first()
-        if (settings.remindersEnabled && settings.creatineReminderEnabled) {
-            enqueueCreatine(
-                ReminderTiming.delayUntilNext(ZonedDateTime.now(clock), settings.creatineReminderTime),
-                ExistingWorkPolicy.APPEND_OR_REPLACE,
-            )
-        }
+    
     }
 
-    override suspend fun schedulePostWorkoutWhey(session: WorkoutSessionEntity) {
-        val settings = settingsRepository.settings.first()
-        if (!settings.remindersEnabled || !settings.postWorkoutWheyReminderEnabled) return
-        val input = Data.Builder()
-            .putLong(PostWorkoutWheyWorker.KEY_DATE_EPOCH_DAY, session.date.toEpochDay())
-            .putLong(PostWorkoutWheyWorker.KEY_SESSION_ID, session.id)
-            .build()
-        val request = OneTimeWorkRequestBuilder<PostWorkoutWheyWorker>()
-            .setInitialDelay(Duration.ofMinutes(settings.postWorkoutWheyDelayMinutes.toLong()))
-            .setInputData(input)
-            .addTag(TAG_WHEY)
-            .addTag(wheyDateTag(session.date.toEpochDay()))
-            .build()
-        workManager.enqueueUniqueWork("post-workout-whey-${session.id}", ExistingWorkPolicy.REPLACE, request)
+    ", ExistingWorkPolicy.REPLACE, request)
     }
 
-    override fun cancelPostWorkoutWhey(dateEpochDay: Long) {
-        workManager.cancelAllWorkByTag(wheyDateTag(dateEpochDay))
-    }
+    
 
     private fun enqueueWorkout(delay: Duration, policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE) {
         val request = OneTimeWorkRequestBuilder<WorkoutReminderWorker>()

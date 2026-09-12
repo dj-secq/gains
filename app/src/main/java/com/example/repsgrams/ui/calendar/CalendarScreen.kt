@@ -1,4 +1,6 @@
 package com.example.repsgrams.ui.calendar
+import com.example.repsgrams.ui.components.shimmer
+import androidx.compose.ui.draw.clip
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -64,7 +66,7 @@ fun CalendarRoute(viewModel: CalendarViewModel) {
         onToday = viewModel::showToday,
         onSelectDate = viewModel::selectDate,
         onDismissDay = viewModel::closeDay,
-        onReschedule = viewModel::rescheduleSelectedAs,
+        
         locale = locale,
     )
 }
@@ -81,10 +83,10 @@ fun CalendarScreen(
     onToday: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onDismissDay: () -> Unit,
-    onReschedule: (String) -> Unit,
+    
     locale: Locale,
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -98,7 +100,7 @@ fun CalendarScreen(
                 },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
+                    containerColor = Color.Transparent,
                     scrolledContainerColor = MaterialTheme.colorScheme.background
                 )
             )
@@ -108,83 +110,85 @@ fun CalendarScreen(
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (month == null) {
                 Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) { CircularProgressIndicator() }
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth().height(60.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                    Box(modifier = Modifier.fillMaxWidth().height(350.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                }
             } else {
-                Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(onClick = onPreviousMonth) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous", tint = MaterialTheme.colorScheme.primary) }
-                        Text(
-                            month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            textAlign = TextAlign.Center,
-                        )
-                        IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.primary) }
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(onClick = onPreviousMonth) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous", tint = MaterialTheme.colorScheme.primary) }
+                            Text(
+                                month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                textAlign = TextAlign.Center,
+                            )
+                            IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.primary) }
+                        }
                     }
                     
-                    IosCard {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                                listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
-                                    Text(
-                                        it,
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        textAlign = TextAlign.Center,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                    item {
+                        IosCard {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                    listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
+                                        Text(
+                                            it,
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            textAlign = TextAlign.Center,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
-                            }
-                            month.days.chunked(7).forEach { week ->
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    week.forEach { day ->
-                                        DayCell(day, day.date == today, Modifier.weight(1f), onSelectDate)
+                                month.days.chunked(7).forEach { week ->
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        week.forEach { day ->
+                                            DayCell(day, day.date == today, Modifier.weight(1f), onSelectDate)
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                     
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            IconBadge(icon = Icons.Outlined.CheckCircle, tint = AppColors.successGreen)
-                            Text("Complete", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            IconBadge(icon = Icons.Outlined.ErrorOutline, tint = AppColors.warningRed)
-                            Text("Missed", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            IconBadge(icon = Icons.Outlined.Circle, tint = MaterialTheme.colorScheme.outlineVariant)
-                            Text("Pending", style = MaterialTheme.typography.bodySmall)
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconBadge(icon = Icons.Outlined.CheckCircle, tint = AppColors.successGreen)
+                                Text("Complete", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconBadge(icon = Icons.Outlined.ErrorOutline, tint = AppColors.warningRed)
+                                Text("Missed", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconBadge(icon = Icons.Outlined.Circle, tint = MaterialTheme.colorScheme.outlineVariant)
+                                Text("Pending", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
             }
 
-            if (loadingDay && selectedDay == null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(shape = MaterialTheme.shapes.medium, shadowElevation = 8.dp) {
-                        CircularProgressIndicator(modifier = Modifier.padding(24.dp))
-                    }
-                }
-            }
+
             
             selectedDay?.let { detail ->
-                ModalBottomSheet(onDismissRequest = onDismissDay, containerColor = MaterialTheme.colorScheme.background) {
-                    DayDetail(detail, today, onReschedule)
+                ModalBottomSheet(onDismissRequest = onDismissDay) {
+                    DayDetail(detail, today)
                 }
             }
         }
@@ -219,9 +223,9 @@ private fun DayCell(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
-            if (day.slot.workoutDayLabel != null) {
+            if (day.template != null) {
                 Text(
-                    day.slot.workoutDayLabel,
+                    day.template.dayLabel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -259,7 +263,6 @@ private fun DayCell(
 private fun DayDetail(
     detail: CalendarDayDetail,
     today: LocalDate,
-    onReschedule: (String) -> Unit,
 ) {
     var pendingLabel by remember { mutableStateOf<String?>(null) }
     Column(
@@ -271,12 +274,12 @@ private fun DayDetail(
         IosCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    detail.slot.workoutDayLabel?.let { "Planned: Workout $it" } ?: "Planned: Rest day",
+                    detail.template?.dayLabel?.let { "Planned: Workout $it" } ?: "Planned: Rest day",
                     style = MaterialTheme.typography.titleMedium,
                 )
                 if (detail.date.isAfter(today)) {
                     Text("No entries yet. This is the current plan for this date.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (detail.sessions.isEmpty() && detail.slot.isWorkoutDay) {
+                } else if (detail.sessions.isEmpty() && (detail.template != null)) {
                     Text("Workout not done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 }
                 detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
@@ -286,16 +289,21 @@ private fun DayDetail(
         Text("Supplements", style = MaterialTheme.typography.titleMedium)
         IosCard {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val crTaken = detail.supplements?.creatineTaken == true
-                    IconBadge(icon = if (crTaken) Icons.Filled.Science else Icons.Outlined.Science, tint = AppColors.creatineTeal)
-                    Text("Creatine: ${if (crTaken) "Logged · 5 g" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                detail.supplements.forEachIndexed { index, pair ->
+                    val (supp, log) = pair
+                    val taken = log?.taken == true
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // Normally we'd look up icon and color from token here.
+                        // For simplicity since the app relies on semantic tokens, we just map it.
+                        IconBadge(icon = Icons.Outlined.Science, tint = MaterialTheme.colorScheme.primary)
+                        Text("${supp.name}: ${if (taken) "Logged · ${log?.actualAmount} ${supp.unit}" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (index < detail.supplements.lastIndex) {
+                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                 }
-                HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val whTaken = detail.supplements?.wheyTaken == true
-                    IconBadge(icon = if (whTaken) Icons.Filled.WaterDrop else Icons.Outlined.WaterDrop, tint = AppColors.wheyGreen)
-                    Text("Whey: ${if (whTaken) "Logged · ${detail.supplements?.wheyServings} serving" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
+                if (detail.supplements.isEmpty()) {
+                    Text("No active supplements", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -313,16 +321,7 @@ private fun DayDetail(
         }
         Spacer(Modifier.padding(bottom = 24.dp))
     }
-    pendingLabel?.let { label ->
-        IosAlertDialog(
-            title = "Shift the cycle?",
-            message = "${detail.date.format(DateTimeFormatter.ofPattern("MMM d"))} will become Workout $label. Future slots will follow from it.",
-            confirmText = "Shift cycle",
-            onConfirm = { onReschedule(label); pendingLabel = null },
-            dismissText = "Cancel",
-            onDismiss = { pendingLabel = null }
-        )
-    }
+
 }
 
 @Composable

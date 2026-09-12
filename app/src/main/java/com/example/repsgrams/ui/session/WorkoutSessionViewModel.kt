@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.datastore.SessionProgress
 import com.example.repsgrams.data.datastore.SessionProgressStore
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
+import com.example.repsgrams.data.datastore.CycleSettings
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.data.db.RepType
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -41,6 +43,7 @@ sealed interface WorkoutSessionUiState {
     data class Active(
         val workoutName: String,
         val dayLabel: String,
+        val category: String,
         val elapsedSeconds: Int,
         val maxDurationMinutes: Int,
         val blockLabel: String,
@@ -65,11 +68,11 @@ sealed interface WorkoutSessionUiState {
 
     data class Summary(
         val workoutName: String,
+        val category: String,
         val setCount: Int,
         val durationSeconds: Int,
         val maxDurationMinutes: Int,
-        val wheyTaken: Boolean,
-        val creatineTaken: Boolean,
+        val supplements: List<com.example.repsgrams.ui.today.TodaySupplement>,
     ) : WorkoutSessionUiState
 
     data class Error(val message: String) : WorkoutSessionUiState
@@ -103,6 +106,7 @@ class WorkoutSessionViewModel(
     private var weightInput = ""
     private var isSaving = false
     private var unitSystem = UnitSystem.KG
+    private var currentSettings: CycleSettings? = null
     private var progressionSuggestion: ProgressionSuggestion? = null
     private var rpeTagInput: String? = null
     private var notesInput: String = ""
@@ -232,21 +236,16 @@ class WorkoutSessionViewModel(
         viewModelScope.launch { finishAndSummarize() }
     }
 
-    fun setWheyTaken(taken: Boolean) {
-        val summary = _uiState.value as? WorkoutSessionUiState.Summary ?: return
-        _uiState.value = summary.copy(wheyTaken = taken)
-    }
+    
 
-    fun setCreatineTaken(taken: Boolean) {
-        val summary = _uiState.value as? WorkoutSessionUiState.Summary ?: return
-        _uiState.value = summary.copy(creatineTaken = taken)
-    }
+    
 
     fun saveSummary() {
         val summary = _uiState.value as? WorkoutSessionUiState.Summary ?: return
         viewModelScope.launch {
-            supplementRepository.setWheyTaken(session.date, summary.wheyTaken)
-            supplementRepository.setCreatineTaken(session.date, summary.creatineTaken)
+            for (supp in summary.supplements) {
+                supplementRepository.setSupplementTaken(session.date, supp.supplement, supp.taken)
+            }
             _summaryDone.emit(Unit)
         }
     }
@@ -284,14 +283,17 @@ class WorkoutSessionViewModel(
     }
 
     private suspend fun showSummary() {
-        val supplement = supplementRepository.observeForDate(session.date).first()
+        val allSupps = supplementRepository.observeAllSupplements().first()
+        val logs = supplementRepository.observeIntakesForDate(session.date).first()
         _uiState.value = WorkoutSessionUiState.Summary(
             workoutName = plan.name,
+            category = plan.category,
             setCount = workoutRepository.setCount(sessionId),
             durationSeconds = session.durationSeconds ?: elapsedSeconds(),
             maxDurationMinutes = plan.maxDurationMinutes,
-            wheyTaken = supplement?.wheyTaken ?: true,
-            creatineTaken = supplement?.creatineTaken ?: true,
+            supplements = allSupps.filter { it.isActive }.map { supp ->
+                com.example.repsgrams.ui.today.TodaySupplement(supp, logs.any { it.supplementId == supp.id && it.taken })
+            },
         )
     }
 
@@ -320,16 +322,8 @@ class WorkoutSessionViewModel(
     private fun tick() {
         val end = restEndEpochMillis
         if (end != null && end <= clock.millis()) {
-            restEndEpochMillis = null
-            _restFinished.tryEmit(Unit)
-            stopRestTimerService()
-            viewModelScope.launch { persistProgress() }
-            
-            // Check auto-advance (Phase 10)
-            // TODO: Actually check cycle settings. Assuming true for now.
-            // Wait, actually the ViewModel emits _restFinished and then UI does something, but if auto-advance is on, it shouldn't just sit there.
-            // Oh wait, `restEndEpochMillis = null` means the rest UI closes, and the normal active exercise UI shows. That IS auto-advance.
-            // If auto-advance is OFF, it would just sit at a "Ready?" state. We don't have that yet.
+            // Keep the Rest UI open, just clamping to 0. 
+            // The service timer will ring, and the user must explicitly hit "Skip" to stop the alarm and move on.
         }
         publishActive()
     }
@@ -351,9 +345,13 @@ class WorkoutSessionViewModel(
              upNext.add(plan.blocks[c.blockIndex].exercises[c.exerciseIndex].name)
         }
 
+        if (restEndEpochMillis == null) {
+            stopRestTimerService()
+        }
         _uiState.value = WorkoutSessionUiState.Active(
             workoutName = plan.name,
             dayLabel = plan.dayLabel,
+            category = plan.category,
             elapsedSeconds = elapsedSeconds(),
             maxDurationMinutes = plan.maxDurationMinutes,
             blockLabel = block.label,
@@ -399,7 +397,21 @@ class WorkoutSessionViewModel(
         val intent = Intent(context, RestTimerService::class.java).apply {
             action = RestTimerService.ACTION_STOP
         }
-        context.startService(intent) // stop action is safe for startService
+        try {
+            context.startService(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            context.stopService(Intent(context, RestTimerService::class.java))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            context.sendBroadcast(Intent(RestTimerService.ACTION_STOP).setPackage(context.packageName))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun currentExercise() = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]

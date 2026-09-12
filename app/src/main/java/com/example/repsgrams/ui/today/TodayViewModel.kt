@@ -4,15 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
-import com.example.repsgrams.data.db.SupplementLogEntity
+import com.example.repsgrams.data.db.SupplementEntity
 import com.example.repsgrams.data.db.SupplyInventoryEntity
-import com.example.repsgrams.data.db.SupplyType
 import com.example.repsgrams.data.repository.ProgressRepository
 import com.example.repsgrams.data.repository.ScheduleRepository
 import com.example.repsgrams.data.repository.SupplementRepository
 import com.example.repsgrams.data.repository.WorkoutRepository
 import com.example.repsgrams.domain.progress.ProgressStatsCalculator
-import com.example.repsgrams.domain.schedule.CycleSlot
+import com.example.repsgrams.domain.schedule.ScheduleSuggestion
 import com.example.repsgrams.domain.streak.StreakInfo
 import java.time.LocalDate
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,14 +26,18 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import com.example.repsgrams.domain.schedule.SuggestionStatus
 import java.time.temporal.ChronoUnit
+
+data class TodaySupplement(val supplement: SupplementEntity, val taken: Boolean)
 
 sealed interface TodayUiState {
     data object Loading : TodayUiState
+    
+    
     data class Content(
-        val slot: CycleSlot,
-        val creatineTaken: Boolean,
-        val wheyTaken: Boolean,
+        val suggestion: ScheduleSuggestion,
+        val supplements: List<TodaySupplement>,
         val activeSessionId: Long?,
         val currentStreak: Int = 0,
         val lowSupplyWarnings: List<String> = emptyList(),
@@ -57,19 +60,47 @@ class TodayViewModel(
     private val progressStatsCalculator = ProgressStatsCalculator()
 
     val uiState: StateFlow<TodayUiState> = combine(
-        scheduleRepository.slotFor(today),
-        supplementRepository.observeForDate(today),
-        workoutRepository.observeActiveSession(),
-        cycleSettingsRepository.settings.flatMapLatest { settings ->
-            progressRepository.observeStreakInfo(settings.cycleStartDate, today)
+        combine(
+            scheduleRepository.observeSuggestion(today),
+            combine(
+                supplementRepository.observeAllSupplements(),
+                supplementRepository.observeIntakesForDate(today)
+            ) { allSupps, logs ->
+                allSupps.filter { it.isActive }.map { supp ->
+                    TodaySupplement(supp, logs.any { it.supplementId == supp.id && it.taken })
+                }
+            },
+            workoutRepository.observeActiveSession()
+        ) { suggestion, todaySupps, activeSession ->
+            Triple(suggestion, todaySupps, activeSession)
         },
-        progressRepository.observeSupplyInventory()
-    ) { slot, supplements, activeSession, streakInfo, supplies ->
-        val warnings = buildWarnings(supplies)
+        combine(
+            cycleSettingsRepository.settings.flatMapLatest { settings ->
+                progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
+            },
+            progressRepository.observeSupplyInventory(),
+            supplementRepository.observeAllSupplements()
+        ) { streakInfo, supplies, allSupps ->
+            Triple(streakInfo, supplies, allSupps)
+        }
+    ) { (suggestion, todaySupps, activeSession), (streakInfo, supplies, allSupps) ->
+        // Only show supplements that are due today according to scheduleType
+        val filteredSupps = todaySupps.filter {
+            val supp = it.supplement
+            when (supp.scheduleType) {
+                "daily" -> true
+                "workoutDayOnly" -> suggestion.status == SuggestionStatus.ON_TIME || suggestion.status == SuggestionStatus.OVERDUE
+                "customDays" -> {
+                    val currentDay = today.dayOfWeek.name.take(3).capitalize()
+                    supp.customDays?.contains(currentDay, ignoreCase = true) == true
+                }
+                else -> true
+            }
+        }
+        val warnings = buildWarnings(supplies, allSupps)
         TodayUiState.Content(
-            slot = slot,
-            creatineTaken = supplements?.creatineTaken == true,
-            wheyTaken = supplements?.wheyTaken == true,
+            suggestion = suggestion,
+            supplements = filteredSupps,
             activeSessionId = activeSession?.id,
             currentStreak = streakInfo.currentStreak,
             lowSupplyWarnings = warnings
@@ -82,35 +113,23 @@ class TodayViewModel(
         initialValue = TodayUiState.Loading,
     )
 
-    private fun buildWarnings(supplies: List<SupplyInventoryEntity>): List<String> {
+    private fun buildWarnings(supplies: List<com.example.repsgrams.data.db.SupplyInventoryEntity>, allSupps: List<com.example.repsgrams.data.db.SupplementEntity>): List<String> {
         val warnings = mutableListOf<String>()
-        val whey = supplies.find { it.type == SupplyType.WHEY }
-        if (whey != null) {
-            val status = progressStatsCalculator.calculateSupplyStatus(whey, today, lowThreshold = 7f)
+        for (inv in supplies) {
+            val supp = allSupps.find { it.id == inv.supplementId } ?: continue
+            if (!supp.isActive) continue
+            val status = progressStatsCalculator.calculateSupplyStatus(inv, today, lowThreshold = supp.lowSupplyThreshold.toFloat())
             if (status.isLow) {
-                val days = status.estimatedRunOutDate?.let { ChronoUnit.DAYS.between(today, it) } ?: 0
+                val days = status.estimatedRunOutDate?.let { java.time.temporal.ChronoUnit.DAYS.between(today, it) } ?: 0
                 val timeStr = if (days > 0) "about $days days left" else "soon"
-                warnings.add("Whey running low — $timeStr.")
-            }
-        }
-        val creatine = supplies.find { it.type == SupplyType.CREATINE }
-        if (creatine != null) {
-            val status = progressStatsCalculator.calculateSupplyStatus(creatine, today, lowThreshold = 5f)
-            if (status.isLow) {
-                val days = status.estimatedRunOutDate?.let { ChronoUnit.DAYS.between(today, it) } ?: 0
-                val timeStr = if (days > 0) "about $days days left" else "soon"
-                warnings.add("Creatine running low — $timeStr.")
+                warnings.add("${supp.name} running low — $timeStr.")
             }
         }
         return warnings
     }
 
-    fun setCreatineTaken(taken: Boolean) {
-        viewModelScope.launch { supplementRepository.setCreatineTaken(today, taken) }
-    }
-
-    fun setWheyTaken(taken: Boolean) {
-        viewModelScope.launch { supplementRepository.setWheyTaken(today, taken) }
+    fun setSupplementTaken(supplement: com.example.repsgrams.data.db.SupplementEntity, taken: Boolean) {
+        viewModelScope.launch { supplementRepository.setSupplementTaken(today, supplement, taken) }
     }
 
     fun startWorkout(dayLabel: String) {

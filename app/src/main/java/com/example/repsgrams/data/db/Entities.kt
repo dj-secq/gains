@@ -27,6 +27,9 @@ data class WorkoutTemplateEntity(
     val name: String,
     val dayLabel: String,
     val maxDurationMinutes: Int,
+    val restDaysAfter: Int = 1,
+    val orderIndex: Int = 0,
+    val category: String = "Custom",
 )
 
 @Entity(
@@ -146,17 +149,42 @@ data class SetLogEntity(
     val substitutedFrom: Long? = null,
 )
 
-@Entity(
-    tableName = "supplement_logs",
-    indices = [Index(value = ["date"], unique = true)],
-)
-data class SupplementLogEntity(
+@Entity(tableName = "supplements")
+data class SupplementEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val doseAmount: Float,
+    val unit: String,
+    val scheduleType: String,
+    val customDays: String? = null,
+    val containerSize: Int,
+    val lowSupplyThreshold: Int,
+    val colorToken: String,
+    val iconName: String,
+    val isActive: Boolean = true,
+)
+
+@Entity(
+    tableName = "supplement_intake_logs",
+    foreignKeys = [
+        ForeignKey(
+            entity = SupplementEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["supplementId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("supplementId"),
+        Index(value = ["date", "supplementId"], unique = true)
+    ],
+)
+data class SupplementIntakeLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val supplementId: Long,
     val date: LocalDate,
-    val wheyTaken: Boolean = false,
-    val wheyServings: Float = 0f,
-    val creatineTaken: Boolean = false,
-    val creatineGrams: Float = 0f,
+    val taken: Boolean = false,
+    val actualAmount: Float,
 )
 
 @Entity(
@@ -171,11 +199,19 @@ data class BodyweightLogEntity(
 
 @Entity(
     tableName = "supply_inventory",
-    indices = [Index(value = ["type"], unique = true)],
+    foreignKeys = [
+        ForeignKey(
+            entity = SupplementEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["supplementId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["supplementId"], unique = true)],
 )
 data class SupplyInventoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val type: SupplyType,
+    val supplementId: Long,
     val totalServings: Int,
     val servingsRemaining: Float,
     val startDate: LocalDate,

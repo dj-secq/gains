@@ -51,14 +51,7 @@ class CalendarViewModel(
 
     fun closeDay() { _selectedDay.value = null }
 
-    fun rescheduleSelectedAs(workoutDayLabel: String) {
-        val date = _selectedDay.value?.date ?: return
-        viewModelScope.launch {
-            settingsRepository.setCycleStartDate(CalendarCalculator.cycleStartFor(date, workoutDayLabel))
-            reminderScheduler.syncDailyReminders()
-            _selectedDay.value = repository.dayDetail(date)
-        }
-    }
+
 
     companion object {
         fun factory(

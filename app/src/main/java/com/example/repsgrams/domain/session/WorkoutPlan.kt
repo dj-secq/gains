@@ -8,6 +8,7 @@ data class WorkoutPlan(
     val name: String,
     val dayLabel: String,
     val maxDurationMinutes: Int,
+    val category: String,
     val blocks: List<WorkoutBlock>,
 )
 
@@ -25,6 +26,7 @@ data class WorkoutBlock(
 data class WorkoutExercise(
     val id: Long,
     val name: String,
+    val imageAssetName: String?,
     val notes: String?,
     val tracksWeight: Boolean,
     val targetValueLow: Int,

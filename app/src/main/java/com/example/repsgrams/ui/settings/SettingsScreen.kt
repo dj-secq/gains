@@ -9,13 +9,21 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.FlashlightOn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.EventNote
 import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.ArrowForwardIos
+import androidx.compose.material.icons.outlined.ImportExport
+import androidx.compose.material.icons.outlined.MonitorWeight
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.HealthAndSafety
+
 import com.example.repsgrams.ui.theme.AppColors
 import com.example.repsgrams.ui.components.IconBadge
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -24,6 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.PermissionController
+
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -35,17 +49,62 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+
 @Composable
 fun SettingsRoute(
     viewModel: SettingsViewModel,
     onNavigateToTemplates: () -> Unit,
     onNavigateToExercises: () -> Unit,
+    onExportData: (Uri) -> Unit,
+    onImportData: (Uri) -> Unit,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) onExportData(uri)
+    }
+    
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportData(uri)
+    }
+    
+    val context = LocalContext.current
+    val hcPermissions = setOf(
+        HealthPermission.getWritePermission(ExerciseSessionRecord::class),
+        HealthPermission.getWritePermission(WeightRecord::class)
+    )
+    val permissionLauncher = rememberLauncherForActivityResult(
+        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        if (granted.containsAll(hcPermissions)) {
+            viewModel.setHealthConnectEnabled(true)
+        } else {
+            viewModel.setHealthConnectEnabled(false)
+        }
+    }
+
     if (settings != null) {
         SettingsScreen(
             settings = settings!!,
+            onExportClick = { exportLauncher.launch("repsgrams-backup-${LocalDate.now()}.zip") },
+            onImportClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
             onMasterChanged = viewModel::setMaster,
+            onTrackedMeasurements = viewModel::setTrackedMeasurements,
+            onHealthConnectEnabled = { checked ->
+                if (checked) {
+                    if (androidx.health.connect.client.HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata") == androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE) {
+                        permissionLauncher.launch(hcPermissions)
+                    } else {
+                        viewModel.setHealthConnectEnabled(false)
+                    }
+                } else {
+                    viewModel.setHealthConnectEnabled(false)
+                }
+            },
+            onVoiceCuesEnabled = viewModel::setVoiceCuesEnabled,
             onWorkoutEnabled = viewModel::setWorkoutEnabled,
             onWorkoutTime = viewModel::setWorkoutTime,
             onCreatineEnabled = viewModel::setCreatineEnabled,
@@ -55,6 +114,10 @@ fun SettingsRoute(
             onCycleDate = viewModel::setCycleStartDate,
             onUnitSystem = viewModel::setUnitSystem,
             onWheyGrams = viewModel::setWheyServingGrams,
+            onRestTimerAutoAdvance = viewModel::setRestTimerAutoAdvance,
+            onRestTimerVibrationEnabled = viewModel::setRestTimerVibrationEnabled,
+            onDefaultRestSeconds = viewModel::updateDefaultRestSeconds,
+            onThemeMode = viewModel::setThemeMode,
             onProteinGoal = viewModel::setProteinGoalMultiplier,
             onNavigateToTemplates = onNavigateToTemplates,
             onNavigateToExercises = onNavigateToExercises,
@@ -67,6 +130,11 @@ fun SettingsRoute(
 fun SettingsScreen(
     settings: com.example.repsgrams.data.datastore.CycleSettings,
     onMasterChanged: (Boolean) -> Unit,
+    onTrackedMeasurements: (Set<String>) -> Unit,
+    onHealthConnectEnabled: (Boolean) -> Unit,
+    onVoiceCuesEnabled: (Boolean) -> Unit,
+    onExportClick: () -> Unit,
+    onImportClick: () -> Unit,
     onWorkoutEnabled: (Boolean) -> Unit,
     onWorkoutTime: (LocalTime) -> Unit,
     onCreatineEnabled: (Boolean) -> Unit,
@@ -77,10 +145,14 @@ fun SettingsScreen(
     onUnitSystem: (UnitSystem) -> Unit,
     onWheyGrams: (Float) -> Unit,
     onProteinGoal: (Float, Float) -> Unit,
+    onRestTimerAutoAdvance: (Boolean) -> Unit,
+    onRestTimerVibrationEnabled: (Boolean) -> Unit,
+    onDefaultRestSeconds: (Int) -> Unit,
+    onThemeMode: (com.example.repsgrams.data.datastore.ThemeMode) -> Unit,
     onNavigateToTemplates: () -> Unit,
     onNavigateToExercises: () -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -89,7 +161,7 @@ fun SettingsScreen(
                 title = { Text("Settings", fontWeight = FontWeight.Bold) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
+                    containerColor = Color.Transparent,
                     scrolledContainerColor = MaterialTheme.colorScheme.background
                 )
             )
@@ -142,12 +214,61 @@ fun SettingsScreen(
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Column {
+                                Text("Theme", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    IosButton(text = "System", onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.SYSTEM) }, isSecondary = settings.themeMode != com.example.repsgrams.data.datastore.ThemeMode.SYSTEM, modifier = Modifier.weight(1f))
+                                    IosButton(text = "Light", onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.LIGHT) }, isSecondary = settings.themeMode != com.example.repsgrams.data.datastore.ThemeMode.LIGHT, modifier = Modifier.weight(1f))
+                                    IosButton(text = "Dark", onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.DARK) }, isSecondary = settings.themeMode != com.example.repsgrams.data.datastore.ThemeMode.DARK, modifier = Modifier.weight(1f))
+                                }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Column {
                                 Text("Unit System", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     IosButton(text = "Metric (kg)", onClick = { onUnitSystem(UnitSystem.KG) }, isSecondary = settings.unitSystem != UnitSystem.KG, modifier = Modifier.weight(1f))
                                     IosButton(text = "Imperial (lb)", onClick = { onUnitSystem(UnitSystem.LB) }, isSecondary = settings.unitSystem != UnitSystem.LB, modifier = Modifier.weight(1f))
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("REST TIMER", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+                    IosCard {
+                        Column {
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    IconBadge(Icons.Outlined.Timer, AppColors.workout)
+                                    Column {
+                                        Text("Default Rest Time", style = MaterialTheme.typography.bodyLarge)
+                                        Text("${settings.defaultRestSeconds} seconds", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { if (settings.defaultRestSeconds > 15) onDefaultRestSeconds(settings.defaultRestSeconds - 15) }) { Text("-") }
+                                    IconButton(onClick = { onDefaultRestSeconds(settings.defaultRestSeconds + 15) }) { Text("+") }
+                                }
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            SettingToggle(
+                                "Vibrate on Finish",
+                                "Vibrate device when rest period ends",
+                                Icons.Outlined.Vibration,
+                                AppColors.workout,
+                                settings.restTimerVibrationEnabled,
+                                true,
+                                onRestTimerVibrationEnabled,
+                            )
                         }
                     }
                 }
@@ -213,6 +334,92 @@ fun SettingsScreen(
             }
             
             item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("DATA & BACKUP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+                    IosCard {
+                        Column {
+                            Row(modifier = Modifier.fillMaxWidth().clickable { onExportClick() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                IconBadge(icon = Icons.Outlined.ImportExport, tint = AppColors.progressPurple)
+                                Text("Export Data (Backup)", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(modifier = Modifier.fillMaxWidth().clickable { onImportClick() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                IconBadge(icon = Icons.Outlined.ImportExport, tint = AppColors.progressPurple)
+                                Text("Import Data", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+            
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("HEALTH & INTEGRATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+                    IosCard {
+                        Column {
+                            SettingToggle(
+                                "Health Connect", 
+                                "Sync workouts to Health Connect", 
+                                Icons.Outlined.HealthAndSafety, 
+                                AppColors.workout, 
+                                checked = settings.healthConnectEnabled, 
+                                enabled = true, 
+                                onChecked = { checked ->
+                                    onHealthConnectEnabled(checked)
+                                }
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            SettingToggle(
+                                "Voice Cues", 
+                                "Audio cues during workout", 
+                                Icons.Outlined.RecordVoiceOver, 
+                                AppColors.creatineTeal, 
+                                checked = settings.voiceCuesEnabled, 
+                                enabled = true, 
+                                onChecked = onVoiceCuesEnabled
+                            )
+                        }
+                    }
+                }
+            }
+            
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("MEASUREMENTS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+                    IosCard {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Tracked Body Measurements", style = MaterialTheme.typography.bodyLarge)
+                            Text("Select the measurements you want to track in Progress", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(12.dp))
+                            val options = listOf("waist", "chest", "arms", "thighs", "calves", "shoulders", "neck")
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                options.forEach { option ->
+                                    val isSelected = settings.trackedMeasurements.contains(option)
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            val newSet = if (isSelected) settings.trackedMeasurements - option else settings.trackedMeasurements + option
+                                            onTrackedMeasurements(newSet)
+                                        },
+                                        label = { Text(option.replaceFirstChar { it.uppercase() }) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = AppColors.progressPurple,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
                 ReminderCard(
                     title = "Workout Day",
                     description = "Only if today's workout hasn't started",
@@ -262,6 +469,7 @@ fun SettingsScreen(
                     }
                 }
             }
+
         }
     }
 }
@@ -286,6 +494,7 @@ private fun ReminderCard(
                     content()
                 }
             }
+
         }
     }
 }

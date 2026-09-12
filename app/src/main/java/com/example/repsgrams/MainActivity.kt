@@ -12,6 +12,13 @@ import com.example.repsgrams.reminder.ReminderNotifications
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.os.Build
+
 
 class MainActivity : ComponentActivity() {
     private var notificationTarget by mutableStateOf<String?>(null)
@@ -23,7 +30,28 @@ class MainActivity : ComponentActivity() {
         notificationTarget = intent.getStringExtra(ReminderNotifications.EXTRA_TARGET)
         val container = (application as RepsGramsApplication).container
         setContent {
-            RepsGramsTheme {
+            val permissionsLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestMultiplePermissions()
+            ) { _ -> }
+
+            LaunchedEffect(Unit) {
+                val permissions = mutableListOf<String>()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+
+                if (permissions.isNotEmpty()) {
+                    permissionsLauncher.launch(permissions.toTypedArray())
+                }
+            }
+
+            val settings by container.cycleSettingsRepository.settings.collectAsState(initial = null)
+            val darkTheme = when (settings?.themeMode) {
+                com.example.repsgrams.data.datastore.ThemeMode.LIGHT -> false
+                com.example.repsgrams.data.datastore.ThemeMode.DARK -> true
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            RepsGramsTheme(darkTheme = darkTheme) {
                 RepsGramsApp(container, notificationTarget) { notificationTarget = null }
             }
         }

@@ -86,6 +86,7 @@ class SessionNavigatorTest {
                 targetValueHigh = 12,
                 repType = RepType.REPS,
                 perSide = false,
+                imageAssetName = null,
             )
         },
     )

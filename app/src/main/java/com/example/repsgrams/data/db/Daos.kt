@@ -37,6 +37,8 @@ interface WorkoutTemplateDao {
 
     @Query("SELECT * FROM workout_templates ORDER BY dayLabel")
     fun observeAll(): Flow<List<WorkoutTemplateEntity>>
+    @Query("SELECT * FROM workout_templates ORDER BY id ASC")
+    suspend fun getAll(): List<WorkoutTemplateEntity>
 
     @Query("SELECT * FROM workout_templates WHERE dayLabel = :dayLabel")
     suspend fun getByDayLabel(dayLabel: String): WorkoutTemplateEntity?
@@ -99,6 +101,12 @@ interface WorkoutSessionDao {
 
     @Query("SELECT * FROM workout_sessions WHERE completed = 0 ORDER BY startTime DESC LIMIT 1")
     suspend fun getActive(): WorkoutSessionEntity?
+    
+    @Query("SELECT * FROM workout_sessions WHERE completed = 1 ORDER BY date DESC, endTime DESC LIMIT 1")
+    fun observeLastCompletedSession(): Flow<WorkoutSessionEntity?>
+    
+    @Query("SELECT * FROM workout_sessions WHERE completed = 1 ORDER BY date DESC, endTime DESC LIMIT 1")
+    suspend fun getLastCompletedSession(): WorkoutSessionEntity?
 
     @Query("SELECT * FROM workout_sessions WHERE id = :id")
     suspend fun getById(id: Long): WorkoutSessionEntity?
@@ -114,6 +122,11 @@ interface WorkoutSessionDao {
 
     @Query("SELECT * FROM workout_sessions WHERE date BETWEEN :start AND :end ORDER BY date, startTime")
     fun observeInRange(start: LocalDate, end: LocalDate): Flow<List<WorkoutSessionEntity>>
+    @Query("SELECT * FROM workout_sessions")
+    fun observeAll(): Flow<List<WorkoutSessionEntity>>
+
+    @Query("SELECT COUNT(*) > 0 FROM workout_sessions WHERE templateId = :templateId")
+    suspend fun hasHistory(templateId: Long): Boolean
 
     @Query("SELECT * FROM workout_sessions WHERE templateId = :templateId AND date < :beforeDate ORDER BY date DESC, startTime DESC LIMIT :limit")
     suspend fun getRecentForTemplate(templateId: Long, beforeDate: LocalDate, limit: Int): List<WorkoutSessionEntity>
@@ -219,18 +232,48 @@ interface SetLogDao {
 }
 
 @Dao
-interface SupplementLogDao {
-    @Query("SELECT * FROM supplement_logs WHERE date = :date")
-    fun observeForDate(date: LocalDate): Flow<SupplementLogEntity?>
+interface SupplementDao {
+    @Query("SELECT * FROM supplements")
+    fun observeAll(): Flow<List<SupplementEntity>>
 
-    @Query("SELECT * FROM supplement_logs WHERE date = :date")
-    suspend fun getForDate(date: LocalDate): SupplementLogEntity?
-
-    @Query("SELECT * FROM supplement_logs WHERE date BETWEEN :start AND :end ORDER BY date")
-    fun observeInRange(start: LocalDate, end: LocalDate): Flow<List<SupplementLogEntity>>
+    @Query("SELECT * FROM supplements WHERE id = :id")
+    suspend fun getById(id: Long): SupplementEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(log: SupplementLogEntity): Long
+    suspend fun insert(supplement: SupplementEntity): Long
+
+    @Update
+    suspend fun update(supplement: SupplementEntity)
+
+    @Delete
+    suspend fun delete(supplement: SupplementEntity)
+}
+
+@Dao
+interface SupplementIntakeLogDao {
+    @Query("SELECT * FROM supplement_intake_logs WHERE date = :date")
+    fun observeForDate(date: LocalDate): Flow<List<SupplementIntakeLogEntity>>
+
+    @Query("SELECT * FROM supplement_intake_logs WHERE date = :date AND supplementId = :supplementId")
+    suspend fun getForDateAndSupplement(date: LocalDate, supplementId: Long): SupplementIntakeLogEntity?
+
+    @Query("SELECT * FROM supplement_intake_logs WHERE date BETWEEN :start AND :end ORDER BY date")
+    fun observeInRange(start: LocalDate, end: LocalDate): Flow<List<SupplementIntakeLogEntity>>
+
+    @Query("SELECT * FROM supplement_intake_logs")
+    fun observeAll(): Flow<List<SupplementIntakeLogEntity>>
+    
+    @Query("SELECT COUNT(*) > 0 FROM supplement_intake_logs WHERE supplementId = :supplementId")
+    suspend fun hasHistory(supplementId: Long): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(log: SupplementIntakeLogEntity): Long
+    
+    @Update
+    suspend fun update(log: SupplementIntakeLogEntity)
+    
+    @Delete
+    suspend fun delete(log: SupplementIntakeLogEntity)
 }
 
 @Dao
@@ -250,20 +293,20 @@ interface BodyweightLogDao {
 
 @Dao
 interface SupplyInventoryDao {
-    @Query("SELECT * FROM supply_inventory ORDER BY type")
+    @Query("SELECT * FROM supply_inventory ORDER BY supplementId")
     fun observeAll(): Flow<List<SupplyInventoryEntity>>
 
-    @Query("SELECT * FROM supply_inventory WHERE type = :type")
-    suspend fun get(type: SupplyType): SupplyInventoryEntity?
+    @Query("SELECT * FROM supply_inventory WHERE supplementId = :supplementId")
+    suspend fun get(supplementId: Long): SupplyInventoryEntity?
 
-    @Query("SELECT * FROM supply_inventory ORDER BY type")
+    @Query("SELECT * FROM supply_inventory ORDER BY supplementId")
     suspend fun getAll(): List<SupplyInventoryEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(inventory: SupplyInventoryEntity): Long
+    suspend fun insert(inventory: SupplyInventoryEntity): Long
 
-    @Query("UPDATE supply_inventory SET servingsRemaining = MAX(0, servingsRemaining + :delta) WHERE type = :type")
-    suspend fun adjustRemaining(type: SupplyType, delta: Float): Int
+    @Update
+    suspend fun update(inventory: SupplyInventoryEntity)
 }
 
 
@@ -301,6 +344,9 @@ interface AchievementDao {
 
     @Query("SELECT * FROM achievements ORDER BY unlockedDate DESC")
     fun observeAll(): Flow<List<AchievementEntity>>
+    
+    @Query("SELECT COUNT(*) FROM achievements WHERE `key` = :key")
+    suspend fun hasAchievement(key: String): Int
 }
 
 @Dao

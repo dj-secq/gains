@@ -17,12 +17,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TemplateBlockExerciseEntity::class,
         WorkoutSessionEntity::class,
         SetLogEntity::class,
-        SupplementLogEntity::class,
+        SupplementEntity::class, SupplementIntakeLogEntity::class,
         BodyweightLogEntity::class,
         SupplyInventoryEntity::class,
         DatabaseMetadataEntity::class,
     ],
-    version = 3,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(DatabaseConverters::class)
@@ -33,7 +33,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun templateBlockExerciseDao(): TemplateBlockExerciseDao
     abstract fun workoutSessionDao(): WorkoutSessionDao
     abstract fun setLogDao(): SetLogDao
-    abstract fun supplementLogDao(): SupplementLogDao
+    abstract fun supplementDao(): SupplementDao
+    abstract fun supplementIntakeLogDao(): SupplementIntakeLogDao
     abstract fun bodyweightLogDao(): BodyweightLogDao
     abstract fun supplyInventoryDao(): SupplyInventoryDao
     abstract fun personalRecordDao(): PersonalRecordDao
@@ -42,6 +43,89 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun databaseMetadataDao(): DatabaseMetadataDao
 
     companion object {
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create supplements table
+                db.execSQL(
+                    "CREATE TABLE `supplements` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`name` TEXT NOT NULL, " +
+                    "`doseAmount` REAL NOT NULL, " +
+                    "`unit` TEXT NOT NULL, " +
+                    "`scheduleType` TEXT NOT NULL, " +
+                    "`customDays` TEXT, " +
+                    "`containerSize` INTEGER NOT NULL, " +
+                    "`lowSupplyThreshold` INTEGER NOT NULL, " +
+                    "`colorToken` TEXT NOT NULL, " +
+                    "`iconName` TEXT NOT NULL, " +
+                    "`isActive` INTEGER NOT NULL" +
+                    ")"
+                )
+
+                // Create supplement_intake_logs table
+                db.execSQL(
+                    "CREATE TABLE `supplement_intake_logs` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`supplementId` INTEGER NOT NULL, " +
+                    "`date` TEXT NOT NULL, " +
+                    "`taken` INTEGER NOT NULL, " +
+                    "`actualAmount` REAL NOT NULL, " +
+                    "FOREIGN KEY(`supplementId`) REFERENCES `supplements`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE" +
+                    ")"
+                )
+                db.execSQL("CREATE INDEX `index_supplement_intake_logs_supplementId` ON `supplement_intake_logs` (`supplementId`)")
+                db.execSQL("CREATE UNIQUE INDEX `index_supplement_intake_logs_date_supplementId` ON `supplement_intake_logs` (`date`, `supplementId`)")
+
+                // Create new supply_inventory table
+                db.execSQL(
+                    "CREATE TABLE `supply_inventory_new` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`supplementId` INTEGER NOT NULL, " +
+                    "`totalServings` INTEGER NOT NULL, " +
+                    "`servingsRemaining` REAL NOT NULL, " +
+                    "`startDate` TEXT NOT NULL, " +
+                    "FOREIGN KEY(`supplementId`) REFERENCES `supplements`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE" +
+                    ")"
+                )
+                db.execSQL("CREATE UNIQUE INDEX `index_supply_inventory_supplementId` ON `supply_inventory_new` (`supplementId`)")
+
+                // Seed supplements
+                db.execSQL(
+                    "INSERT INTO supplements (id, name, doseAmount, unit, scheduleType, customDays, containerSize, lowSupplyThreshold, colorToken, iconName, isActive) " +
+                    "VALUES (1, 'Promatrix Whey', 25.0, 'g', 'workoutDayOnly', NULL, 90, 10, 'wheyGreen', 'WaterDrop', 1)"
+                )
+                db.execSQL(
+                    "INSERT INTO supplements (id, name, doseAmount, unit, scheduleType, customDays, containerSize, lowSupplyThreshold, colorToken, iconName, isActive) " +
+                    "VALUES (2, 'Creatine Monohydrate', 5.0, 'g', 'daily', NULL, 60, 10, 'creatineTeal', 'Science', 1)"
+                )
+
+                // Migrate logs
+                db.execSQL("INSERT INTO supplement_intake_logs (supplementId, date, taken, actualAmount) SELECT 1, date, wheyTaken, wheyServings FROM supplement_logs WHERE wheyTaken = 1 OR wheyServings > 0")
+                db.execSQL("INSERT INTO supplement_intake_logs (supplementId, date, taken, actualAmount) SELECT 2, date, creatineTaken, creatineGrams FROM supplement_logs WHERE creatineTaken = 1 OR creatineGrams > 0")
+
+                // Migrate inventory
+                db.execSQL("INSERT INTO supply_inventory_new (id, supplementId, totalServings, servingsRemaining, startDate) SELECT id, 1, totalServings, servingsRemaining, startDate FROM supply_inventory WHERE type = 'WHEY'")
+                db.execSQL("INSERT INTO supply_inventory_new (id, supplementId, totalServings, servingsRemaining, startDate) SELECT id, 2, totalServings, servingsRemaining, startDate FROM supply_inventory WHERE type = 'CREATINE'")
+
+                // Drop old tables and rename new
+                db.execSQL("DROP TABLE supplement_logs")
+                db.execSQL("DROP TABLE supply_inventory")
+                db.execSQL("ALTER TABLE supply_inventory_new RENAME TO supply_inventory")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE workout_templates ADD COLUMN restDaysAfter INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE workout_templates ADD COLUMN orderIndex INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE workout_templates ADD COLUMN category TEXT NOT NULL DEFAULT 'Custom'")
+                
+                // Backfill existing templates with order matching their names if possible
+                db.execSQL("UPDATE workout_templates SET orderIndex = 0, restDaysAfter = 1 WHERE name LIKE '%A %'")
+                db.execSQL("UPDATE workout_templates SET orderIndex = 1, restDaysAfter = 2 WHERE name LIKE '%B %'")
+            }
+        }
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""

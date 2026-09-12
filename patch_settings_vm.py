@@ -3,12 +3,28 @@ import re
 with open("app/src/main/java/com/example/repsgrams/ui/settings/SettingsViewModel.kt", "r") as f:
     text = f.read()
 
-method = """
-    fun setTrackedMeasurements(measurements: Set<String>) {
-        viewModelScope.launch { repository.setTrackedMeasurements(measurements) }
+funcs = """    fun setTrackedMeasurements(measurements: Set<String>) {
+        viewModelScope.launch {
+            repository.setTrackedMeasurements(measurements)
+        }
     }
-"""
-text = text.replace("    fun setAutoAdvanceEnabled(enabled: Boolean) {", method + "    fun setAutoAdvanceEnabled(enabled: Boolean) {")
+
+    fun setHealthConnectEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setHealthConnectEnabled(enabled)
+        }
+    }
+    
+    fun setVoiceCuesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setVoiceCuesEnabled(enabled)
+        }
+    }
+
+}"""
+
+text = re.sub(r'\}$', funcs, text)
 
 with open("app/src/main/java/com/example/repsgrams/ui/settings/SettingsViewModel.kt", "w") as f:
     f.write(text)
+

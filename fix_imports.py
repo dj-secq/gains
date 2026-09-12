@@ -1,27 +1,21 @@
 import re
+import os
 
-with open("app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionViewModel.kt", "r") as f:
-    text = f.read()
+files = {
+    "app/src/main/java/com/example/repsgrams/ui/calendar/CalendarScreen.kt": ["import androidx.compose.ui.draw.clip"],
+    "app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionScreen.kt": ["import androidx.compose.ui.draw.clip"],
+    "app/src/main/java/com/example/repsgrams/ui/today/TodayScreen.kt": ["import androidx.compose.ui.draw.clip"],
+    "app/src/main/java/com/example/repsgrams/ui/components/IosComponents.kt": ["import androidx.compose.ui.draw.clip", "import androidx.compose.animation.core.animateFloat"]
+}
 
-# Strip out all occurrences of these imports
-bad_imports = [
-    "import android.content.Context\\n",
-    "import android.content.Intent\\n",
-    "import androidx.core.content.ContextCompat\\n",
-    "import com.example.repsgrams.service.RestTimerService\\n",
-    "import androidx.lifecycle.ViewModel\\n"
-]
-for b in bad_imports:
-    text = re.sub(b, "", text)
+for filepath, imports in files.items():
+    with open(filepath, "r") as f:
+        text = f.read()
+    
+    for imp in imports:
+        if imp not in text:
+            text = text.replace("package ", f"{imp}\npackage ")
+    
+    with open(filepath, "w") as f:
+        f.write(text)
 
-# Add them back once at the top
-good_imports = """import android.content.Context
-import android.content.Intent
-import androidx.core.content.ContextCompat
-import com.example.repsgrams.service.RestTimerService
-import androidx.lifecycle.ViewModel
-"""
-text = text.replace("package com.example.repsgrams.ui.session\n\n", "package com.example.repsgrams.ui.session\n\n" + good_imports)
-
-with open("app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionViewModel.kt", "w") as f:
-    f.write(text)

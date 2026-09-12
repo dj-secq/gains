@@ -57,6 +57,8 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant = LightDivider
 )
 
+val LocalDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 fun RepsGramsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -73,11 +75,11 @@ fun RepsGramsTheme(
 }
 
 object AppColors {
-    val workout: Color @Composable get() = if (isSystemInDarkTheme()) DarkWorkoutOrange else WorkoutOrange
-    val wheyGreen: Color @Composable get() = if (isSystemInDarkTheme()) DarkWheyGreen else WheyGreen
-    val creatineTeal: Color @Composable get() = if (isSystemInDarkTheme()) DarkCreatineTeal else CreatineTeal
-    val progressPurple: Color @Composable get() = if (isSystemInDarkTheme()) DarkProgressPurple else ProgressPurple
-    val streakAmber: Color @Composable get() = if (isSystemInDarkTheme()) DarkStreakAmber else StreakAmber
-    val successGreen: Color @Composable get() = if (isSystemInDarkTheme()) DarkSuccessGreen else SuccessGreen
-    val warningRed: Color @Composable get() = if (isSystemInDarkTheme()) DarkWarningRed else WarningRed
+    val workout: Color @Composable get() = if (LocalDarkTheme.current) DarkWorkoutOrange else WorkoutOrange
+    val wheyGreen: Color @Composable get() = if (LocalDarkTheme.current) DarkWheyGreen else WheyGreen
+    val creatineTeal: Color @Composable get() = if (LocalDarkTheme.current) DarkCreatineTeal else CreatineTeal
+    val progressPurple: Color @Composable get() = if (LocalDarkTheme.current) DarkProgressPurple else ProgressPurple
+    val streakAmber: Color @Composable get() = if (LocalDarkTheme.current) DarkStreakAmber else StreakAmber
+    val successGreen: Color @Composable get() = if (LocalDarkTheme.current) DarkSuccessGreen else SuccessGreen
+    val warningRed: Color @Composable get() = if (LocalDarkTheme.current) DarkWarningRed else WarningRed
 }

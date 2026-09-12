@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import java.time.Clock
@@ -15,10 +16,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class UnitSystem { KG, LB }
 
 data class CycleSettings(
-    val cycleStartDate: LocalDate,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val cycleStartDate: LocalDate, // Deprecated, unused by scheduling engine
+    val adherenceGraceDays: Int = 1,
     val wheyServingGrams: Float,
     val proteinGoalMultiplierLow: Float,
     val proteinGoalMultiplierHigh: Float,
@@ -33,11 +37,18 @@ data class CycleSettings(
     val restTimerSound: String,
     val restTimerVibrationEnabled: Boolean,
     val restTimerAutoAdvance: Boolean,
+    val defaultRestSeconds: Int = 90,
+    val trackedMeasurements: Set<String>,
+    val healthConnectEnabled: Boolean,
+    val voiceCuesEnabled: Boolean,
 )
 
 interface CycleSettingsRepository {
     val settings: Flow<CycleSettings>
     suspend fun ensureInitialized()
+    suspend fun setTrackedMeasurements(measurements: Set<String>)
+    suspend fun setHealthConnectEnabled(enabled: Boolean)
+    suspend fun setVoiceCuesEnabled(enabled: Boolean)
     suspend fun setCycleStartDate(date: LocalDate)
     suspend fun setWheyServingGrams(grams: Float)
     suspend fun setProteinGoalMultipliers(low: Float, high: Float)
@@ -52,6 +63,8 @@ interface CycleSettingsRepository {
     suspend fun setRestTimerSound(sound: String)
     suspend fun setRestTimerVibrationEnabled(enabled: Boolean)
     suspend fun setRestTimerAutoAdvance(enabled: Boolean)
+    suspend fun setDefaultRestSeconds(seconds: Int)
+    suspend fun setThemeMode(mode: ThemeMode)
 }
 
 val Context.cycleSettingsDataStore by preferencesDataStore(name = "cycle_settings")
@@ -65,6 +78,18 @@ class PreferencesCycleSettingsRepository(
             if (error is IOException) emit(androidx.datastore.preferences.core.emptyPreferences()) else throw error
         }
         .map(::toSettings)
+
+    override suspend fun setTrackedMeasurements(measurements: Set<String>) {
+        context.cycleSettingsDataStore.edit { it[TRACKED_MEASUREMENTS] = measurements }
+    }
+    
+    override suspend fun setHealthConnectEnabled(enabled: Boolean) {
+        context.cycleSettingsDataStore.edit { it[HEALTH_CONNECT_ENABLED] = enabled }
+    }
+    
+    override suspend fun setVoiceCuesEnabled(enabled: Boolean) {
+        context.cycleSettingsDataStore.edit { it[VOICE_CUES_ENABLED] = enabled }
+    }
 
     override suspend fun ensureInitialized() {
         context.cycleSettingsDataStore.edit { preferences ->
@@ -120,8 +145,11 @@ class PreferencesCycleSettingsRepository(
     override suspend fun setRestTimerSound(sound: String) = update(REST_TIMER_SOUND, sound)
     override suspend fun setRestTimerVibrationEnabled(enabled: Boolean) = update(REST_TIMER_VIBRATION, enabled)
     override suspend fun setRestTimerAutoAdvance(enabled: Boolean) = update(REST_TIMER_AUTO_ADVANCE, enabled)
+    override suspend fun setThemeMode(mode: ThemeMode) = update(THEME_MODE, mode.name)
+    override suspend fun setDefaultRestSeconds(seconds: Int) = update(DEFAULT_REST_SECONDS, seconds)
 
     private fun toSettings(preferences: Preferences) = CycleSettings(
+        themeMode = preferences[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
         cycleStartDate = preferences[CYCLE_START_DATE]
             ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             ?: LocalDate.now(clock),
@@ -139,6 +167,10 @@ class PreferencesCycleSettingsRepository(
         restTimerSound = preferences[REST_TIMER_SOUND] ?: "default",
         restTimerVibrationEnabled = preferences[REST_TIMER_VIBRATION] ?: true,
         restTimerAutoAdvance = preferences[REST_TIMER_AUTO_ADVANCE] ?: true,
+        defaultRestSeconds = preferences[DEFAULT_REST_SECONDS] ?: 90,
+        trackedMeasurements = preferences[TRACKED_MEASUREMENTS] ?: emptySet(),
+        healthConnectEnabled = preferences[HEALTH_CONNECT_ENABLED] ?: false,
+        voiceCuesEnabled = preferences[VOICE_CUES_ENABLED] ?: false,
     )
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) {
@@ -163,6 +195,11 @@ class PreferencesCycleSettingsRepository(
         val REST_TIMER_SOUND = stringPreferencesKey("rest_timer_sound")
         val REST_TIMER_VIBRATION = booleanPreferencesKey("rest_timer_vibration")
         val REST_TIMER_AUTO_ADVANCE = booleanPreferencesKey("rest_timer_auto_advance")
+        val TRACKED_MEASUREMENTS = androidx.datastore.preferences.core.stringSetPreferencesKey("tracked_measurements")
+        val HEALTH_CONNECT_ENABLED = booleanPreferencesKey("health_connect_enabled")
+        val VOICE_CUES_ENABLED = booleanPreferencesKey("voice_cues_enabled")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val DEFAULT_REST_SECONDS = androidx.datastore.preferences.core.intPreferencesKey("default_rest_seconds")
     }
 }
 

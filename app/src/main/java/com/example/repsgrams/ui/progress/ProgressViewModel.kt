@@ -7,7 +7,7 @@ import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.CycleSettings
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.ExerciseSetHistoryRow
-import com.example.repsgrams.data.db.SupplementLogEntity
+
 import com.example.repsgrams.data.db.SupplyInventoryEntity
 import com.example.repsgrams.data.db.BodyweightLogEntity
 import com.example.repsgrams.data.db.SupplyType
@@ -28,7 +28,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ProgressUiState(
-    val exercises: List<ExerciseEntity> = emptyList(),
+    val exercises: List<com.example.repsgrams.data.db.ExerciseEntity> = emptyList(),
+    val selectedExerciseId: Long? = null,
+    val exerciseHistory: List<com.example.repsgrams.data.repository.ExerciseSetHistoryRow> = emptyList(),
+    val isWeightView: Boolean = true,
+    val currentStreak: Int = 0,
+    val bestStreak: Int = 0,
+    val bodyweightHistory: List<Pair<java.time.LocalDate, Float>> = emptyList()
+),
     val selectedExerciseId: Long? = null,
     val exerciseHistory: List<ExerciseSetHistoryRow> = emptyList(),
     val isWeightView: Boolean = true,
@@ -57,11 +64,8 @@ private data class ExerciseData(
 )
 
 private data class UserStats(
-    val streakInfo: StreakInfo,
-    val bwHistory: List<BodyweightLogEntity>,
-    val suppLogs: List<SupplementLogEntity>,
-    val supplies: List<SupplyInventoryEntity>,
-    val settings: CycleSettings
+    val bwHistory: List<com.example.repsgrams.data.db.BodyweightLogEntity>,
+    val streakInfo: com.example.repsgrams.domain.streak.StreakInfo
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -86,9 +90,13 @@ class ProgressViewModel(
     }
 
     private val userStatsFlow = combine(
+        progressRepository.observeBodyweight(today.minusMonths(3), today),
         cycleSettingsRepository.settings.flatMapLatest { settings ->
-            progressRepository.observeStreakInfo(settings.cycleStartDate, today)
-        },
+            progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
+        }
+    ) { bw, streak ->
+        UserStats(bw, streak)
+    },
         progressRepository.observeBodyweightHistory(today.minusDays(90), today),
         progressRepository.observeSupplementLogs(today.minusDays(90), today),
         progressRepository.observeSupplyInventory(),
@@ -102,14 +110,6 @@ class ProgressViewModel(
         userStatsFlow
     ) { exData, stats ->
         val selectedId = exData.selectedExerciseId ?: exData.exercises.firstOrNull()?.id
-        val whey = stats.supplies.find { it.type == SupplyType.WHEY }
-        val creatine = stats.supplies.find { it.type == SupplyType.CREATINE }
-        val latestBw = stats.bwHistory.lastOrNull()?.weightKg
-        val proteinEstimate = if (latestBw != null) {
-            val weekLogs = stats.suppLogs.filter { it.date.isAfter(today.minusDays(7)) && !it.date.isAfter(today) }
-            statsCalculator.calculateProteinEstimate(latestBw, stats.settings.proteinGoalMultiplierLow, stats.settings.proteinGoalMultiplierHigh, weekLogs, stats.settings.wheyServingGrams)
-        } else null
-        
         ProgressUiState(
             exercises = exData.exercises,
             selectedExerciseId = selectedId,
@@ -117,14 +117,7 @@ class ProgressViewModel(
             isWeightView = exData.isWeightView,
             currentStreak = stats.streakInfo.currentStreak,
             bestStreak = stats.streakInfo.bestStreak,
-            bodyweightHistory = stats.bwHistory.map { it.date to it.weightKg },
-            creatineAdherence30d = statsCalculator.calculateCreatineAdherence(stats.suppLogs, today, 30),
-            creatineAdherence90d = statsCalculator.calculateCreatineAdherence(stats.suppLogs, today, 90),
-            proteinEstimate = proteinEstimate,
-            wheyStatus = whey?.let { statsCalculator.calculateSupplyStatus(it, today, 7f) },
-            creatineStatus = creatine?.let { statsCalculator.calculateSupplyStatus(it, today, 5f) },
-            wheyInventory = whey,
-            creatineInventory = creatine
+            bodyweightHistory = stats.bwHistory.map { it.date to it.weightKg }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProgressUiState())
 

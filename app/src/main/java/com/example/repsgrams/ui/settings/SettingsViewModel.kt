@@ -54,6 +54,13 @@ class SettingsViewModel(
     fun setRestTimerVibrationEnabled(enabled: Boolean) {
         viewModelScope.launch { repository.setRestTimerVibrationEnabled(enabled) }
     }
+    fun setThemeMode(mode: com.example.repsgrams.data.datastore.ThemeMode) {
+        viewModelScope.launch { repository.setThemeMode(mode) }
+    }
+    fun updateDefaultRestSeconds(seconds: Int) {
+        viewModelScope.launch { repository.setDefaultRestSeconds(seconds) }
+    }
+
     fun setRestTimerAutoAdvance(enabled: Boolean) {
         viewModelScope.launch { repository.setRestTimerAutoAdvance(enabled) }
     }
@@ -75,4 +82,22 @@ class SettingsViewModel(
                 }
             }
     }
+    fun setTrackedMeasurements(measurements: Set<String>) {
+        viewModelScope.launch {
+            repository.setTrackedMeasurements(measurements)
+        }
+    }
+
+    fun setHealthConnectEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setHealthConnectEnabled(enabled)
+        }
+    }
+    
+    fun setVoiceCuesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setVoiceCuesEnabled(enabled)
+        }
+    }
+
 }

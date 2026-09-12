@@ -1,4 +1,5 @@
 package com.example.repsgrams.ui.components
+import androidx.compose.animation.core.animateFloat
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,17 +32,33 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.repsgrams.ui.theme.iosSpring
 
 @Composable
-fun IosCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun IosCard(
+    modifier: Modifier = Modifier,
+    elevated: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val shadowOpacity = if (isDark) 0.4f else 0.08f
+    val shadowElevation = if (elevated) 16.dp else 8.dp
+    
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = shadowElevation,
+                shape = MaterialTheme.shapes.medium,
+                spotColor = Color.Black.copy(alpha = shadowOpacity),
+                ambientColor = Color.Black.copy(alpha = shadowOpacity * 0.5f)
+            ),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
+        color = if (elevated) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface,
         content = content
     )
 }
@@ -131,4 +148,31 @@ fun IconBadge(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
     ) {
         Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
     }
+}
+
+@Composable
+fun Modifier.shimmer(): Modifier {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition()
+    val translateAnim by transition.animateFloat(
+        initialValue = -1000f,
+        targetValue = 1000f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(durationMillis = 1200, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        ),
+        label = "shimmer"
+    )
+    val color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+    val shimmerColors = listOf(
+        color.copy(alpha = 0.2f),
+        color.copy(alpha = 0.5f),
+        color.copy(alpha = 0.2f),
+    )
+    return this.background(
+        brush = androidx.compose.ui.graphics.Brush.linearGradient(
+            colors = shimmerColors,
+            start = androidx.compose.ui.geometry.Offset(translateAnim - 200f, translateAnim - 200f),
+            end = androidx.compose.ui.geometry.Offset(translateAnim, translateAnim)
+        )
+    )
 }

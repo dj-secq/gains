@@ -73,3 +73,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+dependencies {
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha07")
+    implementation("androidx.glance:glance-appwidget:1.0.0")
+}

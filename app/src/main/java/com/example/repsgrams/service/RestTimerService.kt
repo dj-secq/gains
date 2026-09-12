@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.RingtoneManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
@@ -35,6 +36,9 @@ class RestTimerService : Service() {
     
     private lateinit var notificationManager: NotificationManager
 
+    private var mediaPlayer: MediaPlayer? = null
+    private var continuousVibrator: Vibrator? = null
+
     companion object {
         const val ACTION_START = "com.example.repsgrams.action.START_REST_TIMER"
         const val ACTION_STOP = "com.example.repsgrams.action.STOP_REST_TIMER"
@@ -54,23 +58,47 @@ class RestTimerService : Service() {
         var isSessionForeground = false
     }
 
+    private val stopReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_STOP) {
+                stopContinuousAlert()
+                stopSelf()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createChannels()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stopReceiver, android.content.IntentFilter(ACTION_STOP), Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(stopReceiver, android.content.IntentFilter(ACTION_STOP))
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopContinuousAlert()
+        timerJob?.cancel()
+        try { unregisterReceiver(stopReceiver) } catch (e: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
+                stopContinuousAlert() // ensure previous alarm is stopped
                 restEndEpochMillis = intent.getLongExtra(EXTRA_END_MILLIS, 0)
                 upNextText = intent.getStringExtra(EXTRA_UP_NEXT) ?: ""
                 startForegroundTimer()
             }
             ACTION_STOP -> {
+                stopContinuousAlert()
                 stopSelf()
             }
             ACTION_ADD_TIME -> {
+                stopContinuousAlert()
                 restEndEpochMillis += 15_000L
                 if (timerJob?.isActive != true) {
                     // Timer had finished, so restart it
@@ -81,7 +109,12 @@ class RestTimerService : Service() {
                 }
             }
             ACTION_CONTINUE -> {
+                stopContinuousAlert()
                 notificationManager.cancel(NOTIFICATION_ID_ALARM)
+                stopSelf()
+            }
+            "ACTION_DISMISS_ALARM" -> {
+                stopContinuousAlert()
                 stopSelf()
             }
         }
@@ -123,7 +156,7 @@ class RestTimerService : Service() {
             this,
             NOTIFICATION_ID_FOREGROUND,
             notification,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH else 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) 1073741824 else 0 else 0
         )
 
         timerJob?.cancel()
@@ -169,30 +202,51 @@ class RestTimerService : Service() {
     }
 
     private fun onTimerFinished() {
+        playAlert()
         if (!isSessionForeground) {
             postAlarmNotification()
-        } else {
-            playAlert()
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
-    
+
+    private fun stopContinuousAlert() {
+        timerJob?.cancel()
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        } catch (e: Exception) {}
+        mediaPlayer = null
+        continuousVibrator?.cancel()
+        continuousVibrator = null
+    }
+
     private fun playAlert() {
+        // Stop any existing alert first to prevent leaks
+        stopContinuousAlert()
+        
         // Vibrator
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            vibratorManager.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
-        val pattern = longArrayOf(0, 200, 100, 200, 100, 200)
-        vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+        try {
+            continuousVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+            val pattern = longArrayOf(0, 500, 500) // vibrate 500ms, pause 500ms
+            continuousVibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 means loop
+        } catch (e: Exception) { e.printStackTrace() }
         
         // Sound
-        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        val r = RingtoneManager.getRingtone(applicationContext, uri)
-        r.play()
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            mediaPlayer = MediaPlayer.create(this, uri)?.apply {
+                isLooping = true
+                start()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun postAlarmNotification() {
@@ -206,6 +260,10 @@ class RestTimerService : Service() {
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         
+        val dismissIntent = PendingIntent.getService(
+            this, 4, Intent(this, RestTimerService::class.java).setAction("ACTION_DISMISS_ALARM"), PendingIntent.FLAG_IMMUTABLE
+        )
+        
         val notification = NotificationCompat.Builder(this, CHANNEL_ID_ALARM)
             .setContentTitle("Rest over")
             .setContentText(upNextText)
@@ -216,10 +274,13 @@ class RestTimerService : Service() {
             .addAction(0, "+15s", addTimeIntent)
             .addAction(0, "Continue", continueIntent)
             .setAutoCancel(true)
+            .setDeleteIntent(dismissIntent)
             .build()
             
         notificationManager.notify(NOTIFICATION_ID_ALARM, notification)
     }
+
+
 
     override fun onBind(intent: Intent?): IBinder? = null
 }

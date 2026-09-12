@@ -63,6 +63,7 @@ class WorkoutRepository(
                     WorkoutExercise(
                         id = exercise.id,
                         name = exercise.name,
+                        imageAssetName = exercise.imageAssetName,
                         notes = exercise.notes,
                         tracksWeight = exercise.tracksWeight,
                         targetValueLow = link.targetValueLow,
@@ -73,7 +74,7 @@ class WorkoutRepository(
                 },
             )
         }
-        return WorkoutPlan(template.id, template.name, template.dayLabel, template.maxDurationMinutes, blocks)
+        return WorkoutPlan(template.id, template.name, template.dayLabel, template.maxDurationMinutes, template.category, blocks)
     }
 
     suspend fun previousSet(exerciseId: Long, sessionId: Long): SetLogEntity? =
@@ -142,7 +143,8 @@ class WorkoutRepository(
     suspend fun getExercise(id: Long): ExerciseEntity? = database.exerciseDao().getById(id)
 
     suspend fun insertTemplate(template: WorkoutTemplateEntity) {
-        database.workoutTemplateDao().insert(template)
+        val nextOrder = (database.workoutTemplateDao().getAll().maxOfOrNull { it.orderIndex } ?: -1) + 1
+        database.workoutTemplateDao().insert(template.copy(orderIndex = nextOrder))
     }
 
     suspend fun updateTemplate(template: WorkoutTemplateEntity) {
@@ -151,6 +153,32 @@ class WorkoutRepository(
 
     suspend fun deleteTemplate(template: WorkoutTemplateEntity) {
         database.workoutTemplateDao().delete(template)
+    }
+    
+    suspend fun hasTemplateHistory(templateId: Long): Boolean = database.workoutSessionDao().hasHistory(templateId)
+    
+    suspend fun swapTemplates(id1: Long, id2: Long) {
+        val dao = database.workoutTemplateDao()
+        val t1 = dao.getById(id1) ?: return
+        val t2 = dao.getById(id2) ?: return
+        
+        val order1 = t1.orderIndex
+        val order2 = t2.orderIndex
+        dao.update(t1.copy(orderIndex = -1))
+        dao.update(t2.copy(orderIndex = order1))
+        dao.update(t1.copy(orderIndex = order2))
+    }
+    
+    suspend fun updateTemplateCategory(templateId: Long, category: String) {
+        val dao = database.workoutTemplateDao()
+        val t = dao.getById(templateId) ?: return
+        dao.update(t.copy(category = category))
+    }
+    
+    suspend fun updateTemplateRestDays(templateId: Long, restDays: Int) {
+        val dao = database.workoutTemplateDao()
+        val t = dao.getById(templateId) ?: return
+        dao.update(t.copy(restDaysAfter = restDays))
     }
 
     suspend fun insertBlock(block: TemplateBlockEntity) {

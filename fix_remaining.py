@@ -1,26 +1,30 @@
 import re
+with open("app/src/main/java/com/example/repsgrams/ui/today/TodayScreen.kt", "r") as f:
+    text = f.read()
+
+text = re.sub(r'onCreatineChanged: \(Boolean\) -> Unit,\s*onWheyChanged: \(Boolean\) -> Unit,', '', text)
+text = text.replace("onCreatineChanged = onCreatineChanged,\n        onWheyChanged = onWheyChanged,\n", "")
+text = text.replace("onCreatineChanged, onWheyChanged, ", "")
+text = re.sub(r'fun SupplementCard\([\s\S]*?\{', 'fun SupplementCard(state: TodayUiState.Content, viewModel: com.example.repsgrams.ui.today.TodayViewModel) {', text)
+text = text.replace("SupplementCard(state)", "SupplementCard(state, viewModel)")
+with open("app/src/main/java/com/example/repsgrams/ui/today/TodayScreen.kt", "w") as f:
+    f.write(text)
 
 with open("app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionScreen.kt", "r") as f:
-    text = f.read()
+    text2 = f.read()
 
-imports = """import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material3.FilterChip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.IconButton
-"""
-text = text.replace("import androidx.compose.ui.Modifier", imports + "import androidx.compose.ui.Modifier")
-
+text2 = text2.replace("onWheyChanged = viewModel::setWheyTaken,", "")
+text2 = text2.replace("onCreatineChanged = viewModel::setCreatineTaken,", "")
+text2 = re.sub(r'onWheyChanged: \(Boolean\) -> Unit,\n\s*onCreatineChanged: \(Boolean\) -> Unit,', '', text2)
 with open("app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionScreen.kt", "w") as f:
-    f.write(text)
+    f.write(text2)
 
-with open("app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionViewModel.kt", "r") as f:
-    text = f.read()
+with open("app/src/main/java/com/example/repsgrams/ui/progress/ProgressScreen.kt", "r") as f:
+    text3 = f.read()
 
-text = text.replace("    private var progressionSuggestion: ProgressionSuggestion? = null", "    private var progressionSuggestion: ProgressionSuggestion? = null\n    private var rpeTagInput: String? = null\n    private var notesInput: String = \"\"\n    private var lastTimeRound: PriorRound? = null")
-
-with open("app/src/main/java/com/example/repsgrams/ui/session/WorkoutSessionViewModel.kt", "w") as f:
-    f.write(text)
-
+text3 = re.sub(r'AdherenceCard\(state\.creatineAdherence30d, state\.creatineAdherence90d\)', 'AdherenceCard(state.supplementAdherence30d, state.supplementAdherence90d)', text3)
+text3 = re.sub(r'SupplyCard\(\n\s*state\.wheyStatus,\n\s*state\.wheyInventory,\n\s*SupplyType.WHEY\n\s*\)', '', text3)
+text3 = re.sub(r'SupplyCard\(\n\s*state\.creatineStatus,\n\s*state\.creatineInventory,\n\s*SupplyType.CREATINE\n\s*\)', '', text3)
+text3 = re.sub(r'if \(state\.proteinEstimate != null\) \{[\s\S]*?\}\n', '', text3)
+with open("app/src/main/java/com/example/repsgrams/ui/progress/ProgressScreen.kt", "w") as f:
+    f.write(text3)

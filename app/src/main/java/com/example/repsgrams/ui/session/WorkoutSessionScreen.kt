@@ -80,8 +80,8 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onAddRest = viewModel::addRestSeconds,
         onSkipRest = viewModel::skipRest,
         onFinish = viewModel::finishWorkout,
-        onWheyChanged = viewModel::setWheyTaken,
-        onCreatineChanged = viewModel::setCreatineTaken,
+        
+        
         onDone = viewModel::saveSummary,
         onBack = onFinished
     )
@@ -101,8 +101,8 @@ fun WorkoutSessionScreen(
     onAddRest: (Int) -> Unit,
     onSkipRest: () -> Unit,
     onFinish: () -> Unit,
-    onWheyChanged: (Boolean) -> Unit,
-    onCreatineChanged: (Boolean) -> Unit,
+    
+    
     onDone: () -> Unit,
     onNotesChanged: (String) -> Unit = {},
     onRpeTagChanged: (String?) -> Unit = {},
@@ -155,7 +155,7 @@ fun WorkoutSessionScreen(
                     onNotesChanged, onRpeTagChanged,
                 )
                 is WorkoutSessionUiState.Summary -> SummaryScreen(
-                    state, onWheyChanged, onCreatineChanged, onDone,
+                    state,   onDone,
                 )
             }
         }
@@ -351,8 +351,8 @@ private fun RestCard(
 @Composable
 private fun SummaryScreen(
     state: WorkoutSessionUiState.Summary,
-    onWheyChanged: (Boolean) -> Unit,
-    onCreatineChanged: (Boolean) -> Unit,
+    
+    
     onDone: () -> Unit,
 ) {
     Column(

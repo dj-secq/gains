@@ -52,17 +52,15 @@ class AppDatabaseTest {
     @Test
     fun convertersAndUpsertsRoundTrip() = runTest {
         val date = LocalDate.of(2026, 9, 10)
-        database.supplementLogDao().upsert(
-            SupplementLogEntity(date = date, creatineTaken = true, creatineGrams = 5f),
-        )
-        database.supplementLogDao().upsert(
-            SupplementLogEntity(date = date, wheyTaken = true, wheyServings = 1f),
+        val suppId = database.supplementDao().insert(SupplementEntity(name = "Test", doseAmount = 10f, unit = "g", scheduleType = "daily", containerSize = 100, lowSupplyThreshold = 10, colorToken = "red", iconName = "pill"))
+        database.supplementIntakeLogDao().upsert(
+            SupplementIntakeLogEntity(date = date, supplementId = suppId, taken = true, actualAmount = 10f),
         )
 
-        val result = database.supplementLogDao().getForDate(date)
+        val result = database.supplementIntakeLogDao().getForDateAndSupplement(date, suppId)
         assertEquals(date, result?.date)
-        assertEquals(true, result?.wheyTaken)
-        assertEquals(1, database.supplementLogDao().observeInRange(date, date).first().size)
+        assertEquals(true, result?.taken)
+        assertEquals(1, database.supplementIntakeLogDao().observeInRange(date, date).first().size)
     }
 
     @Test

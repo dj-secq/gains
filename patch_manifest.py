@@ -3,19 +3,31 @@ import re
 with open("app/src/main/AndroidManifest.xml", "r") as f:
     text = f.read()
 
-permissions = """    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
-"""
-text = text.replace('    <uses-permission android:name="android.permission.VIBRATE" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n', permissions)
+target = """    <application
+        android:name=".RepsGramsApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RepsGrams">"""
 
-service = """        <service
-            android:name=".service.RestTimerService"
-            android:foregroundServiceType="health"
-            android:exported="false" />
-    </application>"""
-text = text.replace("    </application>", service)
+replacement = """    <application
+        android:name=".RepsGramsApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Theme.RepsGrams">"""
+
+text = text.replace(target, replacement)
 
 with open("app/src/main/AndroidManifest.xml", "w") as f:
     f.write(text)
+

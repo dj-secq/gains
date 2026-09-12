@@ -1,52 +1,59 @@
 package com.example.repsgrams.domain.streak
 
-import com.example.repsgrams.data.db.SupplementLogEntity
 import com.example.repsgrams.data.db.WorkoutSessionEntity
-import com.example.repsgrams.domain.schedule.RotationCalculator
-import com.example.repsgrams.domain.schedule.CycleSlot
+import com.example.repsgrams.data.db.WorkoutTemplateEntity
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 data class StreakInfo(
-    val currentStreak: Int,
-    val bestStreak: Int,
+    val currentWorkoutStreak: Int,
+    val bestWorkoutStreak: Int,
+    val currentStreak: Int = currentWorkoutStreak,
+    val bestStreak: Int = bestWorkoutStreak
 )
 
 class StreakCalculator {
     fun calculate(
-        cycleStartDate: LocalDate,
         today: LocalDate,
         sessions: List<WorkoutSessionEntity>,
-        supplements: List<SupplementLogEntity>,
+        templates: List<WorkoutTemplateEntity>,
+        graceDays: Int = 1
     ): StreakInfo {
-        var currentStreak = 0
-        var bestStreak = 0
+        var currentWorkout = 0
+        var bestWorkout = 0
         
-        val completedSessions = sessions.filter { it.completed }.map { it.date }.toSet()
-        val takenCreatine = supplements.filter { it.creatineTaken }.map { it.date }.toSet()
+        val completedSessions = sessions.filter { it.completed }.sortedBy { it.date }
         
-        var date = cycleStartDate
-        
-        while (!date.isAfter(today)) {
-            val isWorkoutDay = RotationCalculator.slotFor(cycleStartDate, date).isWorkoutDay
-            val requirementMet = if (isWorkoutDay) {
-                completedSessions.contains(date)
-            } else {
-                takenCreatine.contains(date)
+        if (completedSessions.isNotEmpty()) {
+            currentWorkout = 1
+            bestWorkout = 1
+            for (i in 1..completedSessions.lastIndex) {
+                val prev = completedSessions[i-1]
+                val curr = completedSessions[i]
+                val prevTemplate = templates.find { it.id == prev.templateId }
+                val restDaysAfter = prevTemplate?.restDaysAfter ?: 1
+                
+                val maxAllowedGap = restDaysAfter + 1 + graceDays
+                val gap = ChronoUnit.DAYS.between(prev.date, curr.date).toInt()
+                
+                if (gap <= maxAllowedGap) {
+                    currentWorkout++
+                    if (currentWorkout > bestWorkout) bestWorkout = currentWorkout
+                } else {
+                    currentWorkout = 1
+                }
             }
             
-            if (requirementMet) {
-                currentStreak++
-                if (currentStreak > bestStreak) {
-                    bestStreak = currentStreak
-                }
-            } else {
-                if (date != today) {
-                    currentStreak = 0
-                }
+            // Check if broken right now
+            val last = completedSessions.last()
+            val lastTemplate = templates.find { it.id == last.templateId }
+            val restDaysAfter = lastTemplate?.restDaysAfter ?: 1
+            val maxAllowedGap = restDaysAfter + 1 + graceDays
+            val gapToday = ChronoUnit.DAYS.between(last.date, today).toInt()
+            if (gapToday > maxAllowedGap) {
+                currentWorkout = 0
             }
-            date = date.plusDays(1)
         }
-        
-        return StreakInfo(currentStreak, bestStreak)
+        return StreakInfo(currentWorkout, bestWorkout)
     }
 }

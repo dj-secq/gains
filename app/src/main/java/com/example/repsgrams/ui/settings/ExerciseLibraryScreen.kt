@@ -28,7 +28,16 @@ fun ExerciseLibraryScreen(
     onBack: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val filtered = exercises.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    
+    val allCategories = remember(exercises) { 
+        listOf("All") + exercises.map { it.muscleGroup }.distinct().sorted() 
+    }
+    
+    val filtered = exercises.filter { 
+        it.name.contains(searchQuery, ignoreCase = true) &&
+        (selectedCategory == null || selectedCategory == "All" || it.muscleGroup == selectedCategory)
+    }
 
     Scaffold(
         topBar = {
@@ -53,6 +62,20 @@ fun ExerciseLibraryScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.large
             )
+            
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(allCategories) { cat ->
+                    val isSelected = selectedCategory == cat || (selectedCategory == null && cat == "All")
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedCategory = if (cat == "All") null else cat },
+                        label = { Text(cat) }
+                    )
+                }
+            }
             
             if (filtered.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

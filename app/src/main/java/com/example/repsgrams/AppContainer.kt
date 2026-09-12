@@ -34,6 +34,8 @@ interface AppContainer {
     val reminderScheduler: ReminderScheduler
     val calendarRepository: CalendarRepository
     val progressRepository: ProgressRepository
+    val backupManager: com.example.repsgrams.data.BackupManager
+    val healthConnectManager: com.example.repsgrams.data.HealthConnectManager
     val databaseInitialization: Deferred<Unit>
 }
 
@@ -48,21 +50,19 @@ class DefaultAppContainer(
         appContext,
         AppDatabase::class.java,
         "reps-and-grams.db",
-    ).addMigrations(AppDatabase.MIGRATION_1_2).build()
+    ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
 
     override val cycleSettingsRepository: CycleSettingsRepository =
         PreferencesCycleSettingsRepository(appContext, clock)
 
     override val scheduleRepository: ScheduleRepository =
-        DefaultScheduleRepository(cycleSettingsRepository, clock)
+        DefaultScheduleRepository(database, cycleSettingsRepository, clock)
 
     override val reminderScheduler: ReminderScheduler =
         WorkManagerReminderScheduler(appContext, cycleSettingsRepository, clock)
 
     override val supplementRepository: SupplementRepository =
-        DefaultSupplementRepository(database, clock) { date ->
-            reminderScheduler.cancelPostWorkoutWhey(date.toEpochDay())
-        }
+        DefaultSupplementRepository(database, clock)
 
     override val sessionProgressStore = SessionProgressStore(appContext)
 
@@ -80,4 +80,6 @@ class DefaultAppContainer(
     )
 
     override val progressRepository = com.example.repsgrams.data.repository.DefaultProgressRepository(database)
+    override val backupManager = com.example.repsgrams.data.BackupManager(appContext, database)
+    override val healthConnectManager = com.example.repsgrams.data.HealthConnectManager(appContext)
 }

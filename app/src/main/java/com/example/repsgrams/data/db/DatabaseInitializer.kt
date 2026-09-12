@@ -15,7 +15,19 @@ class DatabaseInitializer(
     suspend fun ensureSeeded() = mutex.withLock {
         database.withTransaction {
             val metadataDao = database.databaseMetadataDao()
-            if ((metadataDao.getInt(SEED_VERSION_KEY) ?: 0) >= CURRENT_SEED_VERSION) return@withTransaction
+            val currentVersion = metadataDao.getInt(SEED_VERSION_KEY) ?: 0
+            if (currentVersion >= CURRENT_SEED_VERSION) return@withTransaction
+            
+            if (currentVersion < 2) {
+                // Retrofit image asset names to existing exercises
+                val allEx = database.exerciseDao().getAll()
+                allEx.forEach { ex ->
+                    val defaultEx = DEFAULT_EXERCISES.find { it.name == ex.name }
+                    if (defaultEx?.imageAssetName != null && ex.imageAssetName == null) {
+                        database.exerciseDao().update(ex.copy(imageAssetName = defaultEx.imageAssetName))
+                    }
+                }
+            }
 
             val exerciseIds = database.exerciseDao().insertAll(DEFAULT_EXERCISES).mapIndexed { index, id ->
                 DEFAULT_EXERCISES[index].name to id
@@ -131,24 +143,24 @@ class DatabaseInitializer(
 
         val DEFAULT_EXERCISES = listOf(
             ExerciseEntity(name = "Jumping Jacks", tracksWeight = false),
-            ExerciseEntity(name = "Arm Circles", notes = "10 forward, 10 backward", tracksWeight = false),
-            ExerciseEntity(name = "Band Pull-Aparts", tracksWeight = false),
-            ExerciseEntity(name = "Bodyweight Squats", tracksWeight = false),
-            ExerciseEntity(name = "Easy Push-Ups", tracksWeight = false),
-            ExerciseEntity(name = "Pull-Ups", tracksWeight = false),
-            ExerciseEntity(name = "DB Floor Press", tracksWeight = true),
-            ExerciseEntity(name = "Single-Arm DB Row", tracksWeight = true),
-            ExerciseEntity(name = "DB Overhead Press", tracksWeight = true),
-            ExerciseEntity(name = "DB Bicep Curl", tracksWeight = true),
-            ExerciseEntity(name = "Bulgarian Split Squat", tracksWeight = false),
-            ExerciseEntity(name = "Hanging Knee Raise", tracksWeight = false),
-            ExerciseEntity(name = "Chin-Ups", tracksWeight = false),
-            ExerciseEntity(name = "Push-Ups", tracksWeight = false),
-            ExerciseEntity(name = "DB Romanian Deadlift", tracksWeight = true),
-            ExerciseEntity(name = "Band Lateral Raise", tracksWeight = false),
-            ExerciseEntity(name = "DB Overhead Triceps Extension", tracksWeight = true),
-            ExerciseEntity(name = "Band Face Pull", tracksWeight = false),
-            ExerciseEntity(name = "Hollow Body Hold", tracksWeight = false),
+            ExerciseEntity(name = "Arm Circles", imageAssetName = "ex_arm_circles", notes = "10 forward, 10 backward", tracksWeight = false),
+            ExerciseEntity(name = "Band Pull-Aparts", imageAssetName = "ex_band_pull_aparts", tracksWeight = false),
+            ExerciseEntity(name = "Bodyweight Squats", imageAssetName = "ex_bodyweight_squats", tracksWeight = false),
+            ExerciseEntity(name = "Easy Push-Ups", imageAssetName = "ex_easy_push_ups", tracksWeight = false),
+            ExerciseEntity(name = "Pull-Ups", imageAssetName = "ex_pull_ups", tracksWeight = false),
+            ExerciseEntity(name = "DB Floor Press", imageAssetName = "ex_db_floor_press", tracksWeight = true),
+            ExerciseEntity(name = "Single-Arm DB Row", imageAssetName = "ex_single_arm_db_row", tracksWeight = true),
+            ExerciseEntity(name = "DB Overhead Press", imageAssetName = "ex_db_overhead_press", tracksWeight = true),
+            ExerciseEntity(name = "DB Bicep Curl", imageAssetName = "ex_db_bicep_curl", tracksWeight = true),
+            ExerciseEntity(name = "Bulgarian Split Squat", imageAssetName = "ex_bulgarian_split_squat", tracksWeight = false),
+            ExerciseEntity(name = "Hanging Knee Raise", imageAssetName = "ex_hanging_knee_raise", tracksWeight = false),
+            ExerciseEntity(name = "Chin-Ups", imageAssetName = "ex_chin_ups", tracksWeight = false),
+            ExerciseEntity(name = "Push-Ups", imageAssetName = "ex_push_ups", tracksWeight = false),
+            ExerciseEntity(name = "DB Romanian Deadlift", imageAssetName = "ex_db_romanian_deadlift", tracksWeight = true),
+            ExerciseEntity(name = "Band Lateral Raise", imageAssetName = "ex_band_lateral_raise", tracksWeight = false),
+            ExerciseEntity(name = "DB Overhead Triceps Extension", imageAssetName = "ex_db_overhead_triceps_extension", tracksWeight = true),
+            ExerciseEntity(name = "Band Face Pull", imageAssetName = "ex_band_face_pull", tracksWeight = false),
+            ExerciseEntity(name = "Hollow Body Hold", imageAssetName = "ex_hollow_body_hold", tracksWeight = false),
         )
 
         val warmUpTargets = listOf(

@@ -3,13 +3,14 @@ package com.example.repsgrams.ui.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items
 
 
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBackIosNew
 import androidx.compose.foundation.shape.CircleShape
@@ -53,43 +54,55 @@ fun ExerciseDictionaryRoute(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        LazyColumn(
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(vertical = 8.dp)
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(exercises) { ex ->
-                ListItem(
-                    headlineContent = { Text(ex.name) },
-                    supportingContent = { 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (ex.tracksWeight) "Weighted" else "Bodyweight")
-                            Surface(
-                                color = AppColors.wheyGreen.copy(alpha = 0.2f),
-                                shape = CircleShape,
-                            ) {
-                                Text(
-                                    ex.muscleGroup,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = AppColors.wheyGreen,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
+                com.example.repsgrams.ui.components.IosCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(0.85f)
+                        .clickable {
+                            editingExercise = ex
+                            showDialog = true
                         }
-                    },
-                    leadingContent = {
+                ) {
+                    Column {
                         Box(
-                            modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(AppColors.workout.copy(alpha=0.1f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Outlined.FitnessCenter, contentDescription = null, tint = AppColors.workout)
+                            if (ex.imageAssetName != null) {
+                                val context = androidx.compose.ui.platform.LocalContext.current
+                                val resId = context.resources.getIdentifier(ex.imageAssetName, "drawable", context.packageName)
+                                if (resId != 0) {
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(id = resId),
+                                        contentDescription = ex.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(ex.name.take(1).uppercase(), style = MaterialTheme.typography.displayMedium, color = AppColors.workout)
+                                }
+                            } else {
+                                Text(ex.name.take(1).uppercase(), style = MaterialTheme.typography.displayMedium, color = AppColors.workout)
+                            }
                         }
-                    },
-                    modifier = Modifier.clickable {
-                        editingExercise = ex
-                        showDialog = true
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(ex.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            Text(ex.muscleGroup, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                )
-                HorizontalDivider()
+                }
             }
         }
     }

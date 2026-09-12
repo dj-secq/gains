@@ -12,11 +12,18 @@ import com.example.repsgrams.data.repository.WorkoutRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
+import com.example.repsgrams.data.datastore.CycleSettingsRepository
+
 class ProgramEditorViewModel(
-    private val repository: WorkoutRepository
+    private val repository: WorkoutRepository,
+    private val cycleSettingsRepository: CycleSettingsRepository
 ) : ViewModel() {
+    val defaultRestSeconds: StateFlow<Int> = cycleSettingsRepository.settings.map { it.defaultRestSeconds }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000), 90
+    )
     val templates: StateFlow<List<WorkoutTemplateEntity>> = repository.observeAllTemplates().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
     )
@@ -24,6 +31,9 @@ class ProgramEditorViewModel(
     val allExercises: StateFlow<List<ExerciseEntity>> = repository.observeAllExercises().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
     )
+
+    fun observeTemplate(templateId: Long): kotlinx.coroutines.flow.Flow<WorkoutTemplateEntity?> =
+        templates.map { it.find { t -> t.id == templateId } }
 
     fun observeBlocks(templateId: Long): StateFlow<List<TemplateBlockEntity>> =
         repository.observeBlocksForTemplate(templateId).stateIn(
@@ -44,7 +54,25 @@ class ProgramEditorViewModel(
     }
     
     fun deleteTemplate(template: WorkoutTemplateEntity) {
-        viewModelScope.launch { repository.deleteTemplate(template) }
+        viewModelScope.launch {
+            if (repository.hasTemplateHistory(template.id)) {
+                // Cannot delete template with history (TODO: emit event for UI if needed)
+                return@launch
+            }
+            repository.deleteTemplate(template)
+        }
+    }
+    
+    fun swapTemplates(id1: Long, id2: Long) {
+        viewModelScope.launch { repository.swapTemplates(id1, id2) }
+    }
+    
+    fun updateTemplateCategory(templateId: Long, category: String) {
+        viewModelScope.launch { repository.updateTemplateCategory(templateId, category) }
+    }
+    
+    fun updateTemplateRestDays(templateId: Long, restDays: Int) {
+        viewModelScope.launch { repository.updateTemplateRestDays(templateId, restDays) }
     }
 
     fun addBlock(templateId: Long, label: String, kind: com.example.repsgrams.data.db.BlockKind, targetRoundsMin: Int, targetRoundsMax: Int, restSecs: Int, isOptional: Boolean) {
@@ -105,10 +133,10 @@ class ProgramEditorViewModel(
     }
 
     companion object {
-        fun factory(repository: WorkoutRepository) = object : ViewModelProvider.Factory {
+        fun factory(repository: WorkoutRepository, cycleSettingsRepository: CycleSettingsRepository) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return ProgramEditorViewModel(repository) as T
+                return ProgramEditorViewModel(repository, cycleSettingsRepository) as T
             }
         }
     }

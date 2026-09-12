@@ -1,48 +1,72 @@
 import re
-
 with open("app/src/main/java/com/example/repsgrams/data/db/Daos.kt", "r") as f:
     text = f.read()
 
-new_daos = """
-@Dao
-interface PersonalRecordDao {
+target = """@Dao
+interface SupplementLogDao {
+    @Query("SELECT * FROM supplement_logs WHERE date = :date")
+    fun observeForDate(date: LocalDate): Flow<SupplementLogEntity?>
+
+    @Query("SELECT * FROM supplement_logs WHERE date = :date")
+    suspend fun getForDate(date: LocalDate): SupplementLogEntity?
+
+    @Query("SELECT * FROM supplement_logs")
+    fun observeAll(): Flow<List<SupplementLogEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(record: PersonalRecordEntity): Long
+    suspend fun insert(log: SupplementLogEntity): Long
+}"""
 
-    @Query("SELECT * FROM personal_records WHERE exerciseId = :exerciseId AND type = :type ORDER BY value DESC, achievedDate DESC LIMIT 1")
-    suspend fun getLatestRecord(exerciseId: Long, type: String): PersonalRecordEntity?
+replacement = """@Dao
+interface SupplementDao {
+    @Query("SELECT * FROM supplements")
+    fun observeAll(): Flow<List<SupplementEntity>>
 
-    @Query("SELECT * FROM personal_records ORDER BY achievedDate DESC")
-    fun observeAll(): Flow<List<PersonalRecordEntity>>
+    @Query("SELECT * FROM supplements WHERE id = :id")
+    suspend fun getById(id: Long): SupplementEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(supplement: SupplementEntity): Long
+
+    @Update
+    suspend fun update(supplement: SupplementEntity)
+
+    @Delete
+    suspend fun delete(supplement: SupplementEntity)
+}
+
+@Dao
+interface SupplementIntakeLogDao {
+    @Query("SELECT * FROM supplement_intake_logs WHERE date = :date")
+    fun observeForDate(date: LocalDate): Flow<List<SupplementIntakeLogEntity>>
+
+    @Query("SELECT * FROM supplement_intake_logs WHERE date = :date AND supplementId = :supplementId")
+    suspend fun getForDateAndSupplement(date: LocalDate, supplementId: Long): SupplementIntakeLogEntity?
+
+    @Query("SELECT * FROM supplement_intake_logs")
+    fun observeAll(): Flow<List<SupplementIntakeLogEntity>>
     
-    @Query("SELECT * FROM personal_records WHERE type = :type ORDER BY achievedDate ASC")
-    fun observeByType(type: String): Flow<List<PersonalRecordEntity>>
-}
+    @Query("SELECT COUNT(*) > 0 FROM supplement_intake_logs WHERE supplementId = :supplementId")
+    suspend fun hasHistory(supplementId: Long): Boolean
 
-@Dao
-interface BodyMeasurementLogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(log: BodyMeasurementLogEntity): Long
+    suspend fun insert(log: SupplementIntakeLogEntity): Long
+    
+    @Update
+    suspend fun update(log: SupplementIntakeLogEntity)
+    
+    @Delete
+    suspend fun delete(log: SupplementIntakeLogEntity)
+}"""
 
-    @Query("SELECT * FROM body_measurements WHERE type = :type ORDER BY date ASC")
-    fun observeByType(type: String): Flow<List<BodyMeasurementLogEntity>>
-
-    @Query("SELECT DISTINCT type FROM body_measurements ORDER BY type ASC")
-    fun observeTypes(): Flow<List<String>>
-}
-
-@Dao
-interface AchievementDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(achievement: AchievementEntity): Long
-
-    @Query("SELECT * FROM achievements ORDER BY unlockedDate DESC")
-    fun observeAll(): Flow<List<AchievementEntity>>
-}
-"""
-
-text = text.replace("@Dao\ninterface DatabaseMetadataDao {", new_daos + "\n@Dao\ninterface DatabaseMetadataDao {")
-
+text = text.replace(target, replacement)
 with open("app/src/main/java/com/example/repsgrams/data/db/Daos.kt", "w") as f:
+    f.write(text)
+
+with open("app/src/main/java/com/example/repsgrams/data/db/AppDatabase.kt", "r") as f:
+    text = f.read()
+
+text = text.replace("abstract fun supplementLogDao(): SupplementLogDao", "abstract fun supplementDao(): SupplementDao\n    abstract fun supplementIntakeLogDao(): SupplementIntakeLogDao")
+with open("app/src/main/java/com/example/repsgrams/data/db/AppDatabase.kt", "w") as f:
     f.write(text)
 
