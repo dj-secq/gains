@@ -1,6 +1,6 @@
-# RepsGrams (Gains)
+# Gains
 
-RepsGrams is a comprehensive Android workout tracker and fitness planner designed to help you organize your routines, track your progress, and achieve your fitness goals with a clean, intuitive interface.
+Gains is a comprehensive Android workout tracker and fitness planner designed to help you organize your routines, track your progress, and achieve your fitness goals with a clean, intuitive interface.
 
 ## Key Features
 
