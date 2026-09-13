@@ -18,6 +18,7 @@ object ReminderNotifications {
     const val TARGET_WORKOUT = "workout"
     const val TARGET_CREATINE = "creatine"
     const val TARGET_WHEY = "whey"
+    const val TARGET_SUPPLEMENTS = "supplements"
     private const val CHANNEL_ROUTINE = "routine_reminders"
     private const val CHANNEL_POST_WORKOUT = "post_workout_reminders"
 
@@ -42,6 +43,15 @@ object ReminderNotifications {
 
     fun showWhey(context: Context, notificationId: Int) = show(
         context, notificationId, CHANNEL_POST_WORKOUT, "Nice work", "Grab your whey when you're ready.", TARGET_WHEY,
+    )
+
+    fun showSupplements(context: Context, names: List<String>) = show(
+        context = context,
+        id = 1002,
+        channel = CHANNEL_ROUTINE,
+        title = if (names.size == 1) "${names.first()} is due" else "${names.size} supplements are due",
+        text = names.take(3).joinToString(", "),
+        target = TARGET_SUPPLEMENTS,
     )
 
     private fun show(

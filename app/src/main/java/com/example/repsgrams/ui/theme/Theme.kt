@@ -29,8 +29,8 @@ object AppSpacing {
 }
 
 fun <T> iosSpring() = spring<T>(
-    dampingRatio = Spring.DampingRatioLowBouncy,
-    stiffness = Spring.StiffnessMedium
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessHigh
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -39,8 +39,11 @@ private val DarkColorScheme = darkColorScheme(
     background = DarkBackground,
     onBackground = DarkText,
     surface = DarkSurface,
+    surfaceContainer = DarkSurface,
+    surfaceContainerHigh = DarkSurfaceVariant,
+    surfaceContainerHighest = DarkSurfaceElevated,
     onSurface = DarkText,
-    surfaceVariant = DarkSurface,
+    surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkTextSecondary,
     outlineVariant = DarkDivider
 )
@@ -51,8 +54,11 @@ private val LightColorScheme = lightColorScheme(
     background = LightBackground,
     onBackground = LightText,
     surface = LightSurface,
+    surfaceContainer = LightSurface,
+    surfaceContainerHigh = LightSurfaceElevated,
+    surfaceContainerHighest = LightSurfaceElevated,
     onSurface = LightText,
-    surfaceVariant = LightSurface,
+    surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightTextSecondary,
     outlineVariant = LightDivider
 )
@@ -66,12 +72,14 @@ fun RepsGramsTheme(
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        shapes = AppShapes,
-        typography = Typography,
-        content = content
-    )
+    androidx.compose.runtime.CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            shapes = AppShapes,
+            typography = Typography,
+            content = content
+        )
+    }
 }
 
 object AppColors {

@@ -34,40 +34,36 @@ object CalendarCalculator {
         currentSuggestion: ScheduleSuggestion
     ): List<CalendarDay> {
         val sessionsByDate = sessions.groupBy { it.date }
-        
+
         // We need to project future days
         // We know the current suggestion's due date and template
-        
+
         return datesForMonth(month).map { date ->
             val isPast = date.isBefore(today)
-            
+
             val template: WorkoutTemplateEntity?
             val status: CalendarDayStatus
-            
+
             if (isPast) {
                 // Past days: show what was actually logged
                 val session = sessionsByDate[date]?.find { it.completed }
                 template = session?.templateId?.let { tid -> templates.find { it.id == tid } }
-                
-                // For past days, if a workout was logged, it's COMPLETE. 
-                // Wait, what if they didn't log anything? Then it's MISSED if it was a workout day?
-                // Actually, "Past days: show what was actually logged (workout type completed, or explicitly logged rest, or nothing logged)"
-                status = if (template != null) CalendarDayStatus.COMPLETE else CalendarDayStatus.MISSED
+                status = if (session != null) CalendarDayStatus.COMPLETE else CalendarDayStatus.MISSED
             } else {
                 // Today or Future
                 // For simplicity, we just project based on the current suggestion
                 // Let's extrapolate the schedule:
                 // If the user does the suggested workout exactly on its dueDate:
                 // We can generate a sequence of future due dates.
-                
+
                 // Let's find out if this date is a projected workout date
                 var iterDate = currentSuggestion.dueDate ?: today
                 var iterTemplate = currentSuggestion.suggestedTemplate
                 var foundTemplate: WorkoutTemplateEntity? = null
-                
+
                 // A quick way to project forward (capped to 42 days for safety)
                 val sortedTemplates = templates.sortedBy { it.orderIndex }
-                
+
                 for (i in 0..42) {
                     if (iterDate == date) {
                         foundTemplate = iterTemplate
@@ -76,7 +72,7 @@ object CalendarCalculator {
                     if (iterDate.isAfter(date)) {
                         break
                     }
-                    
+
                     // advance to next
                     if (sortedTemplates.isNotEmpty() && iterTemplate != null) {
                         val currIdx = sortedTemplates.indexOfFirst { it.id == iterTemplate!!.id }
@@ -88,7 +84,7 @@ object CalendarCalculator {
                         break
                     }
                 }
-                
+
                 template = foundTemplate
                 status = if (date == today) {
                     if (template != null) CalendarDayStatus.PENDING else CalendarDayStatus.COMPLETE // no workout today means rest is pending/complete
@@ -96,7 +92,7 @@ object CalendarCalculator {
                     CalendarDayStatus.UPCOMING
                 }
             }
-            
+
             CalendarDay(
                 date = date,
                 inDisplayedMonth = YearMonth.from(date) == month,

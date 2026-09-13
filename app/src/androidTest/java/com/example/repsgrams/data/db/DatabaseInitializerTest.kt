@@ -105,6 +105,7 @@ class DatabaseInitializerTest {
         val a = checkNotNull(database.workoutTemplateDao().getByDayLabel("A"))
         val aBlocks = database.templateBlockDao().getForTemplate(a.id)
         assertEquals(listOf(null, 90, 90, 60, null), aBlocks.map { it.restSecondsBetweenRounds })
+        assertEquals(listOf(60, 90, 90, 60, null), aBlocks.map { it.restSecondsAfterBlock })
         assertEquals(2, aBlocks[3].targetRoundsMin)
         assertEquals(3, aBlocks[3].targetRoundsMax)
         assertTrue(aBlocks.last().isOptional)

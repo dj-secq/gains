@@ -14,11 +14,12 @@ interface SupplementRepository {
     fun observeIntakesForDate(date: LocalDate): Flow<List<SupplementIntakeLogEntity>>
     fun observeIntakesInRange(start: LocalDate, end: LocalDate): Flow<List<SupplementIntakeLogEntity>>
     suspend fun setSupplementTaken(date: LocalDate, supplement: SupplementEntity, taken: Boolean, amount: Float? = null)
-    
+
     suspend fun addSupplement(supplement: SupplementEntity): Long
     suspend fun updateSupplement(supplement: SupplementEntity)
-    suspend fun deleteSupplement(supplement: SupplementEntity)
-    
+    /** Returns false when intake history requires the supplement to be retained. */
+    suspend fun deleteSupplement(supplement: SupplementEntity): Boolean
+
     fun observeInventory(): Flow<List<SupplyInventoryEntity>>
     suspend fun restock(supplementId: Long, newTotalServings: Int)
 }
@@ -30,7 +31,7 @@ class DefaultSupplementRepository(
     override fun observeAllSupplements() = database.supplementDao().observeAll()
     override fun observeIntakesForDate(date: LocalDate) = database.supplementIntakeLogDao().observeForDate(date)
     override fun observeIntakesInRange(start: LocalDate, end: LocalDate) = database.supplementIntakeLogDao().observeInRange(start, end)
-    
+
     override suspend fun setSupplementTaken(date: LocalDate, supplement: SupplementEntity, taken: Boolean, amount: Float?) {
         database.withTransaction {
             val dao = database.supplementIntakeLogDao()
@@ -43,7 +44,7 @@ class DefaultSupplementRepository(
                 } else {
                     dao.upsert(SupplementIntakeLogEntity(supplementId = supplement.id, date = date, taken = taken, actualAmount = if (taken) actualAmount else 0f))
                 }
-                
+
                 // Adjust inventory
                 val delta = if (taken) -1f else 1f
                 val invDao = database.supplyInventoryDao()
@@ -54,7 +55,7 @@ class DefaultSupplementRepository(
             }
         }
     }
-    
+
     override suspend fun addSupplement(supplement: SupplementEntity): Long {
         return database.withTransaction {
             val id = database.supplementDao().insert(supplement)
@@ -62,17 +63,19 @@ class DefaultSupplementRepository(
             id
         }
     }
-    
+
     override suspend fun updateSupplement(supplement: SupplementEntity) {
         database.supplementDao().update(supplement)
     }
-    
-    override suspend fun deleteSupplement(supplement: SupplementEntity) {
+
+    override suspend fun deleteSupplement(supplement: SupplementEntity): Boolean {
+        if (database.supplementIntakeLogDao().hasHistory(supplement.id)) return false
         database.supplementDao().delete(supplement)
+        return true
     }
-    
+
     override fun observeInventory() = database.supplyInventoryDao().observeAll()
-    
+
     override suspend fun restock(supplementId: Long, newTotalServings: Int) {
         val dao = database.supplyInventoryDao()
         val inv = dao.get(supplementId)

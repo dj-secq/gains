@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 interface ReminderScheduler {
     suspend fun syncDailyReminders()
     suspend fun scheduleNextWorkoutReminder()
+    suspend fun scheduleNextSupplementReminder()
 }
 
 class WorkManagerReminderScheduler(
@@ -26,8 +27,12 @@ class WorkManagerReminderScheduler(
     override suspend fun syncDailyReminders() {
         val settings = settingsRepository.settings.first()
         workManager.cancelAllWorkByTag(TAG_WORKOUT)
+        workManager.cancelAllWorkByTag(TAG_SUPPLEMENTS)
         if (settings.remindersEnabled && settings.workoutReminderEnabled) {
             enqueueWorkout(ReminderTiming.delayUntilNext(ZonedDateTime.now(clock), settings.workoutReminderTime))
+        }
+        if (settings.remindersEnabled && settings.creatineReminderEnabled) {
+            enqueueSupplements(ReminderTiming.delayUntilNext(ZonedDateTime.now(clock), settings.creatineReminderTime))
         }
     }
 
@@ -41,14 +46,32 @@ class WorkManagerReminderScheduler(
         }
     }
 
+    override suspend fun scheduleNextSupplementReminder() {
+        val settings = settingsRepository.settings.first()
+        if (settings.remindersEnabled && settings.creatineReminderEnabled) {
+            enqueueSupplements(
+                ReminderTiming.delayUntilNext(ZonedDateTime.now(clock), settings.creatineReminderTime),
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+            )
+        }
+    }
+
     private fun enqueueWorkout(delay: Duration, policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE) {
         val request = OneTimeWorkRequestBuilder<WorkoutReminderWorker>()
             .setInitialDelay(delay).addTag(TAG_WORKOUT).build()
         workManager.enqueueUniqueWork(WORKOUT_WORK, policy, request)
     }
 
+    private fun enqueueSupplements(delay: Duration, policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE) {
+        val request = OneTimeWorkRequestBuilder<SupplementReminderWorker>()
+            .setInitialDelay(delay).addTag(TAG_SUPPLEMENTS).build()
+        workManager.enqueueUniqueWork(SUPPLEMENT_WORK, policy, request)
+    }
+
     companion object {
         const val TAG_WORKOUT = "workout-reminders"
+        const val TAG_SUPPLEMENTS = "supplement-reminders"
         private const val WORKOUT_WORK = "next-workout-reminder"
+        private const val SUPPLEMENT_WORK = "next-supplement-reminder"
     }
 }

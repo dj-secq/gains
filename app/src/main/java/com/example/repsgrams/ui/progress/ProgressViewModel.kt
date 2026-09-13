@@ -18,7 +18,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
+
+import com.example.repsgrams.data.repository.SupplementRepository
 
 data class ProgressUiState(
     val exercises: List<ExerciseEntity> = emptyList(),
@@ -27,7 +31,11 @@ data class ProgressUiState(
     val isWeightView: Boolean = true,
     val currentStreak: Int = 0,
     val bestStreak: Int = 0,
-    val bodyweightHistory: List<Pair<LocalDate, Float>> = emptyList()
+    val bodyweightHistory: List<Pair<LocalDate, Float>> = emptyList(),
+    val supplyInventory: List<com.example.repsgrams.data.db.SupplyInventoryEntity> = emptyList(),
+    val supplements: List<com.example.repsgrams.data.db.SupplementEntity> = emptyList(),
+    val selectedSupplementId: Long? = null,
+    val supplementAdherence: List<Pair<LocalDate, Boolean>> = emptyList(),
 )
 
 private data class ExerciseData(
@@ -39,16 +47,30 @@ private data class ExerciseData(
 
 private data class UserStats(
     val bwHistory: List<BodyweightLogEntity>,
-    val streakInfo: StreakInfo
+    val streakInfo: StreakInfo,
+    val supply: List<com.example.repsgrams.data.db.SupplyInventoryEntity>,
+    val supplements: List<com.example.repsgrams.data.db.SupplementEntity>,
+    val selectedSupplementId: Long?,
+    val supplementAdherence: List<Pair<LocalDate, Boolean>>,
 )
 
+private data class SupplementStats(
+    val supply: List<com.example.repsgrams.data.db.SupplyInventoryEntity>,
+    val supplements: List<com.example.repsgrams.data.db.SupplementEntity>,
+    val selectedId: Long?,
+    val adherence: List<Pair<LocalDate, Boolean>>,
+)
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ProgressViewModel(
     private val progressRepository: ProgressRepository,
     private val cycleSettingsRepository: CycleSettingsRepository,
+    private val supplementRepository: SupplementRepository,
     private val today: LocalDate = LocalDate.now(),
 ) : ViewModel() {
     private val _isWeightView = MutableStateFlow(true)
     private val _selectedExerciseId = MutableStateFlow<Long?>(null)
+    private val _selectedSupplementId = MutableStateFlow<Long?>(null)
 
     fun setWeightView(isWeightView: Boolean) {
         _isWeightView.value = isWeightView
@@ -56,6 +78,16 @@ class ProgressViewModel(
 
     fun selectExercise(id: Long) {
         _selectedExerciseId.value = id
+    }
+
+    fun selectSupplement(id: Long) { _selectedSupplementId.value = id }
+
+    fun logBodyweight(weightKg: Float) {
+        viewModelScope.launch { progressRepository.logBodyweight(today, weightKg) }
+    }
+
+    fun restockSupply(supplementId: Long, newTotalServings: Int) {
+        viewModelScope.launch { supplementRepository.restock(supplementId, newTotalServings) }
     }
 
     private val exerciseDataFlow = combine(
@@ -72,16 +104,32 @@ class ProgressViewModel(
         }
     }
 
+    private val supplementStatsFlow = combine(
+        progressRepository.observeSupplyInventory(),
+        supplementRepository.observeAllSupplements(),
+        supplementRepository.observeIntakesInRange(today.minusDays(29), today),
+        _selectedSupplementId,
+    ) { supply, supplements, logs, requestedId ->
+        val active = supplements.filter { it.isActive }
+        val selectedId = requestedId?.takeIf { id -> active.any { it.id == id } } ?: active.firstOrNull()?.id
+        val byDate = logs.filter { it.supplementId == selectedId }.associateBy { it.date }
+        SupplementStats(
+            supply,
+            supplements,
+            selectedId,
+            (29L downTo 0L).map { offset -> today.minusDays(offset) to (byDate[today.minusDays(offset)]?.taken == true) },
+        )
+    }
+
     private val userStatsFlow = combine(
         progressRepository.observeBodyweightHistory(today.minusMonths(3), today),
         cycleSettingsRepository.settings.flatMapLatest { settings ->
             progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
-        }
-    ) { bw, streak ->
-        UserStats(bw, streak)
+        },
+        supplementStatsFlow,
+    ) { bw, streak, supplements ->
+        UserStats(bw, streak, supplements.supply, supplements.supplements, supplements.selectedId, supplements.adherence)
     }
-
-    
 
     val uiState: StateFlow<ProgressUiState> = combine(
         exerciseDataFlow,
@@ -95,11 +143,15 @@ class ProgressViewModel(
             isWeightView = exData.isWeightView,
             currentStreak = stats.streakInfo.currentStreak,
             bestStreak = stats.streakInfo.bestStreak,
-            bodyweightHistory = stats.bwHistory.map { it.date to it.weightKg }
+            bodyweightHistory = stats.bwHistory.map { it.date to it.weightKg },
+            supplyInventory = stats.supply,
+            supplements = stats.supplements,
+            selectedSupplementId = stats.selectedSupplementId,
+            supplementAdherence = stats.supplementAdherence,
         )
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = ProgressUiState()
     )
 
@@ -107,10 +159,11 @@ class ProgressViewModel(
         fun provideFactory(
             progressRepository: ProgressRepository,
             cycleSettingsRepository: CycleSettingsRepository,
+            supplementRepository: SupplementRepository,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return ProgressViewModel(progressRepository, cycleSettingsRepository) as T
+                return ProgressViewModel(progressRepository, cycleSettingsRepository, supplementRepository) as T
             }
         }
     }

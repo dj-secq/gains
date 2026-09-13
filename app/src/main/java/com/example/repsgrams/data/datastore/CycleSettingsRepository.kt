@@ -50,6 +50,7 @@ interface CycleSettingsRepository {
     suspend fun setHealthConnectEnabled(enabled: Boolean)
     suspend fun setVoiceCuesEnabled(enabled: Boolean)
     suspend fun setCycleStartDate(date: LocalDate)
+    suspend fun setAdherenceGraceDays(days: Int)
     suspend fun setWheyServingGrams(grams: Float)
     suspend fun setProteinGoalMultipliers(low: Float, high: Float)
     suspend fun setUnitSystem(unitSystem: UnitSystem)
@@ -82,11 +83,11 @@ class PreferencesCycleSettingsRepository(
     override suspend fun setTrackedMeasurements(measurements: Set<String>) {
         context.cycleSettingsDataStore.edit { it[TRACKED_MEASUREMENTS] = measurements }
     }
-    
+
     override suspend fun setHealthConnectEnabled(enabled: Boolean) {
         context.cycleSettingsDataStore.edit { it[HEALTH_CONNECT_ENABLED] = enabled }
     }
-    
+
     override suspend fun setVoiceCuesEnabled(enabled: Boolean) {
         context.cycleSettingsDataStore.edit { it[VOICE_CUES_ENABLED] = enabled }
     }
@@ -94,6 +95,7 @@ class PreferencesCycleSettingsRepository(
     override suspend fun ensureInitialized() {
         context.cycleSettingsDataStore.edit { preferences ->
             if (CYCLE_START_DATE !in preferences) preferences[CYCLE_START_DATE] = LocalDate.now(clock).toString()
+            if (ADHERENCE_GRACE_DAYS !in preferences) preferences[ADHERENCE_GRACE_DAYS] = 1
             if (WHEY_SERVING_GRAMS !in preferences) preferences[WHEY_SERVING_GRAMS] = 25f
             if (PROTEIN_MULTIPLIER_LOW !in preferences) preferences[PROTEIN_MULTIPLIER_LOW] = 1.6f
             if (PROTEIN_MULTIPLIER_HIGH !in preferences) preferences[PROTEIN_MULTIPLIER_HIGH] = 2f
@@ -116,6 +118,10 @@ class PreferencesCycleSettingsRepository(
     }
 
     override suspend fun setCycleStartDate(date: LocalDate) = update(CYCLE_START_DATE, date.toString())
+    override suspend fun setAdherenceGraceDays(days: Int) {
+        require(days in 0..7) { "Adherence grace days must be between 0 and 7" }
+        update(ADHERENCE_GRACE_DAYS, days)
+    }
     override suspend fun setWheyServingGrams(grams: Float) {
         require(grams > 0) { "Whey serving grams must be positive" }
         update(WHEY_SERVING_GRAMS, grams)
@@ -141,7 +147,7 @@ class PreferencesCycleSettingsRepository(
         require(minutes in 15..120) { "Whey reminder delay must be between 15 and 120 minutes" }
         update(POST_WORKOUT_WHEY_DELAY_MINUTES, minutes)
     }
-    
+
     override suspend fun setRestTimerSound(sound: String) = update(REST_TIMER_SOUND, sound)
     override suspend fun setRestTimerVibrationEnabled(enabled: Boolean) = update(REST_TIMER_VIBRATION, enabled)
     override suspend fun setRestTimerAutoAdvance(enabled: Boolean) = update(REST_TIMER_AUTO_ADVANCE, enabled)
@@ -153,6 +159,7 @@ class PreferencesCycleSettingsRepository(
         cycleStartDate = preferences[CYCLE_START_DATE]
             ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             ?: LocalDate.now(clock),
+        adherenceGraceDays = preferences[ADHERENCE_GRACE_DAYS] ?: 1,
         wheyServingGrams = preferences[WHEY_SERVING_GRAMS] ?: 25f,
         proteinGoalMultiplierLow = preferences[PROTEIN_MULTIPLIER_LOW] ?: 1.6f,
         proteinGoalMultiplierHigh = preferences[PROTEIN_MULTIPLIER_HIGH] ?: 2f,
@@ -179,6 +186,7 @@ class PreferencesCycleSettingsRepository(
 
     private companion object {
         val CYCLE_START_DATE = stringPreferencesKey("cycle_start_date")
+        val ADHERENCE_GRACE_DAYS = androidx.datastore.preferences.core.intPreferencesKey("adherence_grace_days")
         val WHEY_SERVING_GRAMS = floatPreferencesKey("whey_serving_grams")
         val PROTEIN_MULTIPLIER_LOW = floatPreferencesKey("protein_multiplier_low")
         val PROTEIN_MULTIPLIER_HIGH = floatPreferencesKey("protein_multiplier_high")

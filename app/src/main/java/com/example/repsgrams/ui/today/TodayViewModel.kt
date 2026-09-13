@@ -23,22 +23,33 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import com.example.repsgrams.domain.schedule.SuggestionStatus
 import java.time.temporal.ChronoUnit
 
-data class TodaySupplement(val supplement: SupplementEntity, val taken: Boolean)
+data class TodaySupplement(val supplement: SupplementEntity, val taken: Boolean, val actualAmount: Float)
+
+private data class TodayPlanData(
+    val suggestion: ScheduleSuggestion,
+    val supplements: List<TodaySupplement>,
+    val activeSession: com.example.repsgrams.data.db.WorkoutSessionEntity?,
+    val templates: List<com.example.repsgrams.data.db.WorkoutTemplateEntity>,
+    val workoutCompletedToday: Boolean,
+)
 
 sealed interface TodayUiState {
     data object Loading : TodayUiState
-    
-    
+
+
     data class Content(
         val suggestion: ScheduleSuggestion,
         val supplements: List<TodaySupplement>,
         val activeSessionId: Long?,
+        val templates: List<com.example.repsgrams.data.db.WorkoutTemplateEntity> = emptyList(),
         val currentStreak: Int = 0,
         val lowSupplyWarnings: List<String> = emptyList(),
     ) : TodayUiState
@@ -67,12 +78,21 @@ class TodayViewModel(
                 supplementRepository.observeIntakesForDate(today)
             ) { allSupps, logs ->
                 allSupps.filter { it.isActive }.map { supp ->
-                    TodaySupplement(supp, logs.any { it.supplementId == supp.id && it.taken })
+                    val log = logs.firstOrNull { it.supplementId == supp.id }
+                    TodaySupplement(supp, log?.taken == true, log?.actualAmount?.takeIf { it > 0 } ?: supp.doseAmount)
                 }
             },
-            workoutRepository.observeActiveSession()
-        ) { suggestion, todaySupps, activeSession ->
-            Triple(suggestion, todaySupps, activeSession)
+            workoutRepository.observeActiveSession(),
+            workoutRepository.observeAllTemplates(),
+            workoutRepository.observeSessionsForDate(today),
+        ) { suggestion, todaySupps, activeSession, templates, sessionsToday ->
+            TodayPlanData(
+                suggestion,
+                todaySupps,
+                activeSession,
+                templates.sortedBy { it.orderIndex },
+                sessionsToday.any { it.completed && it.templateId != null },
+            )
         },
         combine(
             cycleSettingsRepository.settings.flatMapLatest { settings ->
@@ -83,15 +103,15 @@ class TodayViewModel(
         ) { streakInfo, supplies, allSupps ->
             Triple(streakInfo, supplies, allSupps)
         }
-    ) { (suggestion, todaySupps, activeSession), (streakInfo, supplies, allSupps) ->
+    ) { plan, (streakInfo, supplies, allSupps) ->
         // Only show supplements that are due today according to scheduleType
-        val filteredSupps = todaySupps.filter {
+        val filteredSupps = plan.supplements.filter {
             val supp = it.supplement
             when (supp.scheduleType) {
                 "daily" -> true
-                "workoutDayOnly" -> suggestion.status == SuggestionStatus.ON_TIME || suggestion.status == SuggestionStatus.OVERDUE
+                "workoutDayOnly" -> plan.workoutCompletedToday
                 "customDays" -> {
-                    val currentDay = today.dayOfWeek.name.take(3).capitalize()
+                    val currentDay = today.dayOfWeek.name.take(3).replaceFirstChar { it.uppercase() }
                     supp.customDays?.contains(currentDay, ignoreCase = true) == true
                 }
                 else -> true
@@ -99,17 +119,18 @@ class TodayViewModel(
         }
         val warnings = buildWarnings(supplies, allSupps)
         TodayUiState.Content(
-            suggestion = suggestion,
+            suggestion = plan.suggestion,
             supplements = filteredSupps,
-            activeSessionId = activeSession?.id,
+            activeSessionId = plan.activeSession?.id,
+            templates = plan.templates,
             currentStreak = streakInfo.currentStreak,
             lowSupplyWarnings = warnings
         ) as TodayUiState
-    }.catch {
+    }.flowOn(Dispatchers.Default).catch {
         emit(TodayUiState.Error("Couldn't load today's plan."))
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = TodayUiState.Loading,
     )
 
@@ -128,8 +149,8 @@ class TodayViewModel(
         return warnings
     }
 
-    fun setSupplementTaken(supplement: com.example.repsgrams.data.db.SupplementEntity, taken: Boolean) {
-        viewModelScope.launch { supplementRepository.setSupplementTaken(today, supplement, taken) }
+    fun setSupplementTaken(supplement: com.example.repsgrams.data.db.SupplementEntity, taken: Boolean, amount: Float? = null) {
+        viewModelScope.launch { supplementRepository.setSupplementTaken(today, supplement, taken, amount) }
     }
 
     fun startWorkout(dayLabel: String) {
@@ -138,6 +159,10 @@ class TodayViewModel(
 
     fun resumeWorkout(sessionId: Long) {
         viewModelScope.launch { _openSession.emit(sessionId) }
+    }
+
+    fun logRestDay() {
+        viewModelScope.launch { workoutRepository.logRestDay(today) }
     }
 
     companion object {

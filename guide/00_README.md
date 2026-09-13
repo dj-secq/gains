@@ -1,6 +1,6 @@
 # README — Context Docs for Codex
 
-This folder contains the full spec for an Android app called **"Reps & Grams"**
+This folder contains the full spec for an Android app called **"Gains"**
 (placeholder name — rename freely). It is a personal workout + supplement
 tracker built around one specific rotation and one specific supplement
 protocol (whey + creatine), with an active-workout mode, timers, reminders,

@@ -3,6 +3,7 @@ package com.example.repsgrams.ui.settings
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
@@ -58,20 +60,21 @@ fun SettingsRoute(
     viewModel: SettingsViewModel,
     onNavigateToTemplates: () -> Unit,
     onNavigateToExercises: () -> Unit,
+    onNavigateToExerciseLibrary: () -> Unit,
     onNavigateToSupplements: () -> Unit,
     onExportData: (Uri) -> Unit,
     onImportData: (Uri) -> Unit,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    
+
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) onExportData(uri)
     }
-    
+
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportData(uri)
     }
-    
+
     val context = LocalContext.current
     val hcPermissions = setOf(
         HealthPermission.getWritePermission(ExerciseSessionRecord::class),
@@ -90,7 +93,7 @@ fun SettingsRoute(
     if (settings != null) {
         SettingsScreen(
             settings = settings!!,
-            onExportClick = { exportLauncher.launch("repsgrams-backup-${LocalDate.now()}.zip") },
+            onExportClick = { exportLauncher.launch("gains-backup-${LocalDate.now()}.zip") },
             onImportClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
             onMasterChanged = viewModel::setMaster,
             onTrackedMeasurements = viewModel::setTrackedMeasurements,
@@ -105,7 +108,6 @@ fun SettingsRoute(
                     viewModel.setHealthConnectEnabled(false)
                 }
             },
-            onVoiceCuesEnabled = viewModel::setVoiceCuesEnabled,
             onWorkoutEnabled = viewModel::setWorkoutEnabled,
             onWorkoutTime = viewModel::setWorkoutTime,
             onCreatineEnabled = viewModel::setCreatineEnabled,
@@ -113,6 +115,7 @@ fun SettingsRoute(
             onWheyEnabled = viewModel::setWheyEnabled,
             onWheyDelay = viewModel::setWheyDelay,
             onCycleDate = viewModel::setCycleStartDate,
+            onAdherenceGraceDays = viewModel::setAdherenceGraceDays,
             onUnitSystem = viewModel::setUnitSystem,
             onWheyGrams = viewModel::setWheyServingGrams,
             onRestTimerAutoAdvance = viewModel::setRestTimerAutoAdvance,
@@ -122,6 +125,7 @@ fun SettingsRoute(
             onProteinGoal = viewModel::setProteinGoalMultiplier,
             onNavigateToTemplates = onNavigateToTemplates,
             onNavigateToExercises = onNavigateToExercises,
+            onNavigateToExerciseLibrary = onNavigateToExerciseLibrary,
         onNavigateToSupplements = onNavigateToSupplements,
         )
     }
@@ -134,7 +138,6 @@ fun SettingsScreen(
     onMasterChanged: (Boolean) -> Unit,
     onTrackedMeasurements: (Set<String>) -> Unit,
     onHealthConnectEnabled: (Boolean) -> Unit,
-    onVoiceCuesEnabled: (Boolean) -> Unit,
     onExportClick: () -> Unit,
     onImportClick: () -> Unit,
     onWorkoutEnabled: (Boolean) -> Unit,
@@ -144,6 +147,7 @@ fun SettingsScreen(
     onWheyEnabled: (Boolean) -> Unit,
     onWheyDelay: (Int) -> Unit,
     onCycleDate: (LocalDate) -> Unit,
+    onAdherenceGraceDays: (Int) -> Unit,
     onUnitSystem: (UnitSystem) -> Unit,
     onWheyGrams: (Float) -> Unit,
     onProteinGoal: (Float, Float) -> Unit,
@@ -153,6 +157,7 @@ fun SettingsScreen(
     onThemeMode: (com.example.repsgrams.data.datastore.ThemeMode) -> Unit,
     onNavigateToTemplates: () -> Unit,
     onNavigateToExercises: () -> Unit,
+    onNavigateToExerciseLibrary: () -> Unit,
     onNavigateToSupplements: () -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -192,6 +197,12 @@ fun SettingsScreen(
                                 Text("Exercise Dictionary", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
+                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToExerciseLibrary() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                IconBadge(icon = Icons.Outlined.FitnessCenter, tint = AppColors.workout)
+                                Text("Exercise Library", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
@@ -214,6 +225,20 @@ fun SettingsScreen(
                                         settings.cycleStartDate.dayOfMonth
                                     ).show()
                                 }) { Text(settings.cycleStartDate.format(DateTimeFormatter.ISO_LOCAL_DATE), style = MaterialTheme.typography.bodyLarge) }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Adherence grace period", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Days allowed before a workout is overdue", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { onAdherenceGraceDays(settings.adherenceGraceDays - 1) }, enabled = settings.adherenceGraceDays > 0) { Text("−") }
+                                Text(settings.adherenceGraceDays.toString(), style = MaterialTheme.typography.titleMedium)
+                                IconButton(onClick = { onAdherenceGraceDays(settings.adherenceGraceDays + 1) }, enabled = settings.adherenceGraceDays < 7) { Text("+") }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Column {
@@ -294,7 +319,7 @@ fun SettingsScreen(
                                 )
                                 IosButton(text = "Save", onClick = { wheyStr.toFloatOrNull()?.let { onWheyGrams(it) } }, modifier = Modifier.weight(0.5f))
                             }
-                            
+
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                             var lowStr by remember(settings.proteinGoalMultiplierLow) { mutableStateOf(settings.proteinGoalMultiplierLow.toString()) }
@@ -306,7 +331,7 @@ fun SettingsScreen(
                                     OutlinedTextField(value = highStr, onValueChange = { highStr = it }, label = { Text("High") }, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
-                                IosButton(text = "Save Goal", onClick = { 
+                                IosButton(text = "Save Goal", onClick = {
                                     val l = lowStr.toFloatOrNull()
                                     val h = highStr.toFloatOrNull()
                                     if (l != null && h != null && l <= h) onProteinGoal(l, h)
@@ -331,11 +356,49 @@ fun SettingsScreen(
                                 true,
                                 onMasterChanged,
                             )
+                            HorizontalDivider(modifier = Modifier.padding(start = 61.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            SettingToggle(
+                                "Workout Day",
+                                if (settings.remindersEnabled) {
+                                    "Only if today's workout hasn't started"
+                                } else {
+                                    "Turn on Master Reminders to enable"
+                                },
+                                Icons.Outlined.FitnessCenter,
+                                AppColors.workout,
+                                settings.workoutReminderEnabled,
+                                settings.remindersEnabled,
+                                onWorkoutEnabled,
+                            )
+                            if (settings.remindersEnabled && settings.workoutReminderEnabled) {
+                                Box(modifier = Modifier.padding(start = 61.dp, end = 16.dp, bottom = 12.dp)) {
+                                    TimeButton("Reminder time", settings.workoutReminderTime, onWorkoutTime)
+                                }
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 61.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            SettingToggle(
+                                "Due Supplements",
+                                if (settings.remindersEnabled) {
+                                    "Scheduled today and not yet logged"
+                                } else {
+                                    "Turn on Master Reminders to enable"
+                                },
+                                Icons.Outlined.Science,
+                                AppColors.creatineTeal,
+                                settings.creatineReminderEnabled,
+                                settings.remindersEnabled,
+                                onCreatineEnabled,
+                            )
+                            if (settings.remindersEnabled && settings.creatineReminderEnabled) {
+                                Box(modifier = Modifier.padding(start = 61.dp, end = 16.dp, bottom = 12.dp)) {
+                                    TimeButton("Reminder time", settings.creatineReminderTime, onCreatineTime)
+                                }
+                            }
                         }
                     }
                 }
             }
-            
+
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("DATA & BACKUP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
@@ -356,38 +419,38 @@ fun SettingsScreen(
                     }
                 }
             }
-            
+
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("HEALTH & INTEGRATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
                     IosCard {
                         Column {
                             SettingToggle(
-                                "Health Connect", 
-                                "Sync workouts to Health Connect", 
-                                Icons.Outlined.HealthAndSafety, 
-                                AppColors.workout, 
-                                checked = settings.healthConnectEnabled, 
-                                enabled = true, 
+                                "Health Connect",
+                                "Sync workouts to Health Connect",
+                                Icons.Outlined.HealthAndSafety,
+                                AppColors.workout,
+                                checked = settings.healthConnectEnabled,
+                                enabled = true,
                                 onChecked = { checked ->
                                     onHealthConnectEnabled(checked)
                                 }
                             )
                             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             SettingToggle(
-                                "Voice Cues", 
-                                "Audio cues during workout", 
-                                Icons.Outlined.RecordVoiceOver, 
-                                AppColors.creatineTeal, 
-                                checked = settings.voiceCuesEnabled, 
-                                enabled = true, 
-                                onChecked = onVoiceCuesEnabled
+                                "Voice Cues",
+                                "Coming soon — voice cues are not available yet",
+                                Icons.Outlined.RecordVoiceOver,
+                                AppColors.creatineTeal,
+                                checked = false,
+                                enabled = false,
+                                onChecked = {},
                             )
                         }
                     }
                 }
             }
-            
+
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("MEASUREMENTS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
@@ -423,78 +486,24 @@ fun SettingsScreen(
             }
 
             item {
-                ReminderCard(
-                    title = "Workout Day",
-                    description = "Only if today's workout hasn't started",
-                    icon = Icons.Outlined.FitnessCenter,
-                    iconTint = AppColors.workout,
-                    enabled = settings.workoutReminderEnabled,
-                    masterEnabled = settings.remindersEnabled,
-                    onEnabled = onWorkoutEnabled,
-                ) { TimeButton("Time", settings.workoutReminderTime, onWorkoutTime) }
-            }
-            
-            item {
-                ReminderCard(
-                    title = "Daily Creatine",
-                    description = "Only if 5 g hasn't been logged today",
-                    icon = Icons.Outlined.Science,
-                    iconTint = AppColors.creatineTeal,
-                    enabled = settings.creatineReminderEnabled,
-                    masterEnabled = settings.remindersEnabled,
-                    onEnabled = onCreatineEnabled,
-                ) { TimeButton("Time", settings.creatineReminderTime, onCreatineTime) }
-            }
-            
-            item {
-                ReminderCard(
-                    title = "Post-Workout Whey",
-                    description = "Scheduled when a workout is completed",
-                    icon = Icons.Outlined.FlashlightOn,
-                    iconTint = AppColors.wheyGreen,
-                    enabled = settings.postWorkoutWheyReminderEnabled,
-                    masterEnabled = settings.remindersEnabled,
-                    onEnabled = onWheyEnabled,
-                ) {
-                    Column {
-                        Text("Delay after workout", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(15, 20, 30, 45).forEach { minutes ->
-                                IosButton(
-                                    text = "${minutes}m", 
-                                    onClick = { onWheyDelay(minutes) }, 
-                                    isSecondary = settings.postWorkoutWheyDelayMinutes != minutes,
-                                    modifier = Modifier.weight(1f),
-                                    enabled = settings.remindersEnabled && settings.postWorkoutWheyReminderEnabled
-                                )
-                            }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "OPEN SOURCE CREDITS",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp),
+                    )
+                    IosCard {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Exercise photography", style = MaterialTheme.typography.bodyLarge)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Selected images from yuhonas/free-exercise-db, released into the public domain under the Unlicense. Images are bundled locally and are never fetched while using the app.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
-                }
-            }
-
-        }
-    }
-}
-
-@Composable
-private fun ReminderCard(
-    title: String,
-    description: String,
-    icon: ImageVector,
-    iconTint: Color,
-    enabled: Boolean,
-    masterEnabled: Boolean,
-    onEnabled: (Boolean) -> Unit,
-    content: @Composable () -> Unit,
-) {
-    IosCard {
-        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            SettingToggle(title, description, icon, iconTint, enabled, masterEnabled, onEnabled)
-            if (enabled && masterEnabled) {
-                HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                Box(modifier = Modifier.padding(16.dp)) {
-                    content()
                 }
             }
 
@@ -512,15 +521,35 @@ private fun SettingToggle(
     enabled: Boolean,
     onChecked: (Boolean) -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        IconBadge(icon = icon, tint = iconTint)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onChecked,
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        IconBadge(icon = icon, tint = iconTint.copy(alpha = if (enabled) 1f else 0.45f))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.72f),
+            )
         }
         Switch(
-            checked = checked, 
-            onCheckedChange = onChecked, 
+            checked = checked,
+            onCheckedChange = null,
             enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,

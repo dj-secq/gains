@@ -1,18 +1,18 @@
 package com.example.repsgrams.domain.progression
 
-data class PriorRound(val reps: Int?, val weightKg: Float?)
+data class PriorRound(val value: Int?, val weightKg: Float?)
 
 enum class ProgressionSuggestion { INCREASE_WEIGHT, MORE_CHALLENGE }
 
 /** Advisory only: evaluate every logged round from one prior session. */
 object ProgressionCalculator {
     fun suggestionFor(
-        targetRepsHigh: Int,
+        targetValueHigh: Int,
         tracksWeight: Boolean,
         rounds: List<PriorRound>,
     ): ProgressionSuggestion? {
-        if (targetRepsHigh <= 0 || rounds.isEmpty() ||
-            rounds.any { it.reps == null || it.reps < targetRepsHigh }
+        if (targetValueHigh <= 0 || rounds.isEmpty() ||
+            rounds.any { it.value == null || it.value < targetValueHigh }
         ) return null
         return if (tracksWeight && rounds.any { it.weightKg != null }) {
             ProgressionSuggestion.INCREASE_WEIGHT

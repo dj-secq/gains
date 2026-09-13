@@ -34,7 +34,7 @@ fun ExerciseDictionaryRoute(
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    
+
     var showDialog by remember { mutableStateOf(false) }
     var editingExercise by remember { mutableStateOf<ExerciseEntity?>(null) }
 
@@ -80,8 +80,7 @@ fun ExerciseDictionaryRoute(
                             contentAlignment = Alignment.Center
                         ) {
                             if (ex.imageAssetName != null) {
-                                val context = androidx.compose.ui.platform.LocalContext.current
-                                val resId = context.resources.getIdentifier(ex.imageAssetName, "drawable", context.packageName)
+                                val resId = com.example.repsgrams.ui.components.exerciseImageResource(ex.imageAssetName)
                                 if (resId != 0) {
                                     androidx.compose.foundation.Image(
                                         painter = androidx.compose.ui.res.painterResource(id = resId),
@@ -176,13 +175,13 @@ private fun ExerciseDialog(
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Muscle Group") },
-                        modifier = Modifier.menuAnchor()
+                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
                     ExposedDropdownMenu(
                         expanded = expanded,
                         onDismissRequest = { expanded = false }
                     ) {
-                        listOf("Back", "Chest", "Legs", "Arms", "Shoulders", "Core", "Full Body", "Uncategorized").forEach { group ->
+                        listOf("Back", "Chest", "Legs", "Arms", "Shoulders", "Core", "Full Body").forEach { group ->
                             DropdownMenuItem(
                                 text = { Text(group) },
                                 onClick = { muscleGroup = group; expanded = false }
@@ -193,7 +192,7 @@ private fun ExerciseDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, tracksWeight, notes, muscleGroup) }, enabled = name.isNotBlank()) {
+            Button(onClick = { onSave(name, tracksWeight, notes, muscleGroup) }, enabled = name.isNotBlank() && muscleGroup.isNotBlank() && muscleGroup != "Uncategorized") {
                 Text("Save")
             }
         },

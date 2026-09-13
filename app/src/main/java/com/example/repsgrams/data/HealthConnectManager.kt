@@ -10,7 +10,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 class HealthConnectManager(private val context: Context) {
-    private val client by lazy { 
+    private val client by lazy {
         if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE) {
             HealthConnectClient.getOrCreate(context)
         } else {

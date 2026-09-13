@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -44,10 +45,10 @@ fun IosCard(
     elevated: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = com.example.repsgrams.ui.theme.LocalDarkTheme.current
     val shadowOpacity = if (isDark) 0.4f else 0.08f
-    val shadowElevation = if (elevated) 16.dp else 8.dp
-    
+    val shadowElevation = if (elevated) 10.dp else 4.dp
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -168,11 +169,15 @@ fun Modifier.shimmer(): Modifier {
         color.copy(alpha = 0.5f),
         color.copy(alpha = 0.2f),
     )
-    return this.background(
-        brush = androidx.compose.ui.graphics.Brush.linearGradient(
-            colors = shimmerColors,
-            start = androidx.compose.ui.geometry.Offset(translateAnim - 200f, translateAnim - 200f),
-            end = androidx.compose.ui.geometry.Offset(translateAnim, translateAnim)
+    // Read the animated value in the draw phase. Reading it while constructing
+    // the modifier recomposes every placeholder on every animation frame.
+    return this.drawBehind {
+        drawRect(
+            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                colors = shimmerColors,
+                start = androidx.compose.ui.geometry.Offset(translateAnim - 200f, translateAnim - 200f),
+                end = androidx.compose.ui.geometry.Offset(translateAnim, translateAnim),
+            ),
         )
-    )
+    }
 }

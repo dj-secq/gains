@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.datastore.SessionProgress
 import com.example.repsgrams.data.datastore.SessionProgressStore
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
-import com.example.repsgrams.data.datastore.CycleSettings
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.data.db.RepType
@@ -64,6 +63,8 @@ sealed interface WorkoutSessionUiState {
         val upNextExercises: List<String>,
         val rpeTagInput: String?,
         val notesInput: String,
+        val isHolding: Boolean,
+        val holdElapsedSeconds: Int,
     ) : WorkoutSessionUiState
 
     data class Summary(
@@ -79,7 +80,7 @@ sealed interface WorkoutSessionUiState {
 }
 
 class WorkoutSessionViewModel(
-    private val context: Context,
+    context: Context,
     private val sessionId: Long,
     private val workoutRepository: WorkoutRepository,
     private val progressStore: SessionProgressStore,
@@ -87,6 +88,7 @@ class WorkoutSessionViewModel(
     private val cycleSettingsRepository: CycleSettingsRepository,
     private val clock: Clock,
 ) : ViewModel() {
+    private val applicationContext = context.applicationContext
     private val _uiState = MutableStateFlow<WorkoutSessionUiState>(WorkoutSessionUiState.Loading)
     val uiState: StateFlow<WorkoutSessionUiState> = _uiState.asStateFlow()
 
@@ -94,7 +96,7 @@ class WorkoutSessionViewModel(
     val restFinished: SharedFlow<Unit> = _restFinished.asSharedFlow()
     private val _summaryDone = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val summaryDone: SharedFlow<Unit> = _summaryDone.asSharedFlow()
-    
+
     private val _prAchieved = MutableSharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>>(extraBufferCapacity = 1)
     val prAchieved: SharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>> = _prAchieved.asSharedFlow()
 
@@ -106,16 +108,26 @@ class WorkoutSessionViewModel(
     private var weightInput = ""
     private var isSaving = false
     private var unitSystem = UnitSystem.KG
-    private var currentSettings: CycleSettings? = null
     private var progressionSuggestion: ProgressionSuggestion? = null
     private var rpeTagInput: String? = null
     private var notesInput: String = ""
     private var lastTimeRound: PriorRound? = null
+    private var holdStartEpochMillis: Long? = null
 
     init {
         viewModelScope.launch {
             runCatching { load() }.onFailure {
                 _uiState.value = WorkoutSessionUiState.Error(it.message ?: "Couldn't load this workout.")
+            }
+        }
+        viewModelScope.launch {
+            RestTimerService.restEndMillis.collect { end ->
+                // Sync service state back to our local state
+                if (restEndEpochMillis != end) {
+                    restEndEpochMillis = end
+                    persistProgress()
+                    publishActive()
+                }
             }
         }
         viewModelScope.launch {
@@ -144,9 +156,16 @@ class WorkoutSessionViewModel(
         } else {
             persistProgress()
         }
-        if (restEndEpochMillis != null && restEndEpochMillis!! <= clock.millis()) {
-            restEndEpochMillis = null
-            persistProgress()
+        if (restEndEpochMillis != null) {
+            if (restEndEpochMillis!! <= clock.millis()) {
+                restEndEpochMillis = null
+                persistProgress()
+            } else {
+                // Restore the service alarm so it can ring!
+                val nextExercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
+                val upNext = "Up next: Round ${cursor.roundNumber} - ${nextExercise.name}"
+                startRestTimerService(restEndEpochMillis!!, upNext)
+            }
         }
         loadInputDefaults()
         publishActive()
@@ -157,6 +176,19 @@ class WorkoutSessionViewModel(
             valueInput = value.take(4)
             publishActive()
         }
+    }
+
+    fun startHold() {
+        holdStartEpochMillis = clock.millis()
+        publishActive()
+    }
+
+    fun stopHold() {
+        val start = holdStartEpochMillis ?: return
+        val elapsed = ((clock.millis() - start) / 1000).toInt()
+        holdStartEpochMillis = null
+        valueInput = elapsed.toString()
+        logCurrent()
     }
 
     fun updateWeight(value: String) {
@@ -217,10 +249,7 @@ class WorkoutSessionViewModel(
     }
 
     fun addRestSeconds(seconds: Int = 15) {
-        val end = restEndEpochMillis ?: return
-        restEndEpochMillis = end + seconds * 1_000L
-        viewModelScope.launch { persistProgress() }
-        publishActive()
+        addTimeToRestTimerService()
     }
 
     fun skipRest() {
@@ -231,14 +260,58 @@ class WorkoutSessionViewModel(
         publishActive()
     }
 
+    fun cancelWorkout() {
+        viewModelScope.launch {
+            workoutRepository.deleteSession(sessionId)
+            progressStore.clear()
+            stopRestTimerService()
+        }
+    }
+
+    fun previousStep() {
+        if (cursor.blockIndex == 0 && cursor.exerciseIndex == 0 && cursor.roundNumber == 1) return
+
+        var prevCursor = cursor
+        if (cursor.exerciseIndex > 0) {
+            prevCursor = cursor.copy(exerciseIndex = cursor.exerciseIndex - 1)
+        } else if (cursor.roundNumber > 1) {
+            prevCursor = SessionCursor(cursor.blockIndex, plan.blocks[cursor.blockIndex].exercises.lastIndex, cursor.roundNumber - 1)
+        } else {
+            var prevBlockIndex = cursor.blockIndex - 1
+            while (prevBlockIndex >= 0 && plan.blocks[prevBlockIndex].exercises.isEmpty()) prevBlockIndex -= 1
+            if (prevBlockIndex < 0) return
+            val prevBlock = plan.blocks[prevBlockIndex]
+            prevCursor = SessionCursor(prevBlockIndex, prevBlock.exercises.lastIndex, prevBlock.targetRoundsMax)
+        }
+
+        cursor = prevCursor
+
+        viewModelScope.launch {
+            val logged = workoutRepository.getSessionSets(sessionId)
+                .find { it.exerciseId == currentExercise().id && it.roundNumber == prevCursor.roundNumber }
+
+            if (logged != null) {
+                valueInput = (logged.reps ?: logged.durationSeconds)?.toString() ?: ""
+                weightInput = logged.weightKg?.let { formatWeight(if (unitSystem == UnitSystem.LB) it * POUNDS_PER_KILOGRAM else it) } ?: ""
+            } else {
+                loadInputDefaults()
+            }
+
+            restEndEpochMillis = null
+            stopRestTimerService()
+            persistProgress()
+            publishActive()
+        }
+    }
+
     fun finishWorkout() {
         if (!::session.isInitialized || session.completed) return
         viewModelScope.launch { finishAndSummarize() }
     }
 
-    
 
-    
+
+
 
     fun saveSummary() {
         val summary = _uiState.value as? WorkoutSessionUiState.Summary ?: return
@@ -292,46 +365,55 @@ class WorkoutSessionViewModel(
             durationSeconds = session.durationSeconds ?: elapsedSeconds(),
             maxDurationMinutes = plan.maxDurationMinutes,
             supplements = allSupps.filter { it.isActive }.map { supp ->
-                com.example.repsgrams.ui.today.TodaySupplement(supp, logs.any { it.supplementId == supp.id && it.taken })
+                val log = logs.firstOrNull { it.supplementId == supp.id }
+                com.example.repsgrams.ui.today.TodaySupplement(
+                    supplement = supp,
+                    taken = log?.taken == true,
+                    actualAmount = log?.actualAmount?.takeIf { it > 0 } ?: supp.doseAmount,
+                )
             },
         )
     }
 
     private suspend fun loadInputDefaults() {
         val exercise = currentExercise()
-        val previous = workoutRepository.previousSet(exercise.id, sessionId)
+        val previous = workoutRepository.previousSet(exercise.id, cursor.roundNumber, sessionId)
         progressionSuggestion = null
-        if (exercise.repType == RepType.REPS && plan.blocks[cursor.blockIndex].kind != BlockKind.WARM_UP) {
+        if (plan.blocks[cursor.blockIndex].kind != BlockKind.WARM_UP) {
             progressionSuggestion = ProgressionCalculator.suggestionFor(
                 exercise.targetValueHigh,
                 exercise.tracksWeight,
                 workoutRepository.previousSessionRounds(exercise.id, sessionId).map {
-                    PriorRound(it.reps, it.weightKg)
+                    PriorRound(if (exercise.repType == RepType.REPS) it.reps else it.durationSeconds, it.weightKg)
                 },
             )
         }
         valueInput = when (exercise.repType) {
             RepType.REPS -> previous?.reps
             RepType.SECONDS -> previous?.durationSeconds
-        }?.toString() ?: exercise.targetValueLow.toString()
-        weightInput = previous?.weightKg?.let {
-            formatWeight(if (unitSystem == UnitSystem.LB) it * POUNDS_PER_KILOGRAM else it)
-        } ?: if (exercise.tracksWeight) "0" else ""
+        }?.toString() ?: ((exercise.targetValueLow + exercise.targetValueHigh) / 2).toString()
+        val baseWeightKg = previous?.weightKg ?: 0f
+        val suggestedWeightKg = if (progressionSuggestion == ProgressionSuggestion.INCREASE_WEIGHT) {
+            baseWeightKg + if (unitSystem == UnitSystem.LB) (2.5f / POUNDS_PER_KILOGRAM) else 1f
+        } else baseWeightKg
+
+        weightInput = if (previous?.weightKg != null || progressionSuggestion == ProgressionSuggestion.INCREASE_WEIGHT) {
+            formatWeight(if (unitSystem == UnitSystem.LB) suggestedWeightKg * POUNDS_PER_KILOGRAM else suggestedWeightKg)
+        } else {
+            if (exercise.tracksWeight) "0" else ""
+        }
     }
 
     private fun tick() {
-        val end = restEndEpochMillis
-        if (end != null && end <= clock.millis()) {
-            // Keep the Rest UI open, just clamping to 0. 
-            // The service timer will ring, and the user must explicitly hit "Skip" to stop the alarm and move on.
-        }
+        // publishActive clamps an expired timer to 0:00 without advancing.
+        // Only an explicit Skip/Continue action may reveal the next exercise.
         publishActive()
     }
 
     private fun publishActive() {
         if (!::plan.isInitialized || session.completed) return
         val block = plan.blocks[cursor.blockIndex]
-        
+
         val upNext = mutableListOf<String>()
         var nextCursor = SessionNavigator.afterExercise(plan, cursor)
         var i = 0
@@ -374,41 +456,45 @@ class WorkoutSessionViewModel(
             upNextExercises = upNext,
             rpeTagInput = rpeTagInput,
             notesInput = notesInput,
+            isHolding = holdStartEpochMillis != null,
+            holdElapsedSeconds = holdStartEpochMillis?.let { ((clock.millis() - it) / 1000).toInt() } ?: 0,
         )
     }
 
     private fun startRestTimerService(endMillis: Long, upNext: String) {
-        val intent = Intent(context, RestTimerService::class.java).apply {
+        val intent = Intent(applicationContext, RestTimerService::class.java).apply {
             action = RestTimerService.ACTION_START
             putExtra(RestTimerService.EXTRA_END_MILLIS, endMillis)
             putExtra(RestTimerService.EXTRA_UP_NEXT, upNext)
         }
-        ContextCompat.startForegroundService(context, intent)
+        ContextCompat.startForegroundService(applicationContext, intent)
     }
 
     private fun addTimeToRestTimerService() {
-        val intent = Intent(context, RestTimerService::class.java).apply {
+        val intent = Intent(applicationContext, RestTimerService::class.java).apply {
             action = RestTimerService.ACTION_ADD_TIME
         }
-        ContextCompat.startForegroundService(context, intent)
+        ContextCompat.startForegroundService(applicationContext, intent)
     }
 
     private fun stopRestTimerService() {
-        val intent = Intent(context, RestTimerService::class.java).apply {
+        val intent = Intent(applicationContext, RestTimerService::class.java).apply {
             action = RestTimerService.ACTION_STOP
         }
         try {
-            context.startService(intent)
+            applicationContext.startService(intent)
         } catch (e: Exception) {
             e.printStackTrace()
         }
         try {
-            context.stopService(Intent(context, RestTimerService::class.java))
+            applicationContext.stopService(Intent(applicationContext, RestTimerService::class.java))
         } catch (e: Exception) {
             e.printStackTrace()
         }
         try {
-            context.sendBroadcast(Intent(RestTimerService.ACTION_STOP).setPackage(context.packageName))
+            applicationContext.sendBroadcast(
+                Intent(RestTimerService.ACTION_STOP).setPackage(applicationContext.packageName),
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }

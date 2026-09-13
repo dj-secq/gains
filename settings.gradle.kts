@@ -24,5 +24,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Reps & Grams"
+rootProject.name = "Gains"
 include(":app")

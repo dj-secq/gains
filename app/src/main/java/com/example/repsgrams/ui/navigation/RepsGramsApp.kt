@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,10 +42,11 @@ import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -66,6 +69,8 @@ private enum class TopLevelDestination(val route: String, val label: String, val
     SETTINGS("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings),
 }
 
+private const val MAIN_ROUTE = "main"
+
 @Composable
 fun RepsGramsApp(
     container: AppContainer,
@@ -73,12 +78,57 @@ fun RepsGramsApp(
     onNotificationHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(pageCount = { TopLevelDestination.entries.size })
+    val tabSlideSpec = remember {
+        androidx.compose.animation.core.tween<Float>(
+            durationMillis = 180,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        )
+    }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val isTopLevel = TopLevelDestination.entries.any { it.route == currentRoute }
+    val isTopLevel = currentRoute == MAIN_ROUTE
+
+    // Keep top-level ViewModels alive so tab changes do not start database work
+    // while both screens are being composed for the transition.
+    val todayViewModel: TodayViewModel = viewModel(
+        factory = TodayViewModel.factory(
+            scheduleRepository = container.scheduleRepository,
+            supplementRepository = container.supplementRepository,
+            workoutRepository = container.workoutRepository,
+            cycleSettingsRepository = container.cycleSettingsRepository,
+            progressRepository = container.progressRepository,
+        ),
+    )
+    val calendarViewModel: CalendarViewModel = viewModel(
+        factory = CalendarViewModel.factory(
+            container.calendarRepository,
+            container.cycleSettingsRepository,
+            container.reminderScheduler,
+            container.clock,
+        ),
+    )
+    val progressViewModel: com.example.repsgrams.ui.progress.ProgressViewModel = viewModel(
+        factory = com.example.repsgrams.ui.progress.ProgressViewModel.provideFactory(
+            container.progressRepository,
+            container.cycleSettingsRepository,
+            container.supplementRepository,
+        ),
+    )
+    val settingsViewModel: com.example.repsgrams.ui.settings.SettingsViewModel = viewModel(
+        factory = com.example.repsgrams.ui.settings.SettingsViewModel.factory(
+            container.cycleSettingsRepository,
+            container.reminderScheduler,
+        ),
+    )
+
     LaunchedEffect(notificationTarget) {
         if (notificationTarget != null) {
-            navController.navigate(TopLevelDestination.TODAY.route) { launchSingleTop = true }
+            if (currentRoute != MAIN_ROUTE) {
+                navController.popBackStack(MAIN_ROUTE, inclusive = false)
+            }
+            pagerState.scrollToPage(TopLevelDestination.TODAY.ordinal)
         }
     }
 
@@ -96,20 +146,22 @@ fun RepsGramsApp(
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        TopLevelDestination.entries.forEach { destination ->
-                            val selected = currentRoute == destination.route
+                        TopLevelDestination.entries.forEachIndexed { index, destination ->
+                            val selected = pagerState.currentPage == index
                             val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable(
+                                        enabled = !selected && !pagerState.isScrollInProgress,
                                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                         indication = null
                                     ) {
-                                        navController.navigate(destination.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(
+                                                page = index,
+                                                animationSpec = tabSlideSpec,
+                                            )
                                         }
                                     },
                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -132,105 +184,77 @@ fun RepsGramsApp(
             }
         },
     ) { innerPadding ->
-        val navSpringSpec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(
-            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+        val detailSlideSpec = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(
+            durationMillis = 220,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
         )
-        val fadeSpec = androidx.compose.animation.core.tween<Float>(220)
-        
+
         NavHost(
             navController = navController,
-            startDestination = TopLevelDestination.TODAY.route,
+            startDestination = MAIN_ROUTE,
             modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
-            enterTransition = { 
-                if (targetState.destination.route in TopLevelDestination.entries.map { it.route }) {
-                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
-                } else {
-                    androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }, animationSpec = navSpringSpec) + 
-                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
-                }
+            enterTransition = {
+                androidx.compose.animation.slideInHorizontally(
+                    initialOffsetX = { width -> width },
+                    animationSpec = detailSlideSpec,
+                )
             },
             exitTransition = {
-                if (initialState.destination.route in TopLevelDestination.entries.map { it.route }) {
-                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
-                } else {
-                    androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = navSpringSpec) + 
-                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
-                }
+                androidx.compose.animation.slideOutHorizontally(
+                    targetOffsetX = { width -> -width / 3 },
+                    animationSpec = detailSlideSpec,
+                )
             },
             popEnterTransition = {
-                if (targetState.destination.route in TopLevelDestination.entries.map { it.route }) {
-                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
-                } else {
-                    androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = navSpringSpec) + 
-                    androidx.compose.animation.fadeIn(animationSpec = fadeSpec)
-                }
+                androidx.compose.animation.slideInHorizontally(
+                    initialOffsetX = { width -> -width / 3 },
+                    animationSpec = detailSlideSpec,
+                )
             },
             popExitTransition = {
-                if (initialState.destination.route in TopLevelDestination.entries.map { it.route }) {
-                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
-                } else {
-                    androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }, animationSpec = navSpringSpec) + 
-                    androidx.compose.animation.fadeOut(animationSpec = fadeSpec)
-                }
+                androidx.compose.animation.slideOutHorizontally(
+                    targetOffsetX = { width -> width },
+                    animationSpec = detailSlideSpec,
+                )
             }
         ) {
-            composable(TopLevelDestination.TODAY.route) {
-                val todayViewModel: TodayViewModel = viewModel(
-                    factory = TodayViewModel.factory(
-                        scheduleRepository = container.scheduleRepository,
-                        supplementRepository = container.supplementRepository,
-                        workoutRepository = container.workoutRepository,
-                        cycleSettingsRepository = container.cycleSettingsRepository,
-                        progressRepository = container.progressRepository,
-                    ),
-                )
-                TodayRoute(
-                    viewModel = todayViewModel,
-                    notificationTarget = notificationTarget,
-                    onNotificationHandled = onNotificationHandled,
-                    onOpenSession = { sessionId -> navController.navigate("session/$sessionId") },
-                )
-            }
-            composable(TopLevelDestination.CALENDAR.route) {
-                val calendarViewModel: CalendarViewModel = viewModel(
-                    factory = CalendarViewModel.factory(
-                        container.calendarRepository,
-                        container.cycleSettingsRepository,
-                        container.reminderScheduler,
-                        container.clock,
-                    ),
-                )
-                CalendarRoute(calendarViewModel)
-            }
-            composable(TopLevelDestination.PROGRESS.route) {
-                val progressViewModel: com.example.repsgrams.ui.progress.ProgressViewModel = viewModel(
-                    factory = com.example.repsgrams.ui.progress.ProgressViewModel.provideFactory(
-                        container.progressRepository,
-                        container.cycleSettingsRepository,
-                    ),
-                )
-                com.example.repsgrams.ui.progress.ProgressRoute(progressViewModel)
-            }
-            composable(TopLevelDestination.SETTINGS.route) {
-                val settingsViewModel: com.example.repsgrams.ui.settings.SettingsViewModel = viewModel(
-                    factory = com.example.repsgrams.ui.settings.SettingsViewModel.factory(
-                        container.cycleSettingsRepository, container.reminderScheduler,
-                    ),
-                )
-                val scope = rememberCoroutineScope()
-                com.example.repsgrams.ui.settings.SettingsRoute(
-                    viewModel = settingsViewModel,
-                    onNavigateToTemplates = { navController.navigate("templates") },
-                    onNavigateToExercises = { navController.navigate("exercises") },
-                    onNavigateToSupplements = { navController.navigate("manage_supplements") },
-                    onExportData = { uri ->
-                        scope.launch { container.backupManager.exportDatabaseToZip(uri) }
-                    },
-                    onImportData = { uri ->
-                        scope.launch { container.backupManager.importDatabaseFromZip(uri) }
+            composable(MAIN_ROUTE) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = TopLevelDestination.entries.lastIndex,
+                ) { page ->
+                    Box(modifier = Modifier.fillMaxSize().graphicsLayer()) {
+                        when (TopLevelDestination.entries[page]) {
+                            TopLevelDestination.TODAY -> TodayRoute(
+                                viewModel = todayViewModel,
+                                notificationTarget = notificationTarget,
+                                onNotificationHandled = onNotificationHandled,
+                                onOpenSession = { sessionId -> navController.navigate("session/$sessionId") },
+                            )
+
+                            TopLevelDestination.CALENDAR -> CalendarRoute(calendarViewModel)
+
+                            TopLevelDestination.PROGRESS ->
+                                com.example.repsgrams.ui.progress.ProgressRoute(progressViewModel)
+
+                            TopLevelDestination.SETTINGS ->
+                                com.example.repsgrams.ui.settings.SettingsRoute(
+                                    viewModel = settingsViewModel,
+                                    onNavigateToTemplates = { navController.navigate("templates") },
+                                    onNavigateToExercises = { navController.navigate("exercises") },
+                                    onNavigateToExerciseLibrary = { navController.navigate("exercise_library") },
+                                    onNavigateToSupplements = { navController.navigate("manage_supplements") },
+                                    onExportData = { uri ->
+                                        scope.launch { container.backupManager.exportDatabaseToZip(uri) }
+                                    },
+                                    onImportData = { uri ->
+                                        scope.launch { container.backupManager.importDatabaseFromZip(uri) }
+                                    },
+                                )
+                        }
                     }
-                )
+                }
             }
             composable("templates") {
                 val editorViewModel: com.example.repsgrams.ui.settings.ProgramEditorViewModel = viewModel(
@@ -291,6 +315,16 @@ fun RepsGramsApp(
                     onBack = { navController.popBackStack() }
                 )
             }
+            composable("exercise_library") {
+                val exViewModel: com.example.repsgrams.ui.settings.ExerciseDictionaryViewModel = viewModel(
+                    factory = com.example.repsgrams.ui.settings.ExerciseDictionaryViewModel.factory(container.workoutRepository)
+                )
+                val exercises by exViewModel.exercises.collectAsStateWithLifecycle()
+                com.example.repsgrams.ui.settings.ExerciseLibraryScreen(
+                    exercises = exercises,
+                    onBack = { navController.popBackStack() },
+                )
+            }
             composable(
                 route = "session/{sessionId}",
                 arguments = listOf(navArgument("sessionId") { type = NavType.LongType }),
@@ -310,7 +344,8 @@ fun RepsGramsApp(
                     ),
                 )
                 WorkoutSessionRoute(sessionViewModel) {
-                    navController.popBackStack(TopLevelDestination.TODAY.route, inclusive = false)
+                    scope.launch { pagerState.scrollToPage(TopLevelDestination.TODAY.ordinal) }
+                    navController.popBackStack(MAIN_ROUTE, inclusive = false)
                 }
             }
         }

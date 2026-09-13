@@ -17,27 +17,37 @@ class DatabaseInitializer(
             val metadataDao = database.databaseMetadataDao()
             val currentVersion = metadataDao.getInt(SEED_VERSION_KEY) ?: 0
             if (currentVersion >= CURRENT_SEED_VERSION) return@withTransaction
-            
-            if (currentVersion < 2) {
-                // Retrofit image asset names to existing exercises
-                val allEx = database.exerciseDao().getAll()
-                allEx.forEach { ex ->
-                    val defaultEx = DEFAULT_EXERCISES.find { it.name == ex.name }
-                    if (defaultEx?.imageAssetName != null && ex.imageAssetName == null) {
-                        database.exerciseDao().update(ex.copy(imageAssetName = defaultEx.imageAssetName))
+
+            val existingExercises = database.exerciseDao().getAll().associateBy { it.name }.toMutableMap()
+            DEFAULT_EXERCISES.forEach { defaultExercise ->
+                val existing = existingExercises[defaultExercise.name]
+                if (existing == null) {
+                    val id = database.exerciseDao().insert(defaultExercise)
+                    existingExercises[defaultExercise.name] = defaultExercise.copy(id = id)
+                } else {
+                    var needsUpdate = false
+                    var updated = existing
+                    if (defaultExercise.imageAssetName != null && existing.imageAssetName == null) {
+                        updated = updated.copy(imageAssetName = defaultExercise.imageAssetName)
+                        needsUpdate = true
+                    }
+                    if (existing.muscleGroup == "Uncategorized" && defaultExercise.muscleGroup != "Uncategorized") {
+                        updated = updated.copy(muscleGroup = defaultExercise.muscleGroup)
+                        needsUpdate = true
+                    }
+                    if (needsUpdate) {
+                        database.exerciseDao().update(updated)
+                        existingExercises[defaultExercise.name] = updated
                     }
                 }
             }
-
-            val exerciseIds = database.exerciseDao().insertAll(DEFAULT_EXERCISES).mapIndexed { index, id ->
-                DEFAULT_EXERCISES[index].name to id
-            }.toMap()
+            val exerciseIds = existingExercises.mapValues { it.value.id }
 
             val templateDao = database.workoutTemplateDao()
             val blockDao = database.templateBlockDao()
             val assignmentDao = database.templateBlockExerciseDao()
 
-            seedTemplate(
+            if (templateDao.getByDayLabel("A") == null) seedTemplate(
                 template = WorkoutTemplateEntity(
                     name = "Workout A — Upper Body + Light Legs",
                     dayLabel = "A",
@@ -49,7 +59,7 @@ class DatabaseInitializer(
                 blockDao = blockDao,
                 assignmentDao = assignmentDao,
             )
-            seedTemplate(
+            if (templateDao.getByDayLabel("B") == null) seedTemplate(
                 template = WorkoutTemplateEntity(
                     name = "Workout B — Upper Body + Posterior Chain",
                     dayLabel = "B",
@@ -62,9 +72,10 @@ class DatabaseInitializer(
                 assignmentDao = assignmentDao,
             )
 
-            val today = LocalDate.now(clock)
-            val wheyId = database.supplementDao().insert(
-                com.example.repsgrams.data.db.SupplementEntity(
+            val supplementDao = database.supplementDao()
+            val existingSupplements = supplementDao.getAll()
+            val wheyId = existingSupplements.firstOrNull { it.name.contains("whey", ignoreCase = true) }?.id
+                ?: supplementDao.insert(com.example.repsgrams.data.db.SupplementEntity(
                     name = "Whey Protein",
                     doseAmount = 1f,
                     unit = "serving",
@@ -73,10 +84,9 @@ class DatabaseInitializer(
                     lowSupplyThreshold = 10,
                     colorToken = "green",
                     iconName = "water_drop"
-                )
-            )
-            val creatineId = database.supplementDao().insert(
-                com.example.repsgrams.data.db.SupplementEntity(
+                ))
+            val creatineId = existingSupplements.firstOrNull { it.name.contains("creatine", ignoreCase = true) }?.id
+                ?: supplementDao.insert(com.example.repsgrams.data.db.SupplementEntity(
                     name = "Creatine",
                     doseAmount = 5f,
                     unit = "g",
@@ -85,8 +95,16 @@ class DatabaseInitializer(
                     lowSupplyThreshold = 5,
                     colorToken = "teal",
                     iconName = "science"
-                )
-            )
+                ))
+            val inventoryDao = database.supplyInventoryDao()
+            val today = LocalDate.now(clock)
+            if (inventoryDao.get(wheyId) == null) {
+                inventoryDao.insert(SupplyInventoryEntity(supplementId = wheyId, totalServings = 65, servingsRemaining = 65f, startDate = today))
+            }
+            if (inventoryDao.get(creatineId) == null) {
+                inventoryDao.insert(SupplyInventoryEntity(supplementId = creatineId, totalServings = 30, servingsRemaining = 30f, startDate = today))
+            }
+            metadataDao.put(DatabaseMetadataEntity(SEED_VERSION_KEY, CURRENT_SEED_VERSION))
             }
 
     }
@@ -110,6 +128,7 @@ class DatabaseInitializer(
                     targetRoundsMin = seedBlock.roundsMin,
                     targetRoundsMax = seedBlock.roundsMax,
                     restSecondsBetweenRounds = seedBlock.restSeconds,
+                    restSecondsAfterBlock = seedBlock.restSecondsAfterBlock,
                     isOptional = seedBlock.optional,
                 ),
             )
@@ -141,34 +160,35 @@ class DatabaseInitializer(
         val roundsMin: Int,
         val roundsMax: Int = roundsMin,
         val restSeconds: Int? = null,
+        val restSecondsAfterBlock: Int? = null,
         val optional: Boolean = false,
         val exercises: List<SeedTarget>,
     )
 
     private companion object {
         const val SEED_VERSION_KEY = "default_program_seed_version"
-        const val CURRENT_SEED_VERSION = 1
+        const val CURRENT_SEED_VERSION = 4
 
         val DEFAULT_EXERCISES = listOf(
-            ExerciseEntity(name = "Jumping Jacks", tracksWeight = false),
-            ExerciseEntity(name = "Arm Circles", imageAssetName = "ex_arm_circles", notes = "10 forward, 10 backward", tracksWeight = false),
-            ExerciseEntity(name = "Band Pull-Aparts", imageAssetName = "ex_band_pull_aparts", tracksWeight = false),
-            ExerciseEntity(name = "Bodyweight Squats", imageAssetName = "ex_bodyweight_squats", tracksWeight = false),
-            ExerciseEntity(name = "Easy Push-Ups", imageAssetName = "ex_easy_push_ups", tracksWeight = false),
-            ExerciseEntity(name = "Pull-Ups", imageAssetName = "ex_pull_ups", tracksWeight = false),
-            ExerciseEntity(name = "DB Floor Press", imageAssetName = "ex_db_floor_press", tracksWeight = true),
-            ExerciseEntity(name = "Single-Arm DB Row", imageAssetName = "ex_single_arm_db_row", tracksWeight = true),
-            ExerciseEntity(name = "DB Overhead Press", imageAssetName = "ex_db_overhead_press", tracksWeight = true),
-            ExerciseEntity(name = "DB Bicep Curl", imageAssetName = "ex_db_bicep_curl", tracksWeight = true),
-            ExerciseEntity(name = "Bulgarian Split Squat", imageAssetName = "ex_bulgarian_split_squat", tracksWeight = false),
-            ExerciseEntity(name = "Hanging Knee Raise", imageAssetName = "ex_hanging_knee_raise", tracksWeight = false),
-            ExerciseEntity(name = "Chin-Ups", imageAssetName = "ex_chin_ups", tracksWeight = false),
-            ExerciseEntity(name = "Push-Ups", imageAssetName = "ex_push_ups", tracksWeight = false),
-            ExerciseEntity(name = "DB Romanian Deadlift", imageAssetName = "ex_db_romanian_deadlift", tracksWeight = true),
-            ExerciseEntity(name = "Band Lateral Raise", imageAssetName = "ex_band_lateral_raise", tracksWeight = false),
-            ExerciseEntity(name = "DB Overhead Triceps Extension", imageAssetName = "ex_db_overhead_triceps_extension", tracksWeight = true),
-            ExerciseEntity(name = "Band Face Pull", imageAssetName = "ex_band_face_pull", tracksWeight = false),
-            ExerciseEntity(name = "Hollow Body Hold", imageAssetName = "ex_hollow_body_hold", tracksWeight = false),
+            ExerciseEntity(name = "Jumping Jacks", muscleGroup = "Full Body", tracksWeight = false),
+            ExerciseEntity(name = "Arm Circles", muscleGroup = "Shoulders", imageAssetName = "ex_arm_circles", notes = "10 forward, 10 backward", tracksWeight = false),
+            ExerciseEntity(name = "Band Pull-Aparts", muscleGroup = "Back", imageAssetName = "ex_band_pull_aparts", tracksWeight = false),
+            ExerciseEntity(name = "Bodyweight Squats", muscleGroup = "Legs", imageAssetName = "ex_bodyweight_squats", tracksWeight = false),
+            ExerciseEntity(name = "Easy Push-Ups", muscleGroup = "Chest", imageAssetName = "ex_easy_push_ups", tracksWeight = false),
+            ExerciseEntity(name = "Pull-Ups", muscleGroup = "Back", imageAssetName = "ex_pull_ups", tracksWeight = false),
+            ExerciseEntity(name = "DB Floor Press", muscleGroup = "Chest", imageAssetName = "ex_db_floor_press", tracksWeight = true),
+            ExerciseEntity(name = "Single-Arm DB Row", muscleGroup = "Back", imageAssetName = "ex_single_arm_db_row", tracksWeight = true),
+            ExerciseEntity(name = "DB Overhead Press", muscleGroup = "Shoulders", imageAssetName = "ex_db_overhead_press", tracksWeight = true),
+            ExerciseEntity(name = "DB Bicep Curl", muscleGroup = "Arms", imageAssetName = "ex_db_bicep_curl", tracksWeight = true),
+            ExerciseEntity(name = "Bulgarian Split Squat", muscleGroup = "Legs", imageAssetName = "ex_bulgarian_split_squat", tracksWeight = false),
+            ExerciseEntity(name = "Hanging Knee Raise", muscleGroup = "Core", imageAssetName = "ex_hanging_knee_raise", tracksWeight = false),
+            ExerciseEntity(name = "Chin-Ups", muscleGroup = "Back", imageAssetName = "ex_chin_ups", tracksWeight = false),
+            ExerciseEntity(name = "Push-Ups", muscleGroup = "Chest", imageAssetName = "ex_push_ups", tracksWeight = false),
+            ExerciseEntity(name = "DB Romanian Deadlift", muscleGroup = "Legs", imageAssetName = "ex_db_romanian_deadlift", tracksWeight = true),
+            ExerciseEntity(name = "Band Lateral Raise", muscleGroup = "Shoulders", imageAssetName = "ex_band_lateral_raise", tracksWeight = false),
+            ExerciseEntity(name = "DB Overhead Triceps Extension", muscleGroup = "Arms", imageAssetName = "ex_db_overhead_triceps_extension", tracksWeight = true),
+            ExerciseEntity(name = "Band Face Pull", muscleGroup = "Back", imageAssetName = "ex_band_face_pull", tracksWeight = false),
+            ExerciseEntity(name = "Hollow Body Hold", muscleGroup = "Core", imageAssetName = "ex_hollow_body_hold", tracksWeight = false),
         )
 
         val warmUpTargets = listOf(
@@ -180,16 +200,16 @@ class DatabaseInitializer(
         )
 
         val workoutABlocks = listOf(
-            SeedBlock("Warm-Up", BlockKind.WARM_UP, 1, exercises = warmUpTargets),
-            SeedBlock("Superset A", BlockKind.SUPERSET, 3, restSeconds = 90, exercises = listOf(
+            SeedBlock("Warm-Up", BlockKind.WARM_UP, 1, restSecondsAfterBlock = 60, exercises = warmUpTargets),
+            SeedBlock("Superset A", BlockKind.SUPERSET, 3, restSeconds = 90, restSecondsAfterBlock = 90, exercises = listOf(
                 SeedTarget("Pull-Ups", 4, 6),
                 SeedTarget("DB Floor Press", 8, 12),
             )),
-            SeedBlock("Superset B", BlockKind.SUPERSET, 3, restSeconds = 90, exercises = listOf(
+            SeedBlock("Superset B", BlockKind.SUPERSET, 3, restSeconds = 90, restSecondsAfterBlock = 90, exercises = listOf(
                 SeedTarget("Single-Arm DB Row", 8, 15, perSide = true),
                 SeedTarget("DB Overhead Press", 8, 12),
             )),
-            SeedBlock("Superset C", BlockKind.SUPERSET, 2, 3, 60, exercises = listOf(
+            SeedBlock("Superset C", BlockKind.SUPERSET, 2, 3, 60, restSecondsAfterBlock = 60, exercises = listOf(
                 SeedTarget("DB Bicep Curl", 8, 15),
                 SeedTarget("Bulgarian Split Squat", 8, 12, perSide = true),
             )),
@@ -199,16 +219,16 @@ class DatabaseInitializer(
         )
 
         val workoutBBlocks = listOf(
-            SeedBlock("Warm-Up", BlockKind.WARM_UP, 1, exercises = warmUpTargets),
-            SeedBlock("Superset A", BlockKind.SUPERSET, 3, restSeconds = 90, exercises = listOf(
+            SeedBlock("Warm-Up", BlockKind.WARM_UP, 1, restSecondsAfterBlock = 60, exercises = warmUpTargets),
+            SeedBlock("Superset A", BlockKind.SUPERSET, 3, restSeconds = 90, restSecondsAfterBlock = 90, exercises = listOf(
                 SeedTarget("Chin-Ups", 4, 7),
                 SeedTarget("Push-Ups", 8, 15),
             )),
-            SeedBlock("Superset B", BlockKind.SUPERSET, 2, 3, 60, exercises = listOf(
+            SeedBlock("Superset B", BlockKind.SUPERSET, 2, 3, 60, restSecondsAfterBlock = 60, exercises = listOf(
                 SeedTarget("DB Romanian Deadlift", 8, 15),
                 SeedTarget("Band Lateral Raise", 12, 20),
             )),
-            SeedBlock("Superset C", BlockKind.SUPERSET, 2, 3, 60, exercises = listOf(
+            SeedBlock("Superset C", BlockKind.SUPERSET, 2, 3, 60, restSecondsAfterBlock = 60, exercises = listOf(
                 SeedTarget("DB Overhead Triceps Extension", 10, 15),
                 SeedTarget("Band Face Pull", 15, 20),
             )),

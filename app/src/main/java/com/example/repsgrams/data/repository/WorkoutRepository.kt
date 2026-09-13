@@ -25,6 +25,9 @@ class WorkoutRepository(
 ) {
     fun observeActiveSession(): Flow<WorkoutSessionEntity?> = database.workoutSessionDao().observeActive()
 
+    fun observeSessionsForDate(date: LocalDate): Flow<List<WorkoutSessionEntity>> =
+        database.workoutSessionDao().observeForDate(date)
+
     suspend fun startSession(dayLabel: String): Long {
         databaseReady.await()
         return database.withTransaction {
@@ -37,6 +40,28 @@ class WorkoutRepository(
                         templateId = template.id,
                         date = LocalDate.now(clock),
                         startTime = Instant.now(clock),
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun logRestDay(date: LocalDate = LocalDate.now(clock)) {
+        databaseReady.await()
+        database.withTransaction {
+            val alreadyLogged = database.workoutSessionDao().getForDate(date)
+                .any { it.completed && it.templateId == null }
+            if (!alreadyLogged) {
+                val now = Instant.now(clock)
+                database.workoutSessionDao().insert(
+                    WorkoutSessionEntity(
+                        templateId = null,
+                        date = date,
+                        startTime = now,
+                        endTime = now,
+                        completed = true,
+                        durationSeconds = 0,
+                        notes = "Rest day",
                     ),
                 )
             }
@@ -57,6 +82,7 @@ class WorkoutRepository(
                 targetRoundsMin = block.targetRoundsMin,
                 targetRoundsMax = block.targetRoundsMax,
                 restSecondsBetweenRounds = block.restSecondsBetweenRounds,
+                restSecondsAfterBlock = block.restSecondsAfterBlock,
                 isOptional = block.isOptional,
                 exercises = database.templateBlockExerciseDao().getForBlock(block.id).map { link ->
                     val exercise = requireNotNull(database.exerciseDao().getById(link.exerciseId))
@@ -77,8 +103,10 @@ class WorkoutRepository(
         return WorkoutPlan(template.id, template.name, template.dayLabel, template.maxDurationMinutes, template.category, blocks)
     }
 
-    suspend fun previousSet(exerciseId: Long, sessionId: Long): SetLogEntity? =
-        database.setLogDao().getPreviousForExercise(exerciseId, sessionId)
+    suspend fun getSessionSets(sessionId: Long): List<SetLogEntity> = database.setLogDao().getForSession(sessionId)
+
+    suspend fun previousSet(exerciseId: Long, roundNumber: Int, sessionId: Long): SetLogEntity? =
+        database.setLogDao().getPreviousForExercise(exerciseId, roundNumber, sessionId)
 
     suspend fun previousSessionRounds(exerciseId: Long, sessionId: Long): List<SetLogEntity> =
         database.setLogDao().getPreviousSessionRounds(exerciseId, sessionId)
@@ -94,19 +122,33 @@ class WorkoutRepository(
         substitutedFrom: Long? = null,
     ): List<com.example.repsgrams.data.db.PersonalRecordEntity> {
         val session = database.workoutSessionDao().getById(sessionId) ?: return emptyList()
-        val setId = database.setLogDao().insert(
-            SetLogEntity(
-                sessionId = sessionId,
-                exerciseId = exerciseId,
-                roundNumber = roundNumber,
+        val existing = database.setLogDao().getForSession(sessionId)
+            .find { it.exerciseId == exerciseId && it.roundNumber == roundNumber }
+
+        val setId = if (existing != null) {
+            database.setLogDao().update(existing.copy(
                 reps = reps,
                 durationSeconds = durationSeconds,
                 weightKg = weightKg,
-                loggedAt = Instant.now(clock),
                 rpeTag = rpeTag,
                 substitutedFrom = substitutedFrom,
-            ),
-        )
+            ))
+            existing.id
+        } else {
+            database.setLogDao().insert(
+                SetLogEntity(
+                    sessionId = sessionId,
+                    exerciseId = exerciseId,
+                    roundNumber = roundNumber,
+                    reps = reps,
+                    durationSeconds = durationSeconds,
+                    weightKg = weightKg,
+                    loggedAt = Instant.now(clock),
+                    rpeTag = rpeTag,
+                    substitutedFrom = substitutedFrom,
+                ),
+            )
+        }
         if (reps != null && weightKg != null) {
             val prManager = PRManager(database)
             return prManager.checkAndSavePR(exerciseId, reps, weightKg, setId, session.date)
@@ -132,14 +174,14 @@ class WorkoutRepository(
     // Phase 8 Editor CRUD operations
     fun observeAllTemplates(): Flow<List<WorkoutTemplateEntity>> = database.workoutTemplateDao().observeAll()
 
-    fun observeBlocksForTemplate(templateId: Long): Flow<List<TemplateBlockEntity>> = 
+    fun observeBlocksForTemplate(templateId: Long): Flow<List<TemplateBlockEntity>> =
         database.templateBlockDao().observeForTemplate(templateId)
-        
+
     fun observeExercisesForBlock(blockId: Long): Flow<List<TemplateBlockExerciseEntity>> =
         database.templateBlockExerciseDao().observeForBlock(blockId)
 
     suspend fun getTemplate(id: Long): WorkoutTemplateEntity? = database.workoutTemplateDao().getById(id)
-    
+
     suspend fun getExercise(id: Long): ExerciseEntity? = database.exerciseDao().getById(id)
 
     suspend fun insertTemplate(template: WorkoutTemplateEntity) {
@@ -154,27 +196,27 @@ class WorkoutRepository(
     suspend fun deleteTemplate(template: WorkoutTemplateEntity) {
         database.workoutTemplateDao().delete(template)
     }
-    
+
     suspend fun hasTemplateHistory(templateId: Long): Boolean = database.workoutSessionDao().hasHistory(templateId)
-    
+
     suspend fun swapTemplates(id1: Long, id2: Long) {
         val dao = database.workoutTemplateDao()
         val t1 = dao.getById(id1) ?: return
         val t2 = dao.getById(id2) ?: return
-        
+
         val order1 = t1.orderIndex
         val order2 = t2.orderIndex
         dao.update(t1.copy(orderIndex = -1))
         dao.update(t2.copy(orderIndex = order1))
         dao.update(t1.copy(orderIndex = order2))
     }
-    
+
     suspend fun updateTemplateCategory(templateId: Long, category: String) {
         val dao = database.workoutTemplateDao()
         val t = dao.getById(templateId) ?: return
         dao.update(t.copy(category = category))
     }
-    
+
     suspend fun updateTemplateRestDays(templateId: Long, restDays: Int) {
         val dao = database.workoutTemplateDao()
         val t = dao.getById(templateId) ?: return
@@ -197,7 +239,7 @@ class WorkoutRepository(
         database.withTransaction {
             database.templateBlockDao().delete(block)
             val remaining = database.templateBlockDao().getForTemplate(block.templateId)
-            remaining.forEachIndexed { idx, blk -> 
+            remaining.forEachIndexed { idx, blk ->
                 if (blk.orderIndex != idx) database.templateBlockDao().update(blk.copy(orderIndex = idx))
             }
         }
@@ -269,4 +311,13 @@ class WorkoutRepository(
             false
         }
     }
+
+
+    suspend fun deleteSession(sessionId: Long) {
+        val session = database.workoutSessionDao().getById(sessionId)
+        if (session != null) {
+            database.workoutSessionDao().delete(session)
+        }
+    }
+
 }

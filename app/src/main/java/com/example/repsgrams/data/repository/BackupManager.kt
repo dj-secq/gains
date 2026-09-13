@@ -15,7 +15,7 @@ class BackupManager(private val context: Context) {
         val dbFile = context.getDatabasePath(dbName)
         val walFile = File(dbFile.parent, "$dbName-wal")
         val shmFile = File(dbFile.parent, "$dbName-shm")
-        
+
         ZipOutputStream(outStream).use { zos ->
             val files = listOf(dbFile, walFile, shmFile).filter { it.exists() }
             for (file in files) {
@@ -30,7 +30,7 @@ class BackupManager(private val context: Context) {
         return try {
             val dbFile = context.getDatabasePath(dbName)
             val dbDir = dbFile.parentFile ?: return false
-            
+
             // Overwrite existing files
             ZipInputStream(inStream).use { zis ->
                 var entry = zis.nextEntry

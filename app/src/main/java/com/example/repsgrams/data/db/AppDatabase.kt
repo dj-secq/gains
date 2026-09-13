@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SupplyInventoryEntity::class,
         DatabaseMetadataEntity::class,
     ],
-    version = 5,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(DatabaseConverters::class)
@@ -43,6 +43,36 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun databaseMetadataDao(): DatabaseMetadataDao
 
     companion object {
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Version 6 introduced this column as nullable, leaving existing
+                // programs with no rest when moving from one block to the next.
+                // Preserve explicit values (including 0) and backfill only
+                // non-final blocks that never received a value.
+                db.execSQL(
+                    """
+                    UPDATE template_blocks
+                    SET restSecondsAfterBlock = CASE
+                        WHEN kind = 'WARM_UP' THEN 60
+                        ELSE COALESCE(restSecondsBetweenRounds, 90)
+                    END
+                    WHERE restSecondsAfterBlock IS NULL
+                      AND orderIndex < (
+                          SELECT MAX(nextBlock.orderIndex)
+                          FROM template_blocks AS nextBlock
+                          WHERE nextBlock.templateId = template_blocks.templateId
+                      )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE template_blocks ADD COLUMN restSecondsAfterBlock INTEGER")
+            }
+        }
+
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -68,7 +98,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE TABLE `supplement_intake_logs` (" +
                     "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                     "`supplementId` INTEGER NOT NULL, " +
-                    "`date` TEXT NOT NULL, " +
+                    "`date` INTEGER NOT NULL, " +
                     "`taken` INTEGER NOT NULL, " +
                     "`actualAmount` REAL NOT NULL, " +
                     "FOREIGN KEY(`supplementId`) REFERENCES `supplements`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE" +
@@ -84,7 +114,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "`supplementId` INTEGER NOT NULL, " +
                     "`totalServings` INTEGER NOT NULL, " +
                     "`servingsRemaining` REAL NOT NULL, " +
-                    "`startDate` TEXT NOT NULL, " +
+                    "`startDate` INTEGER NOT NULL, " +
                     "FOREIGN KEY(`supplementId`) REFERENCES `supplements`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE" +
                     ")"
                 )
@@ -120,10 +150,10 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE workout_templates ADD COLUMN restDaysAfter INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE workout_templates ADD COLUMN orderIndex INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE workout_templates ADD COLUMN category TEXT NOT NULL DEFAULT 'Custom'")
-                
+
                 // Backfill existing templates with order matching their names if possible
-                db.execSQL("UPDATE workout_templates SET orderIndex = 0, restDaysAfter = 1 WHERE name LIKE '%A %'")
-                db.execSQL("UPDATE workout_templates SET orderIndex = 1, restDaysAfter = 2 WHERE name LIKE '%B %'")
+                db.execSQL("UPDATE workout_templates SET orderIndex = 0, restDaysAfter = 1 WHERE dayLabel = 'A'")
+                db.execSQL("UPDATE workout_templates SET orderIndex = 1, restDaysAfter = 2 WHERE dayLabel = 'B'")
             }
         }
         val MIGRATION_2_3 = object : Migration(2, 3) {
@@ -176,13 +206,13 @@ abstract class AppDatabase : RoomDatabase() {
                 // SetLogEntity additions
                 db.execSQL("ALTER TABLE set_logs ADD COLUMN rpeTag TEXT")
                 db.execSQL("ALTER TABLE set_logs ADD COLUMN substitutedFrom INTEGER")
-                // Foreign key constraint on substitutedFrom (SQLite ALTER TABLE doesn't support adding FKs directly, 
-                // but Room doesn't strictly enforce SQLite FK pragmas after the fact unless you recreate the table. 
-                // For a simple migration we'll just add the column. To be perfectly compliant with Room schema export, 
+                // Foreign key constraint on substitutedFrom (SQLite ALTER TABLE doesn't support adding FKs directly,
+                // but Room doesn't strictly enforce SQLite FK pragmas after the fact unless you recreate the table.
+                // For a simple migration we'll just add the column. To be perfectly compliant with Room schema export,
                 // we technically need to recreate the table, but adding the column often works if FKs aren't strictly checked by SQLite pragma).
                 // Actually, Room validation WILL fail if the table schema doesn't perfectly match the generated hash (which includes FKs).
                 // It's safest to recreate the set_logs table if we added a FK.
-                
+
                 // Let's do the recreate dance for set_logs
                 db.execSQL("""
                     CREATE TABLE set_logs_new (

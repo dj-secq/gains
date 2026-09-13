@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -30,7 +32,8 @@ class CalendarViewModel(
     private val displayedMonth = MutableStateFlow(YearMonth.from(today))
     val month: StateFlow<CalendarMonth?> = displayedMonth
         .flatMapLatest(repository::observeMonth)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _selectedDay = MutableStateFlow<CalendarDayDetail?>(null)
     val selectedDay: StateFlow<CalendarDayDetail?> = _selectedDay

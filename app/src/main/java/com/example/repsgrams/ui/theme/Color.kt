@@ -2,13 +2,15 @@ package com.example.repsgrams.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val LightBackground = Color(0xFFF2F2F7)
+val LightBackground = Color(0xFFF7F7F9)
 val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFE5E5EA)
+val LightSurfaceVariant = Color(0xFFF0F0F4)
+val LightSurfaceElevated = Color(0xFFFFFFFF)
 
-val DarkBackground = Color(0xFF0E1117)
-val DarkSurface = Color(0xFF1A1D24)
-val DarkSurfaceVariant = Color(0xFF2C2C2E)
+val DarkBackground = Color(0xFF0B0B0D)
+val DarkSurface = Color(0xFF17171A)
+val DarkSurfaceVariant = Color(0xFF222225)
+val DarkSurfaceElevated = Color(0xFF2A2A2E)
 
 val LightText = Color(0xFF000000)
 val LightTextSecondary = Color(0x99000000)

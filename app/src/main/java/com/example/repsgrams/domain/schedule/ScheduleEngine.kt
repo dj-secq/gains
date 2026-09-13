@@ -30,7 +30,7 @@ object ScheduleEngine {
         if (allTemplates.isEmpty()) {
             return ScheduleSuggestion(null, SuggestionStatus.NO_HISTORY, null)
         }
-        
+
         if (lastSession == null || lastTemplate == null) {
             // "If there is no prior completed session at all: suggestion = whichever template the user picked as 'start with'"
             // For now, we return the first template by orderIndex

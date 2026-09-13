@@ -14,6 +14,52 @@ import java.sql.DriverManager
 class MigrationTest {
 
     @Test
+    fun `migrate6To7 backfills missing rest between blocks`() {
+        Class.forName("org.sqlite.JDBC")
+        val conn = DriverManager.getConnection("jdbc:sqlite::memory:")
+
+        conn.createStatement().use { s ->
+            s.execute(
+                """CREATE TABLE template_blocks (
+                    id INTEGER PRIMARY KEY,
+                    templateId INTEGER NOT NULL,
+                    label TEXT NOT NULL,
+                    orderIndex INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    restSecondsBetweenRounds INTEGER,
+                    restSecondsAfterBlock INTEGER
+                )""",
+            )
+            s.execute("INSERT INTO template_blocks VALUES (1, 1, 'Warm-Up', 0, 'WARM_UP', NULL, NULL)")
+            s.execute("INSERT INTO template_blocks VALUES (2, 1, 'Superset A', 1, 'SUPERSET', 90, NULL)")
+            s.execute("INSERT INTO template_blocks VALUES (3, 1, 'Superset B', 2, 'SUPERSET', 60, 45)")
+            s.execute("INSERT INTO template_blocks VALUES (4, 1, 'Optional Core', 3, 'STANDARD', NULL, NULL)")
+            s.execute(
+                """UPDATE template_blocks
+                    SET restSecondsAfterBlock = CASE
+                        WHEN kind = 'WARM_UP' THEN 60
+                        ELSE COALESCE(restSecondsBetweenRounds, 90)
+                    END
+                    WHERE restSecondsAfterBlock IS NULL
+                      AND orderIndex < (
+                          SELECT MAX(nextBlock.orderIndex)
+                          FROM template_blocks AS nextBlock
+                          WHERE nextBlock.templateId = template_blocks.templateId
+                      )""",
+            )
+        }
+
+        val rests = conn.createStatement().use { s ->
+            val result = s.executeQuery("SELECT restSecondsAfterBlock FROM template_blocks ORDER BY orderIndex")
+            buildList<Int?> {
+                while (result.next()) add(result.getInt(1).takeUnless { result.wasNull() })
+            }
+        }
+        assertEquals(listOf(60, 90, 45, null), rests)
+        conn.close()
+    }
+
+    @Test
     fun `migrate4To5 backfills supplement_intake_logs correctly`() {
         // Load the SQLite JDBC driver
         Class.forName("org.sqlite.JDBC")
@@ -25,7 +71,7 @@ class MigrationTest {
             // Old supplement_logs table (v4 schema)
             s.execute(
                 """CREATE TABLE supplement_logs (
-                    date TEXT NOT NULL PRIMARY KEY,
+                    date INTEGER NOT NULL PRIMARY KEY,
                     wheyTaken INTEGER NOT NULL DEFAULT 0,
                     wheyServings REAL NOT NULL DEFAULT 0,
                     creatineTaken INTEGER NOT NULL DEFAULT 0,
@@ -39,7 +85,7 @@ class MigrationTest {
                     type TEXT NOT NULL,
                     totalServings INTEGER NOT NULL,
                     servingsRemaining REAL NOT NULL,
-                    startDate TEXT NOT NULL
+                    startDate INTEGER NOT NULL
                 )"""
             )
 
@@ -47,13 +93,13 @@ class MigrationTest {
             //   Oct 1: both whey and creatine taken
             //   Oct 2: only creatine taken
             //   Oct 3: neither taken (should NOT produce rows)
-            s.execute("INSERT INTO supplement_logs VALUES ('2023-10-01', 1, 25.0, 1, 5.0)")
-            s.execute("INSERT INTO supplement_logs VALUES ('2023-10-02', 0, 0.0, 1, 5.0)")
-            s.execute("INSERT INTO supplement_logs VALUES ('2023-10-03', 0, 0.0, 0, 0.0)")
+            s.execute("INSERT INTO supplement_logs VALUES (19631, 1, 25.0, 1, 5.0)")
+            s.execute("INSERT INTO supplement_logs VALUES (19632, 0, 0.0, 1, 5.0)")
+            s.execute("INSERT INTO supplement_logs VALUES (19633, 0, 0.0, 0, 0.0)")
 
             // Old supply rows
-            s.execute("INSERT INTO supply_inventory (type, totalServings, servingsRemaining, startDate) VALUES ('WHEY', 90, 65.0, '2023-09-01')")
-            s.execute("INSERT INTO supply_inventory (type, totalServings, servingsRemaining, startDate) VALUES ('CREATINE', 60, 44.0, '2023-09-01')")
+            s.execute("INSERT INTO supply_inventory (type, totalServings, servingsRemaining, startDate) VALUES ('WHEY', 90, 65.0, 19571)")
+            s.execute("INSERT INTO supply_inventory (type, totalServings, servingsRemaining, startDate) VALUES ('CREATINE', 60, 44.0, 19571)")
         }
 
         // ----- Run the v4→v5 migration SQL -----
@@ -79,7 +125,7 @@ class MigrationTest {
                 """CREATE TABLE supplement_intake_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     supplementId INTEGER NOT NULL,
-                    date TEXT NOT NULL,
+                    date INTEGER NOT NULL,
                     taken INTEGER NOT NULL,
                     actualAmount REAL NOT NULL,
                     FOREIGN KEY(supplementId) REFERENCES supplements(id) ON DELETE CASCADE
@@ -94,7 +140,7 @@ class MigrationTest {
                     supplementId INTEGER NOT NULL,
                     totalServings INTEGER NOT NULL,
                     servingsRemaining REAL NOT NULL,
-                    startDate TEXT NOT NULL,
+                    startDate INTEGER NOT NULL,
                     FOREIGN KEY(supplementId) REFERENCES supplements(id) ON DELETE CASCADE
                 )"""
             )
@@ -153,6 +199,23 @@ class MigrationTest {
             rs.getInt(1)
         }
         assertEquals("Supplements seed count", 2, suppCount)
+
+        val intakeDateType = conn.createStatement().use { s ->
+            val rs = s.executeQuery("SELECT type FROM pragma_table_info('supplement_intake_logs') WHERE name = 'date'")
+            rs.getString(1)
+        }
+        val inventoryDateType = conn.createStatement().use { s ->
+            val rs = s.executeQuery("SELECT type FROM pragma_table_info('supply_inventory') WHERE name = 'startDate'")
+            rs.getString(1)
+        }
+        assertEquals("INTEGER", intakeDateType)
+        assertEquals("INTEGER", inventoryDateType)
+
+        val migratedDate = conn.createStatement().use { s ->
+            val rs = s.executeQuery("SELECT date FROM supplement_intake_logs ORDER BY date LIMIT 1")
+            rs.getLong(1)
+        }
+        assertEquals(19631L, migratedDate)
 
         conn.rollback()
         conn.close()

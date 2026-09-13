@@ -30,7 +30,7 @@ class PRManager(private val database: AppDatabase) {
             val pr = PersonalRecordEntity(exerciseId = exerciseId, type = typeMaxReps, value = reps.toFloat(), achievedDate = date, sourceSetLogId = setLogId)
             prDao.insert(pr)
             // We might not consider every rep record a major PR to celebrate, but we'll return it anyway.
-            if (currentMaxReps != null) newPRs.add(pr) 
+            if (currentMaxReps != null) newPRs.add(pr)
         }
 
         // Check Estimated 1RM PR

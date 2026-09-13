@@ -19,7 +19,7 @@ class SettingsViewModel(
     private val scheduler: ReminderScheduler,
 ) : ViewModel() {
     val settings: StateFlow<CycleSettings?> = repository.settings.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5_000), null,
+        viewModelScope, SharingStarted.Eagerly, null,
     )
 
     // Reminders
@@ -34,6 +34,9 @@ class SettingsViewModel(
     // Cycle & Units
     fun setCycleStartDate(date: LocalDate) {
         viewModelScope.launch { repository.setCycleStartDate(date) }
+    }
+    fun setAdherenceGraceDays(days: Int) {
+        viewModelScope.launch { repository.setAdherenceGraceDays(days) }
     }
     fun setUnitSystem(unit: UnitSystem) {
         viewModelScope.launch { repository.setUnitSystem(unit) }
@@ -93,7 +96,7 @@ class SettingsViewModel(
             repository.setHealthConnectEnabled(enabled)
         }
     }
-    
+
     fun setVoiceCuesEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setVoiceCuesEnabled(enabled)

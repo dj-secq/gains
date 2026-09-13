@@ -53,6 +53,7 @@ data class TemplateBlockEntity(
     val targetRoundsMin: Int,
     val targetRoundsMax: Int,
     val restSecondsBetweenRounds: Int? = null,
+    val restSecondsAfterBlock: Int? = null,
     val isOptional: Boolean = false,
 )
 

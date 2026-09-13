@@ -1,5 +1,8 @@
 package com.example.repsgrams.ui.progress
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,8 +30,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.repsgrams.data.db.SupplyType
-import com.example.repsgrams.domain.progress.SupplyStatus
 import com.example.repsgrams.ui.components.IosButton
 import com.example.repsgrams.ui.components.IosCard
 
@@ -39,8 +40,9 @@ fun ProgressRoute(viewModel: ProgressViewModel) {
         state = state,
         onExerciseSelected = viewModel::selectExercise,
         onWeightViewToggled = viewModel::setWeightView,
-        onBodyweightLogged = { },
-        onRestock = { _, _ -> }
+        onBodyweightLogged = viewModel::logBodyweight,
+        onRestock = viewModel::restockSupply,
+        onSupplementSelected = viewModel::selectSupplement,
     )
 }
 
@@ -51,9 +53,10 @@ fun ProgressScreen(
     onExerciseSelected: (Long) -> Unit,
     onWeightViewToggled: (Boolean) -> Unit,
     onBodyweightLogged: (Float) -> Unit,
-    onRestock: (SupplyType, Int) -> Unit,
+    onRestock: (Long, Int) -> Unit,
+    onSupplementSelected: (Long) -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -94,11 +97,58 @@ fun ProgressScreen(
                     }
                 }
             }
-            
+
             item { ExerciseChartSection(state, onExerciseSelected, onWeightViewToggled) }
             item { BodyweightSection(state, onBodyweightLogged) }
-            
-            
+            if (state.supplyInventory.isNotEmpty()) {
+                item { SupplySection(state, onRestock) }
+            }
+            if (state.supplements.any { it.isActive }) {
+                item { SupplementAdherenceSection(state, onSupplementSelected) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SupplementAdherenceSection(state: ProgressUiState, onSelected: (Long) -> Unit) {
+    val active = state.supplements.filter { it.isActive }
+    val selected = active.firstOrNull { it.id == state.selectedSupplementId } ?: active.firstOrNull()
+    val taken = state.supplementAdherence.count { it.second }
+    val percentage = if (state.supplementAdherence.isEmpty()) 0 else taken * 100 / state.supplementAdherence.size
+    var expanded by remember { mutableStateOf(false) }
+    IosCard {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Supplement adherence", style = MaterialTheme.typography.titleMedium)
+                    Text("$percentage% over the last 30 days", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("$taken / ${state.supplementAdherence.size}", fontWeight = FontWeight.SemiBold, color = AppColors.creatineTeal)
+            }
+            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                OutlinedTextField(
+                    value = selected?.name.orEmpty(), onValueChange = {}, readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    active.forEach { item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { onSelected(item.id); expanded = false }) }
+                }
+            }
+            val adherenceColor = AppColors.creatineTeal
+            Canvas(modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                if (state.supplementAdherence.isEmpty()) return@Canvas
+                val gap = size.width / state.supplementAdherence.size
+                state.supplementAdherence.forEachIndexed { index, (_, wasTaken) ->
+                    drawCircle(
+                        color = if (wasTaken) adherenceColor else Color.Gray.copy(alpha = 0.22f),
+                        radius = (gap * 0.27f).coerceAtMost(5.dp.toPx()),
+                        center = Offset(gap * (index + 0.5f), size.height / 2),
+                    )
+                }
+            }
         }
     }
 }
@@ -114,10 +164,10 @@ private fun ExerciseChartSection(
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Exercise Progress", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
-            
+
             var expanded by remember { mutableStateOf(false) }
             val selectedEx = state.exercises.find { it.id == state.selectedExerciseId }
-            
+
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                 OutlinedTextField(
                     value = selectedEx?.name ?: "",
@@ -135,13 +185,13 @@ private fun ExerciseChartSection(
                     }
                 }
             }
-            
+
             if (selectedEx?.tracksWeight == true) {
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Show Weight", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Switch(
-                        checked = state.isWeightView, 
+                        checked = state.isWeightView,
                         onCheckedChange = onWeightViewToggled,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
@@ -153,14 +203,14 @@ private fun ExerciseChartSection(
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
             val points = if (state.isWeightView && selectedEx?.tracksWeight == true) {
                 state.exerciseHistory.mapNotNull { it.weightKg }
             } else {
                 state.exerciseHistory.mapNotNull { it.reps?.toFloat() }
             }
-            
+
             if (points.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                     LineChart(listOf(0f, 1f, 0.5f, 2f, 1.5f, 3f), modifier = Modifier.fillMaxSize().alpha(0.1f), lineColor = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -213,11 +263,161 @@ private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
 
 
 @Composable
+private fun SupplySection(state: ProgressUiState, onRestock: (Long, Int) -> Unit) {
+    var restockTarget by remember { mutableStateOf<com.example.repsgrams.data.db.SupplyInventoryEntity?>(null) }
+    var restockInput by remember { mutableStateOf("") }
+
+    restockTarget?.let { inv ->
+        val suppName = state.supplements.find { it.id == inv.supplementId }?.name ?: "Supplement"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { restockTarget = null },
+            title = { Text("Restock $suppName") },
+            text = {
+                OutlinedTextField(
+                    value = restockInput,
+                    onValueChange = { if (it.all(Char::isDigit)) restockInput = it },
+                    label = { Text("New container size (servings)") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    restockInput.toIntOrNull()?.let { onRestock(inv.supplementId, it) }
+                    restockTarget = null
+                    restockInput = ""
+                }) { Text("Restock") }
+            },
+            dismissButton = {
+                TextButton(onClick = { restockTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    IosCard {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Supply Remaining", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(12.dp))
+            state.supplyInventory.forEachIndexed { index, inv ->
+                val supp = state.supplements.find { it.id == inv.supplementId }
+                val fraction = (inv.servingsRemaining / inv.totalServings.coerceAtLeast(1)).coerceIn(0f, 1f)
+                val isLow = supp != null && inv.servingsRemaining <= supp.lowSupplyThreshold
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                supp?.name ?: "Unknown",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "${inv.servingsRemaining.toInt()} / ${inv.totalServings} servings",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isLow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.dp)),
+                            color = if (isLow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        )
+                    }
+                    IosButton(
+                        text = "Restock",
+                        onClick = { restockTarget = inv; restockInput = "" },
+                        isSecondary = true,
+                        modifier = Modifier.width(80.dp),
+                    )
+                }
+                if (index < state.supplyInventory.lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun LineChart(
     data: List<Float>,
-    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
-    lineColor: androidx.compose.ui.graphics.Color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+    modifier: Modifier = Modifier,
+    lineColor: Color = MaterialTheme.colorScheme.primary,
 ) {
-    // Dummy implementation to fix compilation
-    androidx.compose.foundation.layout.Box(modifier = modifier)
+    if (data.isEmpty()) return
+
+    val drawProgress = remember { Animatable(0f) }
+    LaunchedEffect(data) {
+        drawProgress.snapTo(0f)
+        drawProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 600, easing = LinearOutSlowInEasing),
+        )
+    }
+
+    Canvas(modifier = modifier) {
+        val horizontalPadding = 4.dp.toPx()
+        val verticalPadding = 8.dp.toPx()
+        val chartWidth = (size.width - horizontalPadding * 2).coerceAtLeast(1f)
+        val chartHeight = (size.height - verticalPadding * 2).coerceAtLeast(1f)
+        val minValue = data.minOrNull() ?: 0f
+        val maxValue = data.maxOrNull() ?: minValue
+        val range = (maxValue - minValue).takeIf { it > 0f } ?: 1f
+
+        val points = data.mapIndexed { index, value ->
+            val x = if (data.size == 1) {
+                horizontalPadding + chartWidth / 2f
+            } else {
+                horizontalPadding + chartWidth * index / data.lastIndex
+            }
+            val y = verticalPadding + chartHeight * (1f - (value - minValue) / range)
+            Offset(x, y)
+        }
+
+        val linePath = Path().apply {
+            moveTo(points.first().x, points.first().y)
+            points.zipWithNext().forEach { (start, end) ->
+                val controlX = (start.x + end.x) / 2f
+                cubicTo(controlX, start.y, controlX, end.y, end.x, end.y)
+            }
+        }
+        val areaPath = Path().apply {
+            moveTo(points.first().x, size.height - verticalPadding)
+            lineTo(points.first().x, points.first().y)
+            points.zipWithNext().forEach { (start, end) ->
+                val controlX = (start.x + end.x) / 2f
+                cubicTo(controlX, start.y, controlX, end.y, end.x, end.y)
+            }
+            lineTo(points.last().x, size.height - verticalPadding)
+            close()
+        }
+
+        clipRect(right = size.width * drawProgress.value) {
+            drawPath(
+                path = areaPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(lineColor.copy(alpha = 0.25f), Color.Transparent),
+                    startY = verticalPadding,
+                    endY = size.height - verticalPadding,
+                ),
+            )
+            drawPath(
+                path = linePath,
+                color = lineColor,
+                style = Stroke(width = 2.75.dp.toPx(), cap = StrokeCap.Round),
+            )
+        }
+
+        if (drawProgress.value >= 0.99f) {
+            drawCircle(color = lineColor, radius = 4.dp.toPx(), center = points.last())
+            drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = points.last())
+        }
+    }
 }

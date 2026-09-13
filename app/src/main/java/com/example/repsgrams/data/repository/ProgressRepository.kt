@@ -26,7 +26,7 @@ interface ProgressRepository {
     fun observeBodyweightHistory(start: LocalDate, end: LocalDate): Flow<List<BodyweightLogEntity>>
     fun observeSupplementLogs(start: LocalDate, end: LocalDate): Flow<List<SupplementIntakeLogEntity>>
     fun observeSupplyInventory(): Flow<List<SupplyInventoryEntity>>
-    
+
     suspend fun logBodyweight(date: LocalDate, weightKg: Float)
 }
 

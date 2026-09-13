@@ -21,9 +21,9 @@ class StreakCalculator {
     ): StreakInfo {
         var currentWorkout = 0
         var bestWorkout = 0
-        
+
         val completedSessions = sessions.filter { it.completed }.sortedBy { it.date }
-        
+
         if (completedSessions.isNotEmpty()) {
             currentWorkout = 1
             bestWorkout = 1
@@ -32,10 +32,10 @@ class StreakCalculator {
                 val curr = completedSessions[i]
                 val prevTemplate = templates.find { it.id == prev.templateId }
                 val restDaysAfter = prevTemplate?.restDaysAfter ?: 1
-                
+
                 val maxAllowedGap = restDaysAfter + 1 + graceDays
                 val gap = ChronoUnit.DAYS.between(prev.date, curr.date).toInt()
-                
+
                 if (gap <= maxAllowedGap) {
                     currentWorkout++
                     if (currentWorkout > bestWorkout) bestWorkout = currentWorkout
@@ -43,7 +43,7 @@ class StreakCalculator {
                     currentWorkout = 1
                 }
             }
-            
+
             // Check if broken right now
             val last = completedSessions.last()
             val lastTemplate = templates.find { it.id == last.templateId }

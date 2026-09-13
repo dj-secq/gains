@@ -71,25 +71,25 @@ class CalendarRepository(
         val allSets = database.setLogDao().getForDate(date).groupBy { it.sessionId }
         val sessions = database.workoutSessionDao().getForDate(date).map { session ->
             val name = session.templateId?.let { database.workoutTemplateDao().getById(it)?.name }
-                ?: "Deleted workout"
+                ?: if (session.notes == "Rest day") "Rest day" else "Deleted workout"
             CalendarSessionDetail(
                 session.id, name, session.completed, session.durationSeconds, allSets[session.id].orEmpty(),
             )
         }
-        
+
         // Find if there is a projected template for this date
         val templates = database.workoutTemplateDao().getAll()
         val lastSession = database.workoutSessionDao().getLastCompletedSession()
         val lastTemplate = lastSession?.templateId?.let { id -> templates.find { it.id == id } }
         val currentSuggestion = ScheduleEngine.computeSuggestion(LocalDate.now(clock), lastSession, lastTemplate, templates)
-        
+
         // Extrapolate like in CalendarCalculator
         var projectedTemplate: com.example.repsgrams.data.db.WorkoutTemplateEntity? = null
         if (!date.isBefore(LocalDate.now(clock))) {
             var iterDate = currentSuggestion.dueDate ?: LocalDate.now(clock)
             var iterTemplate = currentSuggestion.suggestedTemplate
             val sortedTemplates = templates.sortedBy { it.orderIndex }
-            
+
             for (i in 0..42) {
                 if (iterDate == date) {
                     projectedTemplate = iterTemplate

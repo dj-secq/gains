@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -54,8 +55,8 @@ fun CalendarRoute(viewModel: CalendarViewModel) {
     val selectedDay by viewModel.selectedDay.collectAsStateWithLifecycle()
     val loadingDay by viewModel.loadingDay.collectAsStateWithLifecycle()
     val today = viewModel.today
-    val locale = Locale.getDefault()
-    
+    val locale = LocalConfiguration.current.locales[0]
+
     CalendarScreen(
         month = month,
         selectedDay = selectedDay,
@@ -66,7 +67,7 @@ fun CalendarRoute(viewModel: CalendarViewModel) {
         onToday = viewModel::showToday,
         onSelectDate = viewModel::selectDate,
         onDismissDay = viewModel::closeDay,
-        
+
         locale = locale,
     )
 }
@@ -83,7 +84,7 @@ fun CalendarScreen(
     onToday: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onDismissDay: () -> Unit,
-    
+
     locale: Locale,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -136,7 +137,7 @@ fun CalendarScreen(
                             IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.primary) }
                         }
                     }
-                    
+
                     item {
                         IosCard {
                             Column(modifier = Modifier.padding(8.dp)) {
@@ -161,7 +162,7 @@ fun CalendarScreen(
                             }
                         }
                     }
-                    
+
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
@@ -185,9 +186,14 @@ fun CalendarScreen(
             }
 
 
-            
+
             selectedDay?.let { detail ->
-                ModalBottomSheet(onDismissRequest = onDismissDay) {
+                ModalBottomSheet(
+                    onDismissRequest = onDismissDay,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    scrimColor = Color.Black.copy(alpha = 0.42f),
+                    shape = MaterialTheme.shapes.extraLarge,
+                ) {
                     DayDetail(detail, today)
                 }
             }
@@ -228,6 +234,7 @@ private fun DayCell(
                     day.template.dayLabel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = com.example.repsgrams.ui.theme.CategoryColors.getColor(day.template.category),
                 )
             } else {
                 Icon(
@@ -264,19 +271,19 @@ private fun DayDetail(
     detail: CalendarDayDetail,
     today: LocalDate,
 ) {
-    var pendingLabel by remember { mutableStateOf<String?>(null) }
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(detail.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-        
+
         IosCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     detail.template?.dayLabel?.let { "Planned: Workout $it" } ?: "Planned: Rest day",
                     style = MaterialTheme.typography.titleMedium,
                 )
+                detail.template?.let { com.example.repsgrams.ui.components.CategoryChip(it.category) }
                 if (detail.date.isAfter(today)) {
                     Text("No entries yet. This is the current plan for this date.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else if (detail.sessions.isEmpty() && (detail.template != null)) {
@@ -285,7 +292,7 @@ private fun DayDetail(
                 detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
             }
         }
-        
+
         Text("Supplements", style = MaterialTheme.typography.titleMedium)
         IosCard {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -307,18 +314,7 @@ private fun DayDetail(
                 }
             }
         }
-        
-        Text("Reschedule from here", style = MaterialTheme.typography.titleMedium)
-        IosCard {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Choose the workout this date should represent. Logged history is preserved.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    IosButton(text = "Workout A", onClick = { pendingLabel = "A" }, modifier = Modifier.weight(1f))
-                    IosButton(text = "Workout B", onClick = { pendingLabel = "B" }, modifier = Modifier.weight(1f))
-                }
-            }
-        }
+
         Spacer(Modifier.padding(bottom = 24.dp))
     }
 

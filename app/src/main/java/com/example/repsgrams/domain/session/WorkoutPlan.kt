@@ -19,6 +19,7 @@ data class WorkoutBlock(
     val targetRoundsMin: Int,
     val targetRoundsMax: Int,
     val restSecondsBetweenRounds: Int?,
+    val restSecondsAfterBlock: Int?,
     val isOptional: Boolean,
     val exercises: List<WorkoutExercise>,
 )
@@ -55,16 +56,20 @@ object SessionNavigator {
             return if (restSeconds > 0) SessionAdvance.Rest(nextRound, restSeconds)
             else SessionAdvance.Continue(nextRound)
         }
-        return nextBlock(plan, cursor.blockIndex)
+        return nextBlock(plan, cursor.blockIndex, false)
     }
 
     fun skipBlock(plan: WorkoutPlan, blockIndex: Int): SessionAdvance {
         require(plan.blocks[blockIndex].isOptional) { "Only optional blocks can be skipped" }
-        return nextBlock(plan, blockIndex)
+        return nextBlock(plan, blockIndex, true)
     }
 
-    private fun nextBlock(plan: WorkoutPlan, blockIndex: Int): SessionAdvance =
+    private fun nextBlock(plan: WorkoutPlan, blockIndex: Int, isSkipped: Boolean = false): SessionAdvance {
         if (blockIndex < plan.blocks.lastIndex) {
-            SessionAdvance.Continue(SessionCursor(blockIndex + 1, 0, 1))
-        } else SessionAdvance.Finished
+            val nextCursor = SessionCursor(blockIndex + 1, 0, 1)
+            val restSeconds = if (isSkipped) 0 else (plan.blocks[blockIndex].restSecondsAfterBlock ?: 0)
+            return if (restSeconds > 0) SessionAdvance.Rest(nextCursor, restSeconds)
+            else SessionAdvance.Continue(nextCursor)
+        } else return SessionAdvance.Finished
+    }
 }

@@ -16,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.ui.components.IosCard
@@ -29,12 +31,12 @@ fun ExerciseLibraryScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
-    
-    val allCategories = remember(exercises) { 
-        listOf("All") + exercises.map { it.muscleGroup }.distinct().sorted() 
+
+    val allCategories = remember(exercises) {
+        listOf("All") + exercises.map { it.muscleGroup }.distinct().sorted()
     }
-    
-    val filtered = exercises.filter { 
+
+    val filtered = exercises.filter {
         it.name.contains(searchQuery, ignoreCase = true) &&
         (selectedCategory == null || selectedCategory == "All" || it.muscleGroup == selectedCategory)
     }
@@ -62,7 +64,7 @@ fun ExerciseLibraryScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.large
             )
-            
+
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -76,7 +78,7 @@ fun ExerciseLibraryScreen(
                     )
                 }
             }
-            
+
             if (filtered.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -88,20 +90,24 @@ fun ExerciseLibraryScreen(
                 LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(filtered) { ex ->
                         IosCard {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                // Illustration placeholder
+                            Column {
+                                val resourceId = com.example.repsgrams.ui.components.exerciseImageResource(ex.imageAssetName)
                                 Box(
-                                    modifier = Modifier.size(64.dp).clip(MaterialTheme.shapes.small).background(AppColors.workout.copy(alpha=0.1f)),
+                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(MaterialTheme.shapes.large).background(AppColors.workout.copy(alpha = 0.1f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Outlined.FitnessCenter, contentDescription = null, tint = AppColors.workout)
+                                    if (resourceId != 0) {
+                                        androidx.compose.foundation.Image(
+                                            painter = painterResource(resourceId),
+                                            contentDescription = ex.name,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    } else {
+                                        Icon(Icons.Outlined.FitnessCenter, contentDescription = null, tint = AppColors.workout, modifier = Modifier.size(48.dp))
+                                    }
                                 }
-                                
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(modifier = Modifier.padding(16.dp)) {
                                     Text(ex.name, style = MaterialTheme.typography.titleMedium)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     // Muscle group badge

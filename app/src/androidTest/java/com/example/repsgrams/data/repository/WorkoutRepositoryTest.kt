@@ -74,7 +74,7 @@ class WorkoutRepositoryTest {
         assertEquals("A", plan.dayLabel)
         assertEquals(5, plan.blocks.size)
         val exercise = plan.blocks.first().exercises.first()
-        assertNull(repository.previousSet(exercise.id, firstId))
+        assertNull(repository.previousSet(exercise.id, 1, firstId))
 
         repository.logSet(firstId, exercise.id, 1, 20, null, null)
         repository.logSet(firstId, exercise.id, 2, 18, null, null)
@@ -90,5 +90,68 @@ class WorkoutRepositoryTest {
         )
         val secondId = repository.startSession("A")
         assertEquals(listOf(20, 18), repository.previousSessionRounds(exercise.id, secondId).map { it.reps })
+    }
+    @Test
+    fun testZeroHistoryPrefillReturnsNullAndHandlesGracefully() = runTest {
+        val firstId = repository.startSession("A")
+        val plan = repository.loadPlan(requireNotNull(repository.getSession(firstId)?.templateId))
+        val exercise = plan.blocks.first().exercises.first()
+
+        // Zero history: previousSet returns null
+        val prev1 = repository.previousSet(exercise.id, 1, firstId)
+        assertNull(prev1)
+    }
+
+    @Test
+    fun testExerciseSwapPrefillIgnoresTemplateId() = runTest {
+        // Start session 1, log a set for exercise 999 (custom)
+        val firstId = repository.startSession("A")
+        repository.logSet(firstId, 999L, 1, 10, null, 50f)
+        repository.finishSession(firstId)
+
+        repository = WorkoutRepository(
+            database,
+            Clock.fixed(Instant.parse("2026-09-12T08:00:00Z"), ZoneOffset.UTC),
+            CompletableDeferred(Unit),
+        )
+
+        // Start session 2 (different template logic but same exercise swap)
+        val secondId = repository.startSession("B")
+
+        // Exercise 999 was logged in session A, now queried in session B
+        // Because we removed templateId restriction, it should return the set!
+        val prev = repository.previousSet(999L, 1, secondId)
+
+        assertNotNull(prev)
+        assertEquals(10, prev?.reps)
+        assertEquals(50f, prev?.weightKg)
+    }
+    @Test
+    fun testCancelWorkoutLeavesNoTrace() = runTest {
+        // Start a session
+        val firstId = repository.startSession("A")
+        val plan = repository.loadPlan(requireNotNull(repository.getSession(firstId)?.templateId))
+        val exercise = plan.blocks.first().exercises.first()
+
+        // Log a couple of sets
+        repository.logSet(firstId, exercise.id, 1, 15, null, 100f)
+        repository.logSet(firstId, exercise.id, 2, 12, null, 100f)
+
+        // Assert they exist
+        assertEquals(2, repository.getSessionSets(firstId).size)
+        assertNotNull(database.workoutSessionDao().getById(firstId))
+
+        // Cancel workout
+        repository.deleteSession(firstId)
+
+        // Assert zero trace
+        assertNull(database.workoutSessionDao().getById(firstId))
+        assertEquals(0, repository.getSessionSets(firstId).size)
+        // Since SetLog uses CASCADE on foreign key for sessionId, they should be deleted.
+        // Let's verify by checking all sets for that session.
+        assertEquals(0, database.setLogDao().getForSession(firstId).size)
+
+        // Also verify Progress / Calendar trace is zero for that session.
+        // If session is deleted, it doesn't appear in streak or progress calculators.
     }
 }

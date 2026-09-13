@@ -1,6 +1,7 @@
 package com.example.repsgrams.ui.session
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -43,12 +45,35 @@ import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.ui.components.IosAlertDialog
 import com.example.repsgrams.ui.components.IosButton
 import com.example.repsgrams.ui.components.IosCard
+import com.example.repsgrams.ui.components.shimmer
 
+import androidx.activity.compose.BackHandler
 @Composable
 fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Unit) {
+
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showCancelDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = state !is WorkoutSessionUiState.Summary) {
+        showCancelDialog = true
+    }
+
+    if (showCancelDialog) {
+        IosAlertDialog(
+            title = "Discard this workout?",
+            message = "Nothing from this session will be saved.",
+            confirmText = "Discard",
+            dismissText = "Cancel",
+            onConfirm = {
+                showCancelDialog = false
+                viewModel.cancelWorkout()
+                onFinished()
+            },
+            onDismiss = { showCancelDialog = false }
+        )
+    }
     LaunchedEffect(viewModel) { viewModel.summaryDone.collect { onFinished() } }
-    
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -65,7 +90,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         }
     }
 
-    
+
     WorkoutSessionScreen(
         state = state,
         prAchieved = viewModel.prAchieved,
@@ -80,10 +105,12 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onAddRest = viewModel::addRestSeconds,
         onSkipRest = viewModel::skipRest,
         onFinish = viewModel::finishWorkout,
-        
-        
+        onStartHold = viewModel::startHold,
+        onStopHold = viewModel::stopHold,
+        onPrevious = viewModel::previousStep,
+        onCancelWorkout = { showCancelDialog = true },
         onDone = viewModel::saveSummary,
-        onBack = onFinished
+        onBack = { showCancelDialog = true }
     )
 }
 
@@ -101,8 +128,10 @@ fun WorkoutSessionScreen(
     onAddRest: (Int) -> Unit,
     onSkipRest: () -> Unit,
     onFinish: () -> Unit,
-    
-    
+    onStartHold: () -> Unit,
+    onStopHold: () -> Unit,
+    onPrevious: () -> Unit,
+    onCancelWorkout: () -> Unit,
     onDone: () -> Unit,
     onNotesChanged: (String) -> Unit = {},
     onRpeTagChanged: (String?) -> Unit = {},
@@ -121,7 +150,7 @@ fun WorkoutSessionScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     if (state is WorkoutSessionUiState.Active) {
                         Text(state.workoutName, fontWeight = FontWeight.Bold)
                     } else if (state is WorkoutSessionUiState.Summary) {
@@ -135,6 +164,13 @@ fun WorkoutSessionScreen(
                         }
                     }
                 },
+                actions = {
+                    if (state is WorkoutSessionUiState.Active) {
+                        IconButton(onClick = onPrevious) {
+                            Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous step", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
@@ -145,14 +181,33 @@ fun WorkoutSessionScreen(
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             when (state) {
-                WorkoutSessionUiState.Loading -> Centered { CircularProgressIndicator() }
+                WorkoutSessionUiState.Loading -> Column(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Box(Modifier.fillMaxWidth().height(96.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                    Box(Modifier.fillMaxWidth().height(320.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                    Box(Modifier.fillMaxWidth().height(56.dp).clip(MaterialTheme.shapes.small).shimmer())
+                }
                 is WorkoutSessionUiState.Error -> Centered {
                     Text(state.message, color = MaterialTheme.colorScheme.error)
                 }
-                is WorkoutSessionUiState.Active -> ActiveSession(
-                    state, onValueChanged, onWeightChanged, onAdjustValue, onLog,
-                    onAdjustWeight, onSkipBlock, onAddRest, onSkipRest, onFinish,
-                    onNotesChanged, onRpeTagChanged,
+                                is WorkoutSessionUiState.Active -> ActiveSession(
+                    state = state,
+                    onValueChanged = onValueChanged,
+                    onWeightChanged = onWeightChanged,
+                    onAdjustValue = onAdjustValue,
+                    onLog = onLog,
+                    onAdjustWeight = onAdjustWeight,
+                    onSkipBlock = onSkipBlock,
+                    onAddRest = onAddRest,
+                    onSkipRest = onSkipRest,
+                    onFinish = onFinish,
+                    onStartHold = onStartHold,
+                    onStopHold = onStopHold,
+                    onCancelWorkout = onCancelWorkout,
+                    onNotesChanged = onNotesChanged,
+                    onRpeTagChanged = onRpeTagChanged,
                 )
                 is WorkoutSessionUiState.Summary -> SummaryScreen(
                     state,   onDone,
@@ -174,6 +229,9 @@ private fun ActiveSession(
     onAddRest: (Int) -> Unit,
     onSkipRest: () -> Unit,
     onFinish: () -> Unit,
+    onStartHold: () -> Unit,
+    onStopHold: () -> Unit,
+    onCancelWorkout: () -> Unit,
     onNotesChanged: (String) -> Unit = {},
     onRpeTagChanged: (String?) -> Unit = {},
 ) {
@@ -183,12 +241,23 @@ private fun ActiveSession(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        com.example.repsgrams.ui.components.CategoryChip(state.category)
         val rest = state.restRemainingSeconds
         if (rest != null) {
             RestCard(rest, state.exercise.name, state.roundNumber, state.roundCount, onAddRest, onSkipRest)
         } else {
-            ExerciseCard(state, onValueChanged, onWeightChanged, onAdjustValue, onAdjustWeight, onLog, onRpeTagChanged)
-            
+            ExerciseCard(
+                state = state,
+                onValueChanged = onValueChanged,
+                onWeightChanged = onWeightChanged,
+                onAdjustValue = onAdjustValue,
+                onAdjustWeight = onAdjustWeight,
+                onLog = onLog,
+                onStartHold = onStartHold,
+                onStopHold = onStopHold,
+                onRpeTagChanged = onRpeTagChanged,
+            )
+
 
         if (state.upNextExercises.isNotEmpty()) {
             IosCard {
@@ -212,9 +281,9 @@ private fun ActiveSession(
                 maxLines = 4
             )
         }
-        
+
         Spacer(modifier = Modifier.weight(1f))
-        
+
         if (rest == null) {
             if (state.isOptionalBlock) {
                 IosButton(text = "Skip optional core", onClick = onSkipBlock, isSecondary = true)
@@ -245,15 +314,30 @@ private fun ExerciseCard(
     onAdjustValue: (Int) -> Unit,
     onAdjustWeight: (Float) -> Unit,
     onLog: () -> Unit,
+    onStartHold: () -> Unit,
+    onStopHold: () -> Unit,
     onRpeTagChanged: (String?) -> Unit,
 ) {
     val exercise = state.exercise
     val haptic = LocalHapticFeedback.current
+    var showExerciseImage by remember(exercise.id) { mutableStateOf(false) }
     IosCard {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("${state.blockLabel} · Set ${state.roundNumber} of ${state.roundCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(exercise.name, style = MaterialTheme.typography.titleLarge)
-            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ExerciseMedia(
+                    imageAssetName = exercise.imageAssetName,
+                    exerciseName = exercise.name,
+                    modifier = Modifier.size(72.dp),
+                    onClick = { showExerciseImage = true },
+                )
+                Text(exercise.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            }
+
             state.progressionSuggestion?.let { suggestion ->
                 Text(
                     if (suggestion == ProgressionSuggestion.INCREASE_WEIGHT) "Ready to increase weight" else "Ready for more challenge",
@@ -261,24 +345,61 @@ private fun ExerciseCard(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            
+
             Text(
                 "Target ${exercise.targetValueLow}–${exercise.targetValueHigh} " + if (exercise.repType == RepType.REPS) "reps" else "seconds",
                 style = MaterialTheme.typography.bodyLarge,
             )
             if (exercise.perSide) Text("Per side", style = MaterialTheme.typography.labelLarge)
-            
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
-                OutlinedTextField(
-                    value = state.valueInput,
-                    onValueChange = onValueChanged,
-                    label = { Text(if (exercise.repType == RepType.REPS) "Reps" else "Seconds") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                )
-                FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+
+            if (exercise.repType == RepType.SECONDS) {
+                if (state.isHolding) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                        Text(
+                            text = "${state.holdElapsedSeconds}s",
+                            style = MaterialTheme.typography.displayLarge,
+                            color = AppColors.workout
+                        )
+                        LinearProgressIndicator(
+                            progress = {
+                                if (exercise.targetValueHigh > 0) (state.holdElapsedSeconds.toFloat() / exercise.targetValueHigh).coerceIn(0f, 1f) else 0f
+                            },
+                            modifier = Modifier.fillMaxWidth().height(8.dp),
+                            color = AppColors.workout
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        IosButton(text = "Stop", onClick = onStopHold, isSecondary = true, modifier = Modifier.fillMaxWidth())
+                    }
+                } else {
+                    IosButton(text = "Start Hold", onClick = onStartHold, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+
+                    // Allow manual entry fallback
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                        OutlinedTextField(
+                            value = state.valueInput,
+                            onValueChange = onValueChanged,
+                            label = { Text("Manual Seconds") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                    }
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                    OutlinedTextField(
+                        value = state.valueInput,
+                        onValueChange = onValueChanged,
+                        label = { Text("Reps") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                }
             }
             if (exercise.tracksWeight) {
                 val step = if (state.unitSystem == UnitSystem.KG) 1f else 2.5f
@@ -320,6 +441,62 @@ private fun ExerciseCard(
             )
         }
     }
+
+    if (showExerciseImage) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showExerciseImage = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { showExerciseImage = false },
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 20.dp,
+            ) {
+                Column {
+                    ExerciseMedia(
+                        imageAssetName = exercise.imageAssetName,
+                        exerciseName = exercise.name,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1.25f),
+                    )
+                    Text(
+                        exercise.name,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseMedia(
+    imageAssetName: String?,
+    exerciseName: String,
+    modifier: Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val resourceId = com.example.repsgrams.ui.components.exerciseImageResource(imageAssetName)
+    val interactiveModifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
+    Box(
+        modifier = interactiveModifier
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (resourceId != 0) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(resourceId),
+                contentDescription = "$exerciseName demonstration",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+        } else {
+            Text(
+                exerciseName.take(1).uppercase(),
+                style = MaterialTheme.typography.headlineLarge,
+                color = AppColors.workout,
+            )
+        }
+    }
 }
 
 @Composable
@@ -351,8 +528,8 @@ private fun RestCard(
 @Composable
 private fun SummaryScreen(
     state: WorkoutSessionUiState.Summary,
-    
-    
+
+
     onDone: () -> Unit,
 ) {
     Column(
@@ -360,7 +537,7 @@ private fun SummaryScreen(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("Workout complete", style = MaterialTheme.typography.headlineLarge)
-        
+
         IosCard {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(20.dp),
@@ -370,7 +547,7 @@ private fun SummaryScreen(
                 SummaryMetric(formatTime(state.durationSeconds), "of ${state.maxDurationMinutes}:00 target")
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
         IosButton(text = "Save and return to Today", onClick = onDone)
     }
@@ -394,7 +571,7 @@ private fun CheckRow(label: String, icon: ImageVector, iconTint: Color, checked:
         IconBadge(icon = icon, tint = iconTint)
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         Switch(
-            checked = checked, 
+            checked = checked,
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
