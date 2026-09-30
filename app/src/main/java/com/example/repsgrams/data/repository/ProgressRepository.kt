@@ -6,7 +6,6 @@ import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.ExerciseSetHistoryRow
 import com.example.repsgrams.data.db.SupplementIntakeLogEntity
 import com.example.repsgrams.data.db.SupplyInventoryEntity
-import com.example.repsgrams.data.db.SupplyType
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map

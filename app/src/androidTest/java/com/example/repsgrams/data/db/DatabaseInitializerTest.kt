@@ -40,13 +40,21 @@ class DatabaseInitializerTest {
         assertEquals(24, database.templateBlockExerciseDao().count())
         assertEquals(2, database.supplyInventoryDao().getAll().size)
 
-        val whey = checkNotNull(database.supplyInventoryDao().get(SupplyType.WHEY))
-        val creatine = checkNotNull(database.supplyInventoryDao().get(SupplyType.CREATINE))
+        val supplements = database.supplementDao().getAll()
+        val wheySupplement = checkNotNull(supplements.find { it.name == "Whey Protein" })
+        val creatineSupplement = checkNotNull(supplements.find { it.name == "Creatine" })
+        val whey = checkNotNull(database.supplyInventoryDao().get(wheySupplement.id))
+        val creatine = checkNotNull(database.supplyInventoryDao().get(creatineSupplement.id))
         assertEquals(65, whey.totalServings)
         assertEquals(65f, whey.servingsRemaining)
         assertEquals(30, creatine.totalServings)
         assertEquals(30f, creatine.servingsRemaining)
         assertEquals(seedDate, whey.startDate)
+        assertEquals(seedDate, creatine.startDate)
+        assertEquals(1f, wheySupplement.doseAmount)
+        assertEquals("serving", wheySupplement.unit)
+        assertEquals(5f, creatineSupplement.doseAmount)
+        assertEquals("g", creatineSupplement.unit)
     }
 
     @Test

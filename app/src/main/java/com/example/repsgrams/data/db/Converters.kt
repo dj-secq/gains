@@ -13,6 +13,4 @@ class DatabaseConverters {
     @TypeConverter fun stringToRepType(value: String?): RepType? = value?.let(RepType::valueOf)
     @TypeConverter fun blockKindToString(value: BlockKind?): String? = value?.name
     @TypeConverter fun stringToBlockKind(value: String?): BlockKind? = value?.let(BlockKind::valueOf)
-    @TypeConverter fun supplyTypeToString(value: SupplyType?): String? = value?.name
-    @TypeConverter fun stringToSupplyType(value: String?): SupplyType? = value?.let(SupplyType::valueOf)
 }

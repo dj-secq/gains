@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.repsgrams.data.db.AppDatabase
+import com.example.repsgrams.data.db.DatabaseInitializer
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -37,20 +38,25 @@ class SupplementRepositoryTest {
     @Test
     fun togglesPreserveEachOtherAndPersistAcrossDatabaseReopen() = runTest {
         val firstDatabase = openDatabase()
+        DatabaseInitializer(firstDatabase, clock).ensureSeeded()
+        val supplements = firstDatabase.supplementDao().getAll()
+        val creatine = checkNotNull(supplements.find { it.name == "Creatine" })
+        val whey = checkNotNull(supplements.find { it.name == "Whey Protein" })
         val firstRepository = DefaultSupplementRepository(firstDatabase, clock)
-        firstRepository.setCreatineTaken(date, true)
-        firstRepository.setWheyTaken(date, true)
-        firstRepository.setCreatineTaken(date, false)
+        firstRepository.setSupplementTaken(date, creatine, true)
+        firstRepository.setSupplementTaken(date, whey, true)
+        firstRepository.setSupplementTaken(date, creatine, false)
         firstDatabase.close()
         database = null
 
         val reopenedDatabase = openDatabase()
-        val restored = reopenedDatabase.supplementLogDao().getForDate(date)
+        val creatineLog = reopenedDatabase.supplementIntakeLogDao().getForDateAndSupplement(date, creatine.id)
+        val wheyLog = reopenedDatabase.supplementIntakeLogDao().getForDateAndSupplement(date, whey.id)
 
-        assertFalse(checkNotNull(restored).creatineTaken)
-        assertEquals(0f, restored.creatineGrams)
-        assertTrue(restored.wheyTaken)
-        assertEquals(1f, restored.wheyServings)
+        assertFalse(checkNotNull(creatineLog).taken)
+        assertEquals(0f, creatineLog.actualAmount)
+        assertTrue(checkNotNull(wheyLog).taken)
+        assertEquals(whey.doseAmount, wheyLog.actualAmount)
     }
 
     private fun openDatabase(): AppDatabase = Room.databaseBuilder(
