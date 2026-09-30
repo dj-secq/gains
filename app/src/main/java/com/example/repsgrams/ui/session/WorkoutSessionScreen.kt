@@ -79,11 +79,16 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 RestTimerService.isSessionForeground = true
+                viewModel.onSessionResumed()
             } else if (event == Lifecycle.Event.ON_PAUSE) {
                 RestTimerService.isSessionForeground = false
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            RestTimerService.isSessionForeground = true
+            viewModel.onSessionResumed()
+        }
         onDispose {
             RestTimerService.isSessionForeground = false
             lifecycleOwner.lifecycle.removeObserver(observer)
@@ -244,7 +249,15 @@ private fun ActiveSession(
         com.example.repsgrams.ui.components.CategoryChip(state.category)
         val rest = state.restRemainingSeconds
         if (rest != null) {
-            RestCard(rest, state.exercise.name, state.roundNumber, state.roundCount, onAddRest, onSkipRest)
+            RestCard(
+                remaining = rest,
+                overtime = state.restOvertimeSeconds,
+                nextExercise = state.exercise.name,
+                round = state.roundNumber,
+                roundCount = state.roundCount,
+                onAddRest = onAddRest,
+                onSkipRest = onSkipRest,
+            )
         } else {
             ExerciseCard(
                 state = state,
@@ -502,12 +515,15 @@ private fun ExerciseMedia(
 @Composable
 private fun RestCard(
     remaining: Int,
+    overtime: Int?,
     nextExercise: String,
     round: Int,
     roundCount: Int,
     onAddRest: (Int) -> Unit,
     onSkipRest: () -> Unit,
 ) {
+    val expired = remaining == 0 || (overtime != null && overtime > 0)
+    val label = if (overtime != null && overtime > 0) "+${formatTime(overtime)}" else formatTime(remaining)
     IosCard {
         Column(
             modifier = Modifier.fillMaxWidth().padding(24.dp),
@@ -515,10 +531,15 @@ private fun RestCard(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("Rest", style = MaterialTheme.typography.titleLarge)
-            Text(formatTime(remaining), style = MaterialTheme.typography.headlineLarge.copy(fontSize = 48.sp))
+            Text(
+                label,
+                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 48.sp),
+                color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
             Text("Next: $nextExercise · set $round of $roundCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                IosButton(text = "+15 sec", onClick = { onAddRest(15) }, isSecondary = true, modifier = Modifier.weight(1f))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IosButton(text = "−15", onClick = { onAddRest(-15) }, isSecondary = true, modifier = Modifier.weight(1f))
+                IosButton(text = "+15", onClick = { onAddRest(15) }, isSecondary = true, modifier = Modifier.weight(1f))
                 IosButton(text = "Skip", onClick = onSkipRest, modifier = Modifier.weight(1f))
             }
         }

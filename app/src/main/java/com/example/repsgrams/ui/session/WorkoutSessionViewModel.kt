@@ -1,9 +1,13 @@
 package com.example.repsgrams.ui.session
 
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.content.ContextCompat
+import com.example.repsgrams.service.RestAlarmScheduler
 import com.example.repsgrams.service.RestTimerService
+import com.example.repsgrams.service.restSecondsUntil
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -25,6 +29,7 @@ import java.time.Clock
 import com.example.repsgrams.domain.progression.PriorRound
 import com.example.repsgrams.domain.progression.ProgressionCalculator
 import com.example.repsgrams.domain.progression.ProgressionSuggestion
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +38,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -56,6 +60,7 @@ sealed interface WorkoutSessionUiState {
         val weightInput: String,
         val unitSystem: UnitSystem,
         val restRemainingSeconds: Int?,
+        val restOvertimeSeconds: Int?,
         val isOptionalBlock: Boolean,
         val isSaving: Boolean,
         val progressionSuggestion: ProgressionSuggestion?,
@@ -104,6 +109,10 @@ class WorkoutSessionViewModel(
     private lateinit var plan: WorkoutPlan
     private var cursor = SessionCursor(0, 0, 1)
     private var restEndEpochMillis: Long? = null
+    private var restCaption: String = ""
+    private var restAlertFired: Boolean = false
+    private var ready = false
+    private val loaded = CompletableDeferred<Unit>()
     private var valueInput = ""
     private var weightInput = ""
     private var isSaving = false
@@ -119,15 +128,21 @@ class WorkoutSessionViewModel(
             runCatching { load() }.onFailure {
                 _uiState.value = WorkoutSessionUiState.Error(it.message ?: "Couldn't load this workout.")
             }
+            if (!loaded.isCompleted) loaded.complete(Unit)
         }
+        // The service flow is a mirror. Null emissions must not be written back over the stored deadline.
         viewModelScope.launch {
-            RestTimerService.restEndMillis.collect { end ->
-                // Sync service state back to our local state
-                if (restEndEpochMillis != end) {
-                    restEndEpochMillis = end
-                    persistProgress()
-                    publishActive()
-                }
+            loaded.await()
+            if (!ready) return@launch
+            progressStore.progress.collect { saved ->
+                if (saved == null || saved.sessionId != sessionId) return@collect
+                val changed = restEndEpochMillis != saved.restEndEpochMillis ||
+                    restAlertFired != saved.restAlertFired ||
+                    restCaption != saved.restCaption
+                restEndEpochMillis = saved.restEndEpochMillis
+                restAlertFired = saved.restAlertFired
+                restCaption = saved.restCaption
+                if (changed && _uiState.value is WorkoutSessionUiState.Active) publishActive()
             }
         }
         viewModelScope.launch {
@@ -153,21 +168,22 @@ class WorkoutSessionViewModel(
         ) {
             cursor = SessionCursor(saved.blockIndex, saved.exerciseIndex, saved.roundNumber)
             restEndEpochMillis = saved.restEndEpochMillis
+            restCaption = saved.restCaption
+            restAlertFired = saved.restAlertFired
+            if (saved.notes.isNotEmpty()) notesInput = saved.notes
         } else {
             persistProgress()
         }
+        // A past deadline stays on screen as overtime. Do not clear it here.
         if (restEndEpochMillis != null) {
-            if (restEndEpochMillis!! <= clock.millis()) {
-                restEndEpochMillis = null
+            if (restCaption.isBlank()) {
+                restCaption = restCaptionForCursor()
                 persistProgress()
-            } else {
-                // Restore the service alarm so it can ring!
-                val nextExercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
-                val upNext = "Up next: Round ${cursor.roundNumber} - ${nextExercise.name}"
-                startRestTimerService(restEndEpochMillis!!, upNext)
             }
+            startRestTimerService(restEndEpochMillis!!, restCaption)
         }
         loadInputDefaults()
+        ready = true
         publishActive()
     }
 
@@ -249,15 +265,33 @@ class WorkoutSessionViewModel(
     }
 
     fun addRestSeconds(seconds: Int = 15) {
-        addTimeToRestTimerService()
+        val end = restEndEpochMillis ?: return
+        val updated = end + seconds * 1_000L
+        restEndEpochMillis = updated
+        if (updated > clock.millis()) restAlertFired = false
+        publishActive()
+        adjustRestTimerService(seconds * 1_000L)
+    }
+
+    fun onSessionResumed() {
+        val end = restEndEpochMillis ?: return
+        if (end <= clock.millis()) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val alarmManager = applicationContext.getSystemService(AlarmManager::class.java) ?: return
+        if (!alarmManager.canScheduleExactAlarms()) return
+        RestAlarmScheduler.schedule(applicationContext, end)
     }
 
     fun skipRest() {
         if (restEndEpochMillis == null) return
         restEndEpochMillis = null
-        stopRestTimerService()
-        viewModelScope.launch { persistProgress() }
+        restCaption = ""
+        restAlertFired = false
         publishActive()
+        viewModelScope.launch {
+            persistProgress()
+            stopRestTimerService()
+        }
     }
 
     fun cancelWorkout() {
@@ -298,6 +332,8 @@ class WorkoutSessionViewModel(
             }
 
             restEndEpochMillis = null
+            restCaption = ""
+            restAlertFired = false
             stopRestTimerService()
             persistProgress()
             publishActive()
@@ -337,10 +373,10 @@ class WorkoutSessionViewModel(
                 progressionSuggestion = null
                 cursor = advance.cursorAfterRest
                 restEndEpochMillis = clock.millis() + advance.seconds * 1_000L
-                val nextExercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
-                val upNext = "Up next: Round ${cursor.roundNumber} - ${nextExercise.name}"
-                startRestTimerService(restEndEpochMillis!!, upNext)
+                restCaption = restCaptionForCursor()
+                restAlertFired = false
                 persistProgress()
+                startRestTimerService(restEndEpochMillis!!, restCaption)
                 loadInputDefaults()
                 publishActive()
             }
@@ -349,9 +385,12 @@ class WorkoutSessionViewModel(
     }
 
     private suspend fun finishAndSummarize() {
+        restEndEpochMillis = null
+        restCaption = ""
+        restAlertFired = false
+        stopRestTimerService()
         session = workoutRepository.finishSession(sessionId, notesInput.takeIf { it.isNotBlank() })
         progressStore.clear()
-        restEndEpochMillis = null
         showSummary()
     }
 
@@ -405,8 +444,7 @@ class WorkoutSessionViewModel(
     }
 
     private fun tick() {
-        // publishActive clamps an expired timer to 0:00 without advancing.
-        // Only an explicit Skip/Continue action may reveal the next exercise.
+        // Overtime stays on screen. Hitting zero does not advance the exercise.
         publishActive()
     }
 
@@ -427,9 +465,7 @@ class WorkoutSessionViewModel(
              upNext.add(plan.blocks[c.blockIndex].exercises[c.exerciseIndex].name)
         }
 
-        if (restEndEpochMillis == null) {
-            stopRestTimerService()
-        }
+        val rest = restEndEpochMillis?.let { restSecondsUntil(it, clock.millis()) }
         _uiState.value = WorkoutSessionUiState.Active(
             workoutName = plan.name,
             dayLabel = plan.dayLabel,
@@ -446,9 +482,8 @@ class WorkoutSessionViewModel(
             valueInput = valueInput,
             weightInput = weightInput,
             unitSystem = unitSystem,
-            restRemainingSeconds = restEndEpochMillis?.let { end ->
-                ((end - clock.millis()).coerceAtLeast(0) / 1_000L).toInt() + 1
-            },
+            restRemainingSeconds = rest?.remaining,
+            restOvertimeSeconds = rest?.overtime?.takeIf { it > 0 },
             isOptionalBlock = block.isOptional,
             isSaving = isSaving,
             progressionSuggestion = progressionSuggestion,
@@ -461,40 +496,34 @@ class WorkoutSessionViewModel(
         )
     }
 
+    private fun restCaptionForCursor(): String {
+        val exercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
+        return "Up next: Round ${cursor.roundNumber} - ${exercise.name}"
+    }
+
     private fun startRestTimerService(endMillis: Long, upNext: String) {
         val intent = Intent(applicationContext, RestTimerService::class.java).apply {
             action = RestTimerService.ACTION_START
             putExtra(RestTimerService.EXTRA_END_MILLIS, endMillis)
             putExtra(RestTimerService.EXTRA_UP_NEXT, upNext)
+            putExtra(RestTimerService.EXTRA_SESSION_ID, sessionId)
         }
         ContextCompat.startForegroundService(applicationContext, intent)
     }
 
-    private fun addTimeToRestTimerService() {
+    private fun adjustRestTimerService(deltaMs: Long) {
         val intent = Intent(applicationContext, RestTimerService::class.java).apply {
-            action = RestTimerService.ACTION_ADD_TIME
+            action = RestTimerService.ACTION_ADJUST
+            putExtra(RestTimerService.EXTRA_DELTA_MS, deltaMs)
         }
         ContextCompat.startForegroundService(applicationContext, intent)
     }
 
     private fun stopRestTimerService() {
-        val intent = Intent(applicationContext, RestTimerService::class.java).apply {
-            action = RestTimerService.ACTION_STOP
-        }
-        try {
-            applicationContext.startService(intent)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        RestAlarmScheduler.cancel(applicationContext)
+        RestTimerService.releaseRetainedWakeLock()
         try {
             applicationContext.stopService(Intent(applicationContext, RestTimerService::class.java))
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        try {
-            applicationContext.sendBroadcast(
-                Intent(RestTimerService.ACTION_STOP).setPackage(applicationContext.packageName),
-            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -515,6 +544,9 @@ class WorkoutSessionViewModel(
             cursor.exerciseIndex,
             cursor.roundNumber,
             restEndEpochMillis,
+            notes = notesInput,
+            restCaption = restCaption,
+            restAlertFired = restAlertFired,
         ),
     )
 

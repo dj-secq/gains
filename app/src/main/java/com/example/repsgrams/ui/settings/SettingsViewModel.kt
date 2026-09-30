@@ -64,11 +64,6 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setDefaultRestSeconds(seconds) }
     }
 
-    fun setRestTimerAutoAdvance(enabled: Boolean) {
-        viewModelScope.launch { repository.setRestTimerAutoAdvance(enabled) }
-    }
-
-
     private fun update(change: suspend () -> Unit) {
         viewModelScope.launch {
             change()

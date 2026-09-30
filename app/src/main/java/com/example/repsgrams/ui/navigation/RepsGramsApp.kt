@@ -76,6 +76,8 @@ fun RepsGramsApp(
     container: AppContainer,
     notificationTarget: String? = null,
     onNotificationHandled: () -> Unit = {},
+    openSessionId: Long? = null,
+    onOpenSessionHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -130,6 +132,14 @@ fun RepsGramsApp(
             }
             pagerState.scrollToPage(TopLevelDestination.TODAY.ordinal)
         }
+    }
+
+    LaunchedEffect(openSessionId) {
+        val id = openSessionId ?: return@LaunchedEffect
+        navController.navigate("session/$id") {
+            launchSingleTop = true
+        }
+        onOpenSessionHandled()
     }
 
     Scaffold(

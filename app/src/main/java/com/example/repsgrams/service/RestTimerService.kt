@@ -1,301 +1,408 @@
 package com.example.repsgrams.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.RingtoneManager
-import android.media.MediaPlayer
 import android.os.Build
 import android.os.IBinder
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
-import androidx.core.app.NotificationCompat
+import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.ServiceCompat
-import androidx.core.content.ContextCompat
-import com.example.repsgrams.MainActivity
-import com.example.repsgrams.R
+import com.example.repsgrams.data.datastore.PreferencesCycleSettingsRepository
+import com.example.repsgrams.data.datastore.SessionProgressStore
+import java.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class RestTimerService : Service() {
 
-    private val scope = CoroutineScope(Dispatchers.Default + Job())
+    private val serviceJob = SupervisorJob()
+    private val scope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
+    private val gate = Mutex()
     private var timerJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private var upNextText: String = ""
+    private var sessionId: Long = -1L
+    private var activeStartId: Int = 0
 
-    private lateinit var notificationManager: NotificationManager
+    /** When true, onDestroy leaves the timeout lock so a one-shot alert can finish with the screen off. */
+    private var retainWakeLock: Boolean = false
 
-    private var mediaPlayer: MediaPlayer? = null
-    private var continuousVibrator: Vibrator? = null
+    @Volatile
+    private var stopped = false
 
-    companion object {
-        private val _restEndMillis = MutableStateFlow<Long?>(null)
-        val restEndMillis: StateFlow<Long?> = _restEndMillis.asStateFlow()
-        const val ACTION_START = "com.example.repsgrams.action.START_REST_TIMER"
-        const val ACTION_STOP = "com.example.repsgrams.action.STOP_REST_TIMER"
-        const val ACTION_ADD_TIME = "com.example.repsgrams.action.ADD_TIME"
-        const val ACTION_CONTINUE = "com.example.repsgrams.action.CONTINUE"
-
-        const val EXTRA_END_MILLIS = "end_millis"
-        const val EXTRA_UP_NEXT = "up_next"
-
-        const val NOTIFICATION_ID_FOREGROUND = 1001
-        const val NOTIFICATION_ID_ALARM = 1002
-
-        const val CHANNEL_ID_TIMER = "rest_timer_channel"
-        const val CHANNEL_ID_ALARM = "rest_alarm_channel"
-
-        // State to tell the service if the Session screen is visible
-        var isSessionForeground = false
-    }
-
-    private val stopReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_STOP) {
-                stopContinuousAlert()
-                stopSelf()
-            }
-        }
-    }
+    private val progressStore by lazy { SessionProgressStore(applicationContext) }
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        createChannels()
-        ContextCompat.registerReceiver(
-            this,
-            stopReceiver,
-            android.content.IntentFilter(ACTION_STOP),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
+        stopped = false
+        RestNotifications.ensureChannels(this)
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        stopContinuousAlert()
+        stopped = true
         timerJob?.cancel()
-        try { unregisterReceiver(stopReceiver) } catch (e: Exception) {}
+        if (!retainWakeLock) releaseWakeLock()
+        serviceJob.cancel()
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        activeStartId = startId
+        val commandStartId = startId
         when (intent?.action) {
-            ACTION_START -> {
-                stopContinuousAlert() // ensure previous alarm is stopped
-                _restEndMillis.value = intent.getLongExtra(EXTRA_END_MILLIS, 0)
-                upNextText = intent.getStringExtra(EXTRA_UP_NEXT) ?: ""
-                startForegroundTimer()
-            }
             ACTION_STOP -> {
-                stopContinuousAlert()
-                _restEndMillis.value = null
-                stopSelf()
+                // Notification Skip uses getForegroundService, so this still has to enter the foreground.
+                if (!enterForeground()) {
+                    scope.launch { gate.withLock { handleStop(intent, commandStartId) } }
+                    return START_STICKY
+                }
+                scope.launch { gate.withLock { handleStop(intent, commandStartId) } }
             }
-            ACTION_ADD_TIME -> {
-                stopContinuousAlert()
-                _restEndMillis.value = (_restEndMillis.value ?: System.currentTimeMillis()) + 15_000L
-                if (timerJob?.isActive != true) {
-                    // Timer had finished, so restart it
-                    notificationManager.cancel(NOTIFICATION_ID_ALARM)
-                    startForegroundTimer()
-                } else {
-                    updateForegroundNotification()
+            ACTION_CONTINUE, ACTION_DISMISS_ALARM -> {
+                scope.launch { gate.withLock { handleDismiss(commandStartId) } }
+            }
+            else -> {
+                captureExtras(intent)
+                if (!enterForeground()) {
+                    val commandAction = intent?.action
+                    scope.launch {
+                        val storedEnd = progressStore.progress.first()?.restEndEpochMillis
+                        val extraEnd = intent?.getLongExtra(EXTRA_END_MILLIS, 0L)?.takeIf { it != 0L }
+                        val end = storedEnd ?: extraEnd
+                        val due = end != null && end <= System.currentTimeMillis()
+                        // A failed start of a future rest must not ring or claim the alert.
+                        if (commandAction == ACTION_DEADLINE || due) {
+                            playDeadlineFallback(applicationContext)
+                        } else if (end != null) {
+                            RestAlarmScheduler.schedule(applicationContext, end)
+                        }
+                    }
+                    stopSelf(commandStartId)
+                    return START_STICKY
+                }
+                scope.launch {
+                    gate.withLock {
+                        if (stopped) return@withLock
+                        when (intent?.action) {
+                            ACTION_ADJUST -> handleAdjust(intent, commandStartId)
+                            ACTION_START -> handleStart(intent, commandStartId)
+                            else -> handleReconcile(commandStartId)
+                        }
+                    }
                 }
             }
-            ACTION_CONTINUE -> {
-                stopContinuousAlert()
-                _restEndMillis.value = null
-                notificationManager.cancel(NOTIFICATION_ID_ALARM)
-                stopSelf()
-            }
-            "ACTION_DISMISS_ALARM" -> {
-                stopContinuousAlert()
-                _restEndMillis.value = null
-                stopSelf()
-            }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
-    private fun createChannels() {
-        val timerChannel = NotificationChannel(
-            CHANNEL_ID_TIMER,
-            "Rest Timer",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        timerChannel.description = "Shows active rest timer countdown"
+    override fun onBind(intent: Intent?): IBinder? = null
 
-        val alarmChannel = NotificationChannel(
-            CHANNEL_ID_ALARM,
-            "Rest Over Alarms",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Alerts when your rest period is over"
-            // We set default sound for the channel
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build()
-            setSound(uri, audioAttributes)
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 200, 100, 200, 100, 200)
+    private fun captureExtras(intent: Intent?) {
+        if (intent == null) return
+        if (intent.hasExtra(EXTRA_SESSION_ID)) {
+            val id = intent.getLongExtra(EXTRA_SESSION_ID, -1L)
+            if (id > 0L) sessionId = id
         }
-
-        notificationManager.createNotificationChannel(timerChannel)
-        notificationManager.createNotificationChannel(alarmChannel)
+        intent.getStringExtra(EXTRA_UP_NEXT)?.let { upNextText = it }
+        if (intent.action == ACTION_START && intent.hasExtra(EXTRA_END_MILLIS)) {
+            val end = intent.getLongExtra(EXTRA_END_MILLIS, 0L)
+            if (end != 0L) _restEndMillis.value = end
+        }
     }
 
-    private fun startForegroundTimer() {
-        val notification = buildForegroundNotification()
-        val foregroundServiceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+    private fun enterForeground(): Boolean {
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         } else {
             0
         }
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID_FOREGROUND,
-            notification,
-            foregroundServiceType,
-        )
+        return try {
+            ServiceCompat.startForeground(
+                this,
+                RestNotifications.ID_ONGOING,
+                RestNotifications.ongoing(this, _restEndMillis.value, upNextText, sessionId),
+                type,
+            )
+            true
+        } catch (error: Exception) {
+            Log.w(TAG, "startForeground failed", error)
+            false
+        }
+    }
 
+    private suspend fun handleStart(intent: Intent, commandStartId: Int) {
+        stopped = false
+        val saved = progressStore.progress.first()
+        val end = saved?.restEndEpochMillis
+            ?: intent.getLongExtra(EXTRA_END_MILLIS, 0L).takeIf { it != 0L }
+        if (end == null) {
+            releaseAndStop(commandStartId)
+            return
+        }
+        sessionId = intent.getLongExtra(EXTRA_SESSION_ID, saved?.sessionId ?: sessionId)
+        upNextText = saved?.restCaption?.takeIf { it.isNotBlank() }
+            ?: intent.getStringExtra(EXTRA_UP_NEXT)
+            ?: upNextText
+        _restEndMillis.value = end
+        applyTiming(end, commandStartId)
+    }
+
+    private suspend fun handleAdjust(intent: Intent, commandStartId: Int) {
+        stopped = false
+        val delta = intent.getLongExtra(EXTRA_DELTA_MS, 0L)
+        val updated = progressStore.adjustRestDeadline(delta, System.currentTimeMillis())
+        if (updated == null) {
+            releaseAndStop(commandStartId)
+            return
+        }
+        val saved = progressStore.progress.first()
+        if (saved != null) {
+            sessionId = saved.sessionId
+            if (saved.restCaption.isNotBlank()) upNextText = saved.restCaption
+        }
+        _restEndMillis.value = updated
+        applyTiming(updated, commandStartId)
+    }
+
+    private suspend fun handleReconcile(commandStartId: Int) {
+        val saved = progressStore.progress.first()
+        val end = saved?.restEndEpochMillis
+        if (saved == null || end == null) {
+            releaseAndStop(commandStartId)
+            return
+        }
+        sessionId = saved.sessionId
+        upNextText = saved.restCaption
+        _restEndMillis.value = end
+        applyTiming(end, commandStartId)
+    }
+
+    private suspend fun handleStop(intent: Intent?, commandStartId: Int) {
+        // The notification carries the deadline it was built for. A newer rest must survive Skip.
+        val expected = intent?.takeIf { it.hasExtra(EXTRA_END_MILLIS) }
+            ?.getLongExtra(EXTRA_END_MILLIS, 0L)
+        val current = progressStore.progress.first()?.restEndEpochMillis
+        if (expected != null && current != expected) {
+            if (timerJob?.isActive != true && commandStartId == activeStartId) {
+                dropForeground()
+                stopSelf(commandStartId)
+            }
+            return
+        }
+        if (current != null) {
+            progressStore.clearRestDeadlineIfMatch(expected ?: current)
+        }
+        if (progressStore.progress.first()?.restEndEpochMillis != null) {
+            if (timerJob?.isActive != true && commandStartId == activeStartId) {
+                dropForeground()
+                stopSelf(commandStartId)
+            }
+            return
+        }
+        stopped = true
+        timerJob?.cancel()
+        RestAlertPlayback.stop()
+        releaseWakeLock()
+        RestAlarmScheduler.cancel(this)
+        _restEndMillis.value = null
+        RestNotifications.cancelRestOver(this)
+        dropForeground()
+        if (commandStartId == activeStartId) stopSelf(commandStartId)
+    }
+
+    private fun handleDismiss(commandStartId: Int) {
+        // Swipe / legacy Continue must not clear the stored deadline.
+        RestAlertPlayback.stop()
+        RestNotifications.cancelRestOver(this)
+        val end = _restEndMillis.value
+        if (end != null && end > System.currentTimeMillis()) return
+        releaseWakeLock()
+        _restEndMillis.value = null
+        dropForeground()
+        if (commandStartId == activeStartId) stopSelf(commandStartId)
+    }
+
+    private suspend fun applyTiming(end: Long, commandStartId: Int) {
+        val remaining = end - System.currentTimeMillis()
+        if (remaining <= 0L) {
+            timerJob?.cancel()
+            acquireWakeLock(ALERT_GRACE_MS)
+            onTimerFinished(commandStartId)
+            return
+        }
+        acquireWakeLock(remaining + ALERT_GRACE_MS)
+        RestAlarmScheduler.schedule(this, end)
+        RestNotifications.cancelRestOver(this)
+        refreshOngoing()
+        startLoop(commandStartId)
+    }
+
+    private fun startLoop(commandStartId: Int) {
         timerJob?.cancel()
         timerJob = scope.launch {
-            while (isActive) {
-                val remaining = (_restEndMillis.value ?: 0L) - System.currentTimeMillis()
-                if (remaining <= 0) {
-                    onTimerFinished()
+            while (isActive && !stopped) {
+                val end = _restEndMillis.value ?: break
+                if (end - System.currentTimeMillis() <= 0L) {
+                    gate.withLock {
+                        val current = _restEndMillis.value
+                        // An adjust may have moved the deadline while this loop waited for the gate.
+                        if (!stopped && current != null && current <= System.currentTimeMillis()) {
+                            onTimerFinished(commandStartId)
+                        }
+                    }
                     break
                 }
-                updateForegroundNotification()
-                delay(500)
+                refreshOngoing()
+                delay(1_000)
             }
         }
     }
 
-    private fun updateForegroundNotification() {
-        notificationManager.notify(NOTIFICATION_ID_FOREGROUND, buildForegroundNotification())
-    }
-
-    private fun buildForegroundNotification(): Notification {
-        val remainingSec = (((_restEndMillis.value ?: 0L) - System.currentTimeMillis()).coerceAtLeast(0) / 1000).toInt()
-        val m = remainingSec / 60
-        val s = remainingSec % 60
-        val timeString = String.format(Locale.ROOT, "%d:%02d", m, s)
-
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+    private suspend fun onTimerFinished(commandStartId: Int) {
+        if (stopped) return
+        val won = progressStore.claimRestAlert()
+        if (!won || stopped) {
+            if (!stopped) {
+                _restEndMillis.value = null
+                // The winner already holds the timeout lock for the one-shot. Don't drop it.
+                if (!retainWakeLock) releaseWakeLock()
+                dropForeground()
+                if (commandStartId == activeStartId) stopSelf(commandStartId)
+            }
+            return
+        }
+        RestAlarmScheduler.cancel(this)
+        val alertEnd = _restEndMillis.value
+        val settings = PreferencesCycleSettingsRepository(applicationContext, Clock.systemUTC())
+            .settings
+            .first()
+        if (stopped) return
+        RestAlertPlayback.play(
+            applicationContext,
+            sound = settings.restTimerSound,
+            vibrationEnabled = settings.restTimerVibrationEnabled,
+            sessionVisible = isSessionForeground,
         )
-
-        val stopIntent = PendingIntent.getService(
-            this, 1, Intent(this, RestTimerService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID_TIMER)
-            .setContentTitle("Resting — $timeString")
-            .setContentText(upNextText)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Skip", stopIntent)
-            .setOngoing(true)
-            .build()
-    }
-
-    private fun onTimerFinished() {
-        playAlert()
         if (!isSessionForeground) {
-            postAlarmNotification()
+            RestNotifications.postRestOver(this, upNextText, sessionId, alertEnd)
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        // Mirror only. The stored deadline stays until Skip, finish, or discard.
+        _restEndMillis.value = null
+        // The lock was acquired for a few seconds. Leave that timeout in place so the
+        // one-shot can finish after this service stops; skip/finish still release immediately.
+        retainWakeLock = true
+        retainedWakeLock = wakeLock
+        dropForeground()
+        if (commandStartId == activeStartId) stopSelf(commandStartId)
     }
 
-    private fun stopContinuousAlert() {
+    private fun refreshOngoing() {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        manager.notify(
+            RestNotifications.ID_ONGOING,
+            RestNotifications.ongoing(this, _restEndMillis.value, upNextText, sessionId),
+        )
+    }
+
+    private fun acquireWakeLock(timeoutMs: Long) {
+        retainWakeLock = false
+        val lock = wakeLock ?: retainedWakeLock ?: (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RepsGrams:RestTimer")
+            .also { it.setReferenceCounted(false) }
+        wakeLock = lock
+        retainedWakeLock = lock
+        if (lock.isHeld) lock.release()
+        lock.acquire(timeoutMs.coerceAtLeast(1L))
+    }
+
+    private fun releaseWakeLock() {
+        retainWakeLock = false
+        retainedWakeLock?.let { retained ->
+            if (retained.isHeld) retained.release()
+        }
+        retainedWakeLock = null
+        val lock = wakeLock
+        wakeLock = null
+        if (lock != null && lock.isHeld) lock.release()
+    }
+
+    private fun dropForeground() {
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun releaseAndStop(commandStartId: Int) {
         timerJob?.cancel()
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-        } catch (e: Exception) {}
-        mediaPlayer = null
-        continuousVibrator?.cancel()
-        continuousVibrator = null
+        releaseWakeLock()
+        RestAlarmScheduler.cancel(this)
+        _restEndMillis.value = null
+        dropForeground()
+        if (commandStartId == activeStartId) stopSelf(commandStartId)
     }
 
-    private fun playAlert() {
-        // Stop any existing alert first to prevent leaks
-        stopContinuousAlert()
+    companion object {
+        private val _restEndMillis = MutableStateFlow<Long?>(null)
+        val restEndMillis: StateFlow<Long?> = _restEndMillis.asStateFlow()
 
-        // Vibrator
-        try {
-            continuousVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vibratorManager.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            }
-            val pattern = longArrayOf(0, 500, 500) // vibrate 500ms, pause 500ms
-            continuousVibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 means loop
-        } catch (e: Exception) { e.printStackTrace() }
+        const val ACTION_START = "com.example.repsgrams.action.START_REST_TIMER"
+        const val ACTION_STOP = "com.example.repsgrams.action.STOP_REST_TIMER"
+        const val ACTION_ADJUST = "com.example.repsgrams.action.ADJUST_REST_TIMER"
+        const val ACTION_DEADLINE = "com.example.repsgrams.action.REST_DEADLINE"
+        const val ACTION_CONTINUE = "com.example.repsgrams.action.CONTINUE"
+        const val ACTION_DISMISS_ALARM = "ACTION_DISMISS_ALARM"
 
-        // Sound
-        try {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            mediaPlayer = MediaPlayer.create(this, uri)?.apply {
-                isLooping = true
-                start()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        const val EXTRA_END_MILLIS = "end_millis"
+        const val EXTRA_UP_NEXT = "up_next"
+        const val EXTRA_DELTA_MS = "delta_ms"
+        const val EXTRA_SESSION_ID = "session_id"
+
+        var isSessionForeground = false
+
+        private const val ALERT_GRACE_MS = 5_000L
+        private const val TAG = "RestTimer"
+        private var retainedWakeLock: PowerManager.WakeLock? = null
+
+        suspend fun playDeadlineFallback(context: Context) {
+            val appContext = context.applicationContext
+            val store = SessionProgressStore(appContext)
+            if (!store.claimRestAlert()) return
+            val saved = store.progress.first()
+            RestNotifications.ensureChannels(appContext)
+            RestNotifications.postRestOver(
+                appContext,
+                saved?.restCaption.orEmpty(),
+                saved?.sessionId ?: -1L,
+                saved?.restEndEpochMillis,
+            )
+            val settings = PreferencesCycleSettingsRepository(appContext, Clock.systemUTC()).settings.first()
+            RestAlertPlayback.play(
+                appContext,
+                sound = settings.restTimerSound,
+                vibrationEnabled = settings.restTimerVibrationEnabled,
+                sessionVisible = false,
+            )
+        }
+
+        fun releaseRetainedWakeLock() {
+            val lock = retainedWakeLock
+            retainedWakeLock = null
+            if (lock != null && lock.isHeld) lock.release()
         }
     }
-
-    private fun postAlarmNotification() {
-        val addTimeIntent = PendingIntent.getService(
-            this, 2, Intent(this, RestTimerService::class.java).setAction(ACTION_ADD_TIME), PendingIntent.FLAG_IMMUTABLE
-        )
-        val continueIntent = PendingIntent.getService(
-            this, 3, Intent(this, RestTimerService::class.java).setAction(ACTION_CONTINUE), PendingIntent.FLAG_IMMUTABLE
-        )
-        val openIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val dismissIntent = PendingIntent.getService(
-            this, 4, Intent(this, RestTimerService::class.java).setAction("ACTION_DISMISS_ALARM"), PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID_ALARM)
-            .setContentTitle("Rest over")
-            .setContentText(upNextText)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setContentIntent(openIntent)
-            .addAction(0, "+15s", addTimeIntent)
-            .addAction(0, "Continue", continueIntent)
-            .setAutoCancel(true)
-            .setDeleteIntent(dismissIntent)
-            .build()
-
-        notificationManager.notify(NOTIFICATION_ID_ALARM, notification)
-    }
-
-
-
-    override fun onBind(intent: Intent?): IBinder? = null
 }

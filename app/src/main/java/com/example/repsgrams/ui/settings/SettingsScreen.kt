@@ -1,7 +1,11 @@
 package com.example.repsgrams.ui.settings
 
+import android.app.AlarmManager
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
@@ -10,6 +14,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.FlashlightOn
@@ -18,6 +25,7 @@ import androidx.compose.material.icons.outlined.EventNote
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Vibration
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.ImportExport
@@ -118,7 +126,7 @@ fun SettingsRoute(
             onAdherenceGraceDays = viewModel::setAdherenceGraceDays,
             onUnitSystem = viewModel::setUnitSystem,
             onWheyGrams = viewModel::setWheyServingGrams,
-            onRestTimerAutoAdvance = viewModel::setRestTimerAutoAdvance,
+            onRestTimerSound = viewModel::setRestTimerSound,
             onRestTimerVibrationEnabled = viewModel::setRestTimerVibrationEnabled,
             onDefaultRestSeconds = viewModel::updateDefaultRestSeconds,
             onThemeMode = viewModel::setThemeMode,
@@ -151,7 +159,7 @@ fun SettingsScreen(
     onUnitSystem: (UnitSystem) -> Unit,
     onWheyGrams: (Float) -> Unit,
     onProteinGoal: (Float, Float) -> Unit,
-    onRestTimerAutoAdvance: (Boolean) -> Unit,
+    onRestTimerSound: (String) -> Unit,
     onRestTimerVibrationEnabled: (Boolean) -> Unit,
     onDefaultRestSeconds: (Int) -> Unit,
     onThemeMode: (com.example.repsgrams.data.datastore.ThemeMode) -> Unit,
@@ -289,6 +297,16 @@ fun SettingsScreen(
                             }
                             HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             SettingToggle(
+                                "Sound",
+                                "Play a sound when rest ends",
+                                Icons.Outlined.VolumeUp,
+                                AppColors.workout,
+                                settings.restTimerSound != "off",
+                                true,
+                                { enabled -> onRestTimerSound(if (enabled) "default" else "off") },
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            SettingToggle(
                                 "Vibrate on Finish",
                                 "Vibrate device when rest period ends",
                                 Icons.Outlined.Vibration,
@@ -297,6 +315,10 @@ fun SettingsScreen(
                                 true,
                                 onRestTimerVibrationEnabled,
                             )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                ExactAlarmRow()
+                            }
                         }
                     }
                 }
@@ -508,6 +530,57 @@ fun SettingsScreen(
             }
 
         }
+    }
+}
+
+@Composable
+private fun ExactAlarmRow() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeTick by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeTick += 1
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val allowed = remember(resumeTick) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        alarmManager?.canScheduleExactAlarms() == true
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                }
+                context.startActivity(intent)
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        IconBadge(icon = Icons.Outlined.Timer, tint = AppColors.workout)
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Exact rest alarm", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (allowed) {
+                    "Allowed. Used if the app is killed or the phone is in Doze."
+                } else {
+                    "Off. This process can still alert with the screen off. If it is killed or the phone is in Doze, the alarm is required. Reopening shows overtime and does not clear the timer. Force-stop still ends it."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            if (allowed) "On" else "Off",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
