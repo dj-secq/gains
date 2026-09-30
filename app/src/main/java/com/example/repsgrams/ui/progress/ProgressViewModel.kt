@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
-import com.example.repsgrams.data.datastore.CycleSettings
+import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BodyweightLogEntity
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.ExerciseSetHistoryRow
 import com.example.repsgrams.data.repository.ProgressRepository
+import com.example.repsgrams.domain.progress.bodyweightToDisplay
+import com.example.repsgrams.domain.progress.bodyweightToKilograms
 import com.example.repsgrams.domain.streak.StreakInfo
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +33,10 @@ data class ProgressUiState(
     val isWeightView: Boolean = true,
     val currentStreak: Int = 0,
     val bestStreak: Int = 0,
+    val unitSystem: UnitSystem = UnitSystem.KG,
+    /** Display unit. Kilograms stay in Room. */
     val bodyweightHistory: List<Pair<LocalDate, Float>> = emptyList(),
+    val todayBodyweight: Float? = null,
     val supplyInventory: List<com.example.repsgrams.data.db.SupplyInventoryEntity> = emptyList(),
     val supplements: List<com.example.repsgrams.data.db.SupplementEntity> = emptyList(),
     val selectedSupplementId: Long? = null,
@@ -48,6 +53,7 @@ private data class ExerciseData(
 private data class UserStats(
     val bwHistory: List<BodyweightLogEntity>,
     val streakInfo: StreakInfo,
+    val unitSystem: UnitSystem,
     val supply: List<com.example.repsgrams.data.db.SupplyInventoryEntity>,
     val supplements: List<com.example.repsgrams.data.db.SupplementEntity>,
     val selectedSupplementId: Long?,
@@ -82,8 +88,11 @@ class ProgressViewModel(
 
     fun selectSupplement(id: Long) { _selectedSupplementId.value = id }
 
-    fun logBodyweight(weightKg: Float) {
-        viewModelScope.launch { progressRepository.logBodyweight(today, weightKg) }
+    fun logBodyweight(weight: Float) {
+        val unitSystem = uiState.value.unitSystem
+        viewModelScope.launch {
+            progressRepository.logBodyweight(today, bodyweightToKilograms(weight, unitSystem))
+        }
     }
 
     fun restockSupply(supplementId: Long, newTotalServings: Int) {
@@ -124,11 +133,21 @@ class ProgressViewModel(
     private val userStatsFlow = combine(
         progressRepository.observeBodyweightHistory(today.minusMonths(3), today),
         cycleSettingsRepository.settings.flatMapLatest { settings ->
-            progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
+            progressRepository.observeStreakInfo(today, settings.adherenceGraceDays).map { streak ->
+                streak to settings.unitSystem
+            }
         },
         supplementStatsFlow,
-    ) { bw, streak, supplements ->
-        UserStats(bw, streak, supplements.supply, supplements.supplements, supplements.selectedId, supplements.adherence)
+    ) { bw, streakAndUnit, supplements ->
+        UserStats(
+            bw,
+            streakAndUnit.first,
+            streakAndUnit.second,
+            supplements.supply,
+            supplements.supplements,
+            supplements.selectedId,
+            supplements.adherence,
+        )
     }
 
     val uiState: StateFlow<ProgressUiState> = combine(
@@ -143,7 +162,11 @@ class ProgressViewModel(
             isWeightView = exData.isWeightView,
             currentStreak = stats.streakInfo.currentStreak,
             bestStreak = stats.streakInfo.bestStreak,
-            bodyweightHistory = stats.bwHistory.map { it.date to it.weightKg },
+            unitSystem = stats.unitSystem,
+            bodyweightHistory = stats.bwHistory.map { it.date to bodyweightToDisplay(it.weightKg, stats.unitSystem) },
+            todayBodyweight = stats.bwHistory.lastOrNull { it.date == today }?.weightKg?.let {
+                bodyweightToDisplay(it, stats.unitSystem)
+            },
             supplyInventory = stats.supply,
             supplements = stats.supplements,
             selectedSupplementId = stats.selectedSupplementId,

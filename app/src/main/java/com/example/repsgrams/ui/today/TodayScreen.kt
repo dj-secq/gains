@@ -27,7 +27,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.repsgrams.ui.components.IosCard
@@ -256,7 +259,7 @@ private fun TodayContent(
                     Column {
                         Text("Current streak", style = MaterialTheme.typography.bodyLarge)
                         Spacer(Modifier.height(4.dp))
-                        Text("${state.currentStreak} day${if (state.currentStreak != 1) "s" else ""}", style = MaterialTheme.typography.headlineMedium)
+                        Text("${state.currentStreak} session${if (state.currentStreak != 1) "s" else ""}", style = MaterialTheme.typography.headlineMedium)
                     }
                 }
             }
@@ -315,6 +318,13 @@ private fun SupplementCard(
             state.supplements.forEachIndexed { index, suppState ->
                 val (supp, taken, actualAmount) = suppState
                 var amountText by remember(supp.id, actualAmount) { mutableStateOf(if (actualAmount % 1f == 0f) actualAmount.toInt().toString() else actualAmount.toString()) }
+                val commitDose = {
+                    if (taken) {
+                        amountText.toFloatOrNull()?.let { parsed ->
+                            if (parsed != actualAmount) onToggleSupplement(supp, true, parsed)
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -343,9 +353,12 @@ private fun SupplementCard(
                     OutlinedTextField(
                         value = amountText,
                         onValueChange = { amountText = it },
-                        modifier = Modifier.width(84.dp),
+                        modifier = Modifier
+                            .width(84.dp)
+                            .onFocusChanged { focus -> if (!focus.isFocused) commitDose() },
                         label = { Text(supp.unit) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { commitDose() }),
                         singleLine = true,
                     )
                     Switch(

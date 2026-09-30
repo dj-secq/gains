@@ -29,7 +29,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import com.example.repsgrams.domain.schedule.SuggestionStatus
-import java.time.temporal.ChronoUnit
 
 data class TodaySupplement(val supplement: SupplementEntity, val taken: Boolean, val actualAmount: Float)
 
@@ -141,9 +140,10 @@ class TodayViewModel(
             if (!supp.isActive) continue
             val status = progressStatsCalculator.calculateSupplyStatus(inv, today, lowThreshold = supp.lowSupplyThreshold.toFloat())
             if (status.isLow) {
-                val days = status.estimatedRunOutDate?.let { java.time.temporal.ChronoUnit.DAYS.between(today, it) } ?: 0
-                val timeStr = if (days > 0) "about $days days left" else "soon"
-                warnings.add("${supp.name} running low — $timeStr.")
+                val remaining = status.servingsRemaining
+                val shown = if (remaining % 1f == 0f) remaining.toInt().toString() else remaining.toString()
+                val unit = if (remaining == 1f) "serving" else "servings"
+                warnings.add("${supp.name} running low — $shown $unit left.")
             }
         }
         return warnings

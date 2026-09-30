@@ -5,11 +5,21 @@ import java.time.LocalDate
 
 data class SupplyStatus(
     val isLow: Boolean,
-    val estimatedRunOutDate: LocalDate?
+    val estimatedRunOutDate: LocalDate?,
+    val servingsRemaining: Float,
 )
 
 class ProgressStatsCalculator {
-    fun calculateSupplyStatus(inventory: SupplyInventoryEntity, today: LocalDate, lowThreshold: Float = 5f): SupplyStatus {
-        return SupplyStatus(false, null)
+    fun calculateSupplyStatus(
+        inventory: SupplyInventoryEntity,
+        @Suppress("UNUSED_PARAMETER") today: LocalDate,
+        lowThreshold: Float = 5f,
+    ): SupplyStatus {
+        // No burn model: the date must not invent a run-out.
+        return SupplyStatus(
+            isLow = inventory.servingsRemaining <= lowThreshold,
+            estimatedRunOutDate = null,
+            servingsRemaining = inventory.servingsRemaining,
+        )
     }
 }

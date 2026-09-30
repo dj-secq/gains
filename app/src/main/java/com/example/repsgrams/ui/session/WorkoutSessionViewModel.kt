@@ -29,6 +29,8 @@ import java.time.Clock
 import com.example.repsgrams.domain.progression.PriorRound
 import com.example.repsgrams.domain.progression.ProgressionCalculator
 import com.example.repsgrams.domain.progression.ProgressionSuggestion
+import com.example.repsgrams.domain.progress.kilogramsToPounds
+import com.example.repsgrams.domain.progress.poundsToKilograms
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -247,7 +249,7 @@ class WorkoutSessionViewModel(
                     reps = value.takeIf { exercise.repType == RepType.REPS },
                     durationSeconds = value.takeIf { exercise.repType == RepType.SECONDS },
                     weightKg = weightInput.toFloatOrNull()
-                        ?.let { if (unitSystem == UnitSystem.LB) it / POUNDS_PER_KILOGRAM else it }
+                        ?.let { if (unitSystem == UnitSystem.LB) poundsToKilograms(it) else it }
                         .takeIf { exercise.tracksWeight },
                 )
                 applyAdvance(SessionNavigator.afterExercise(plan, cursor))
@@ -326,7 +328,7 @@ class WorkoutSessionViewModel(
 
             if (logged != null) {
                 valueInput = (logged.reps ?: logged.durationSeconds)?.toString() ?: ""
-                weightInput = logged.weightKg?.let { formatWeight(if (unitSystem == UnitSystem.LB) it * POUNDS_PER_KILOGRAM else it) } ?: ""
+                weightInput = logged.weightKg?.let { formatWeight(if (unitSystem == UnitSystem.LB) kilogramsToPounds(it) else it) } ?: ""
             } else {
                 loadInputDefaults()
             }
@@ -433,11 +435,11 @@ class WorkoutSessionViewModel(
         }?.toString() ?: ((exercise.targetValueLow + exercise.targetValueHigh) / 2).toString()
         val baseWeightKg = previous?.weightKg ?: 0f
         val suggestedWeightKg = if (progressionSuggestion == ProgressionSuggestion.INCREASE_WEIGHT) {
-            baseWeightKg + if (unitSystem == UnitSystem.LB) (2.5f / POUNDS_PER_KILOGRAM) else 1f
+            baseWeightKg + if (unitSystem == UnitSystem.LB) poundsToKilograms(2.5f) else 1f
         } else baseWeightKg
 
         weightInput = if (previous?.weightKg != null || progressionSuggestion == ProgressionSuggestion.INCREASE_WEIGHT) {
-            formatWeight(if (unitSystem == UnitSystem.LB) suggestedWeightKg * POUNDS_PER_KILOGRAM else suggestedWeightKg)
+            formatWeight(if (unitSystem == UnitSystem.LB) kilogramsToPounds(suggestedWeightKg) else suggestedWeightKg)
         } else {
             if (exercise.tracksWeight) "0" else ""
         }
@@ -574,5 +576,3 @@ class WorkoutSessionViewModel(
 
 private fun formatWeight(value: Float): String =
     if (value % 1f == 0f) value.toInt().toString() else "%.2f".format(value).trimEnd('0').trimEnd('.')
-
-private const val POUNDS_PER_KILOGRAM = 2.2046226f

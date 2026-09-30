@@ -150,6 +150,7 @@ data class ExerciseSetHistoryRow(
     val reps: Int?,
     val durationSeconds: Int?,
     val weightKg: Float?,
+    val repType: String? = null,
 )
 
 data class CalendarSetLogRow(
@@ -218,11 +219,29 @@ interface SetLogDao {
 
     @Query(
         """
-        SELECT set_logs.sessionId, workout_sessions.date, set_logs.roundNumber,
-               set_logs.reps, set_logs.durationSeconds, set_logs.weightKg
+        SELECT set_logs.sessionId AS sessionId, workout_sessions.date AS date, set_logs.roundNumber AS roundNumber,
+               set_logs.reps AS reps, set_logs.durationSeconds AS durationSeconds, set_logs.weightKg AS weightKg,
+               CASE
+                   WHEN EXISTS (
+                       SELECT 1 FROM template_block_exercises AS seconds_assignment
+                       WHERE seconds_assignment.exerciseId = set_logs.exerciseId
+                         AND seconds_assignment.repType = 'SECONDS'
+                   ) AND NOT EXISTS (
+                       SELECT 1 FROM template_block_exercises AS reps_assignment
+                       WHERE reps_assignment.exerciseId = set_logs.exerciseId
+                         AND reps_assignment.repType = 'REPS'
+                   ) THEN 'SECONDS'
+                   ELSE (
+                       SELECT assignment.repType FROM template_block_exercises AS assignment
+                       WHERE assignment.exerciseId = set_logs.exerciseId
+                       ORDER BY assignment.id
+                       LIMIT 1
+                   )
+               END AS repType
         FROM set_logs
         INNER JOIN workout_sessions ON workout_sessions.id = set_logs.sessionId
         WHERE set_logs.exerciseId = :exerciseId
+          AND workout_sessions.completed = 1
         ORDER BY workout_sessions.date, set_logs.roundNumber
         """,
     )

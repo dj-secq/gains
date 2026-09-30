@@ -37,21 +37,34 @@ class DefaultSupplementRepository(
             val dao = database.supplementIntakeLogDao()
             val existing = dao.getForDateAndSupplement(date, supplement.id)
             val wasTaken = existing?.taken ?: false
-            if (wasTaken != taken) {
-                val actualAmount = amount ?: supplement.doseAmount
-                if (existing != null) {
-                    dao.update(existing.copy(taken = taken, actualAmount = if (taken) actualAmount else 0f))
-                } else {
-                    dao.upsert(SupplementIntakeLogEntity(supplementId = supplement.id, date = date, taken = taken, actualAmount = if (taken) actualAmount else 0f))
+            if (wasTaken == taken) {
+                // Editing the dose of an already-taken log must not move inventory again.
+                if (taken && amount != null) {
+                    dao.update(checkNotNull(existing).copy(actualAmount = amount))
                 }
+                return@withTransaction
+            }
 
-                // Adjust inventory
-                val delta = if (taken) -1f else 1f
-                val invDao = database.supplyInventoryDao()
-                val inv = invDao.get(supplement.id)
-                if (inv != null) {
-                    invDao.update(inv.copy(servingsRemaining = inv.servingsRemaining + delta))
-                }
+            val actualAmount = if (taken) amount ?: supplement.doseAmount else 0f
+            if (existing != null) {
+                dao.update(existing.copy(taken = taken, actualAmount = actualAmount))
+            } else {
+                dao.upsert(
+                    SupplementIntakeLogEntity(
+                        supplementId = supplement.id,
+                        date = date,
+                        taken = taken,
+                        actualAmount = actualAmount,
+                    ),
+                )
+            }
+
+            // One serving on a taken-flag flip. The typed dose is not a serving count.
+            val delta = if (taken) -1f else 1f
+            val invDao = database.supplyInventoryDao()
+            val inv = invDao.get(supplement.id)
+            if (inv != null) {
+                invDao.update(inv.copy(servingsRemaining = inv.servingsRemaining + delta))
             }
         }
     }

@@ -30,6 +30,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.repsgrams.data.db.ExerciseSetHistoryRow
+import com.example.repsgrams.data.db.RepType
 import com.example.repsgrams.ui.components.IosButton
 import com.example.repsgrams.ui.components.IosCard
 
@@ -205,11 +207,11 @@ private fun ExerciseChartSection(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            val points = if (state.isWeightView && selectedEx?.tracksWeight == true) {
-                state.exerciseHistory.mapNotNull { it.weightKg }
-            } else {
-                state.exerciseHistory.mapNotNull { it.reps?.toFloat() }
-            }
+            val points = exerciseChartPoints(
+                state.exerciseHistory,
+                tracksWeight = selectedEx?.tracksWeight == true,
+                weightView = state.isWeightView,
+            )
 
             if (points.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
@@ -229,7 +231,9 @@ private fun ExerciseChartSection(
 
 @Composable
 private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
-    var bwInput by remember { mutableStateOf("") }
+    var bwInput by remember(state.unitSystem, state.todayBodyweight) {
+        mutableStateOf(state.todayBodyweight?.let(::formatBodyweight).orEmpty())
+    }
     IosCard {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Bodyweight", style = MaterialTheme.typography.titleMedium)
@@ -238,11 +242,11 @@ private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
                 OutlinedTextField(
                     value = bwInput,
                     onValueChange = { bwInput = it },
-                    label = { Text("Today's weight") },
+                    label = { Text("Today's weight (${state.unitSystem.name.lowercase()})") },
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                IosButton(text = "Log", onClick = { bwInput.toFloatOrNull()?.let { onLog(it); bwInput = "" } }, modifier = Modifier.weight(0.5f))
+                IosButton(text = "Log", onClick = { bwInput.toFloatOrNull()?.let(onLog) }, modifier = Modifier.weight(0.5f))
             }
             Spacer(modifier = Modifier.height(16.dp))
             if (state.bodyweightHistory.isNotEmpty()) {
@@ -344,6 +348,27 @@ private fun SupplySection(state: ProgressUiState, onRestock: (Long, Int) -> Unit
         }
     }
 }
+
+private fun exerciseChartPoints(
+    history: List<ExerciseSetHistoryRow>,
+    tracksWeight: Boolean,
+    weightView: Boolean,
+): List<Float> {
+    val seconds = when {
+        history.any { it.repType == RepType.SECONDS.name } -> true
+        history.any { it.repType == RepType.REPS.name } -> false
+        else -> history.any { it.durationSeconds != null } && history.none { it.reps != null }
+    }
+    val weights = history.mapNotNull { it.weightKg }
+    return when {
+        weightView && tracksWeight && weights.isNotEmpty() -> weights
+        seconds -> history.mapNotNull { it.durationSeconds?.toFloat() }
+        else -> history.mapNotNull { it.reps?.toFloat() }
+    }
+}
+
+private fun formatBodyweight(value: Float): String =
+    if (value % 1f == 0f) value.toInt().toString() else "%.2f".format(value).trimEnd('0').trimEnd('.')
 
 @Composable
 fun LineChart(
