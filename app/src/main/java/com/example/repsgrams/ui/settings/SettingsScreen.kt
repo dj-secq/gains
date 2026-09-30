@@ -46,7 +46,6 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.WeightRecord
-import androidx.health.connect.client.PermissionController
 
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,9 +58,9 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
+import androidx.compose.runtime.SideEffect
+import com.example.repsgrams.ui.gate.LocalGainsLaunchers
 
 @Composable
 fun SettingsRoute(
@@ -74,41 +73,34 @@ fun SettingsRoute(
     onImportData: (Uri) -> Unit,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) onExportData(uri)
-    }
-
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onImportData(uri)
-    }
+    val launchers = LocalGainsLaunchers.current
 
     val context = LocalContext.current
     val hcPermissions = setOf(
         HealthPermission.getWritePermission(ExerciseSessionRecord::class),
         HealthPermission.getWritePermission(WeightRecord::class)
     )
-    val permissionLauncher = rememberLauncherForActivityResult(
-        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
-    ) { granted ->
-        if (granted.containsAll(hcPermissions)) {
-            viewModel.setHealthConnectEnabled(true)
-        } else {
-            viewModel.setHealthConnectEnabled(false)
+    SideEffect {
+        launchers.onExport = { uri -> if (uri != null) onExportData(uri) }
+        launchers.onImport = { uri -> if (uri != null) onImportData(uri) }
+        launchers.onHealth = { granted ->
+            viewModel.setHealthConnectEnabled(granted.containsAll(hcPermissions))
         }
     }
 
     if (settings != null) {
         SettingsScreen(
             settings = settings!!,
-            onExportClick = { exportLauncher.launch("gains-backup-${LocalDate.now()}.zip") },
-            onImportClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
+            onExportClick = { launchers.export.launch("gains-backup-${LocalDate.now()}.zip") },
+            onImportClick = {
+                launchers.import.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            },
             onMasterChanged = viewModel::setMaster,
             onTrackedMeasurements = viewModel::setTrackedMeasurements,
             onHealthConnectEnabled = { checked ->
                 if (checked) {
                     if (androidx.health.connect.client.HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata") == androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE) {
-                        permissionLauncher.launch(hcPermissions)
+                        launchers.health.launch(hcPermissions)
                     } else {
                         viewModel.setHealthConnectEnabled(false)
                     }
@@ -428,7 +420,14 @@ fun SettingsScreen(
                         Column {
                             Row(modifier = Modifier.fillMaxWidth().clickable { onExportClick() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 IconBadge(icon = Icons.Outlined.ImportExport, tint = AppColors.progressPurple)
-                                Text("Export Data (Backup)", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Export Data (Backup)", style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "Anyone who can open the file can read the log.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)

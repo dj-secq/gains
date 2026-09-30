@@ -6,6 +6,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+const val APP_SCHEMA_VERSION = 7
+
 @Database(
     entities = [
         PersonalRecordEntity::class,
@@ -22,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SupplyInventoryEntity::class,
         DatabaseMetadataEntity::class,
     ],
-    version = 7,
+    version = APP_SCHEMA_VERSION,
     exportSchema = true,
 )
 @TypeConverters(DatabaseConverters::class)

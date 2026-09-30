@@ -28,8 +28,12 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
@@ -81,6 +85,12 @@ fun RepsGramsApp(
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
+    var backupNotice by remember { mutableStateOf<BackupNotice?>(null) }
+    val backupSnackbar = remember { SnackbarHostState() }
+    LaunchedEffect(backupNotice?.token) {
+        val text = backupNotice?.text ?: return@LaunchedEffect
+        backupSnackbar.showSnackbar(text)
+    }
     val pagerState = rememberPagerState(pageCount = { TopLevelDestination.entries.size })
     val tabSlideSpec = remember {
         androidx.compose.animation.core.tween<Float>(
@@ -144,6 +154,7 @@ fun RepsGramsApp(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(backupSnackbar) },
         bottomBar = {
             if (isTopLevel) {
                 Column {
@@ -256,10 +267,18 @@ fun RepsGramsApp(
                                     onNavigateToExerciseLibrary = { navController.navigate("exercise_library") },
                                     onNavigateToSupplements = { navController.navigate("manage_supplements") },
                                     onExportData = { uri ->
-                                        scope.launch { container.backupManager.exportDatabaseToZip(uri) }
+                                        scope.launch {
+                                            backupNotice = BackupNotice(System.nanoTime(), "Exporting...")
+                                            val message = container.backupManager.exportDatabaseToZip(uri)
+                                            backupNotice = BackupNotice(System.nanoTime(), message)
+                                        }
                                     },
                                     onImportData = { uri ->
-                                        scope.launch { container.backupManager.importDatabaseFromZip(uri) }
+                                        scope.launch {
+                                            backupNotice = BackupNotice(System.nanoTime(), "Importing...")
+                                            val message = container.backupManager.importDatabaseFromZip(uri)
+                                            backupNotice = BackupNotice(System.nanoTime(), message)
+                                        }
                                     },
                                 )
                         }
@@ -361,6 +380,8 @@ fun RepsGramsApp(
         }
     }
 }
+
+private data class BackupNotice(val token: Long, val text: String)
 
 @Composable
 private fun PlaceholderScreen(name: String) {
