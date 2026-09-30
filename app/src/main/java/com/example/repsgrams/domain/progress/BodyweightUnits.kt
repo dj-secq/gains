@@ -2,7 +2,6 @@ package com.example.repsgrams.domain.progress
 
 import com.example.repsgrams.data.datastore.UnitSystem
 
-/** Shared with session logging. Room stores kilograms; pounds exist only at the boundary. */
 const val POUNDS_PER_KILOGRAM = 2.2046226f
 
 fun poundsToKilograms(pounds: Float): Float = pounds / POUNDS_PER_KILOGRAM

@@ -15,7 +15,6 @@ class ProgressStatsCalculator {
         @Suppress("UNUSED_PARAMETER") today: LocalDate,
         lowThreshold: Float = 5f,
     ): SupplyStatus {
-        // No burn model: the date must not invent a run-out.
         return SupplyStatus(
             isLow = inventory.servingsRemaining <= lowThreshold,
             estimatedRunOutDate = null,

@@ -78,7 +78,11 @@ class TodayViewModel(
             ) { allSupps, logs ->
                 allSupps.filter { it.isActive }.map { supp ->
                     val log = logs.firstOrNull { it.supplementId == supp.id }
-                    TodaySupplement(supp, log?.taken == true, log?.actualAmount?.takeIf { it > 0 } ?: supp.doseAmount)
+                    if (log != null && log.taken) {
+                        TodaySupplement(supp, true, log.actualAmount)
+                    } else {
+                        TodaySupplement(supp, false, supp.doseAmount)
+                    }
                 }
             },
             workoutRepository.observeActiveSession(),

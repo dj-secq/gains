@@ -30,6 +30,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -307,6 +309,8 @@ private fun SupplementCard(
     state: TodayUiState.Content,
     onToggleSupplement: (com.example.repsgrams.data.db.SupplementEntity, Boolean, Float?) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     com.example.repsgrams.ui.components.IosCard {
         Column {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -318,12 +322,26 @@ private fun SupplementCard(
             state.supplements.forEachIndexed { index, suppState ->
                 val (supp, taken, actualAmount) = suppState
                 var amountText by remember(supp.id, actualAmount) { mutableStateOf(if (actualAmount % 1f == 0f) actualAmount.toInt().toString() else actualAmount.toString()) }
+                var fieldFocused by remember(supp.id) { mutableStateOf(false) }
+                val parseAmount = { text: String ->
+                    val trimmed = text.trim()
+                    val normalized = if (',' in trimmed && '.' !in trimmed) trimmed.replace(',', '.') else trimmed
+                    normalized.toFloatOrNull()
+                }
                 val commitDose = {
                     if (taken) {
-                        amountText.toFloatOrNull()?.let { parsed ->
-                            if (parsed != actualAmount) onToggleSupplement(supp, true, parsed)
-                        }
+                        val parsed = parseAmount(amountText)
+                        if (parsed != null && parsed != actualAmount) onToggleSupplement(supp, true, parsed)
                     }
+                }
+                val latestCommit by rememberUpdatedState(commitDose)
+                DisposableEffect(supp.id) {
+                    onDispose { latestCommit() }
+                }
+                var imeWasOpen by remember(supp.id) { mutableStateOf(false) }
+                LaunchedEffect(imeOpen, fieldFocused) {
+                    if (fieldFocused && imeWasOpen && !imeOpen) commitDose()
+                    imeWasOpen = imeOpen
                 }
                 Row(
                     modifier = Modifier
@@ -355,15 +373,18 @@ private fun SupplementCard(
                         onValueChange = { amountText = it },
                         modifier = Modifier
                             .width(84.dp)
-                            .onFocusChanged { focus -> if (!focus.isFocused) commitDose() },
+                            .onFocusChanged { focus ->
+                                fieldFocused = focus.isFocused
+                                if (!focus.isFocused) commitDose()
+                            },
                         label = { Text(supp.unit) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { commitDose() }),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         singleLine = true,
                     )
                     Switch(
                         checked = taken,
-                        onCheckedChange = { checked -> onToggleSupplement(supp, checked, amountText.toFloatOrNull()) }
+                        onCheckedChange = { checked -> onToggleSupplement(supp, checked, parseAmount(amountText)) }
                     )
                 }
                 if (index < state.supplements.lastIndex) {

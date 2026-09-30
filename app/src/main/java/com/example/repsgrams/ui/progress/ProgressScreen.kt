@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.db.ExerciseSetHistoryRow
 import com.example.repsgrams.data.db.RepType
@@ -246,7 +247,16 @@ private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                IosButton(text = "Log", onClick = { bwInput.toFloatOrNull()?.let(onLog) }, modifier = Modifier.weight(0.5f))
+                IosButton(
+                    text = "Log",
+                    onClick = {
+                        val typed = bwInput.trim()
+                        val parsed = parseBodyweight(typed) ?: return@IosButton
+                        val shown = state.todayBodyweight?.let { parseBodyweight(formatBodyweight(it)) }
+                        if (parsed != shown) onLog(parsed)
+                    },
+                    modifier = Modifier.weight(0.5f),
+                )
             }
             Spacer(modifier = Modifier.height(16.dp))
             if (state.bodyweightHistory.isNotEmpty()) {
@@ -354,21 +364,26 @@ private fun exerciseChartPoints(
     tracksWeight: Boolean,
     weightView: Boolean,
 ): List<Float> {
-    val seconds = when {
-        history.any { it.repType == RepType.SECONDS.name } -> true
-        history.any { it.repType == RepType.REPS.name } -> false
-        else -> history.any { it.durationSeconds != null } && history.none { it.reps != null }
+    if (weightView && tracksWeight) {
+        val weights = history.mapNotNull { it.weightKg }
+        if (weights.isNotEmpty()) return weights
     }
-    val weights = history.mapNotNull { it.weightKg }
-    return when {
-        weightView && tracksWeight && weights.isNotEmpty() -> weights
-        seconds -> history.mapNotNull { it.durationSeconds?.toFloat() }
-        else -> history.mapNotNull { it.reps?.toFloat() }
+    return history.mapNotNull { row ->
+        val timed = row.repType == RepType.SECONDS.name ||
+            (row.reps == null && row.durationSeconds != null)
+        if (timed) row.durationSeconds?.toFloat() else row.reps?.toFloat()
     }
 }
 
 private fun formatBodyweight(value: Float): String =
-    if (value % 1f == 0f) value.toInt().toString() else "%.2f".format(value).trimEnd('0').trimEnd('.')
+    String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
+
+private fun parseBodyweight(text: String): Float? {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return null
+    val normalized = if (',' in trimmed && '.' !in trimmed) trimmed.replace(',', '.') else trimmed
+    return normalized.toFloatOrNull()
+}
 
 @Composable
 fun LineChart(

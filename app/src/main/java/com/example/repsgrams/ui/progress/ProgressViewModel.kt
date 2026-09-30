@@ -34,7 +34,6 @@ data class ProgressUiState(
     val currentStreak: Int = 0,
     val bestStreak: Int = 0,
     val unitSystem: UnitSystem = UnitSystem.KG,
-    /** Display unit. Kilograms stay in Room. */
     val bodyweightHistory: List<Pair<LocalDate, Float>> = emptyList(),
     val todayBodyweight: Float? = null,
     val supplyInventory: List<com.example.repsgrams.data.db.SupplyInventoryEntity> = emptyList(),
