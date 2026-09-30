@@ -122,6 +122,13 @@ interface WorkoutSessionDao {
 
     @Query("SELECT * FROM workout_sessions WHERE date BETWEEN :start AND :end ORDER BY date, startTime")
     fun observeInRange(start: LocalDate, end: LocalDate): Flow<List<WorkoutSessionEntity>>
+
+    @Query("SELECT * FROM workout_sessions WHERE date <= :end ORDER BY date, startTime")
+    fun observeOnOrBefore(end: LocalDate): Flow<List<WorkoutSessionEntity>>
+
+    @Query("SELECT * FROM workout_sessions WHERE date <= :end ORDER BY date, startTime")
+    suspend fun getOnOrBefore(end: LocalDate): List<WorkoutSessionEntity>
+
     @Query("SELECT * FROM workout_sessions")
     fun observeAll(): Flow<List<WorkoutSessionEntity>>
 
@@ -324,6 +331,15 @@ interface PersonalRecordDao {
 
     @Query("SELECT * FROM personal_records WHERE type = :type ORDER BY achievedDate ASC")
     fun observeByType(type: String): Flow<List<PersonalRecordEntity>>
+
+    /** estimated1RM is a chart series, not a calendar PR mark. */
+    @Query(
+        """
+        SELECT * FROM personal_records
+        WHERE achievedDate BETWEEN :start AND :end AND type != 'estimated1RM'
+        """,
+    )
+    fun observeNonEstimateInRange(start: LocalDate, end: LocalDate): Flow<List<PersonalRecordEntity>>
 }
 
 @Dao

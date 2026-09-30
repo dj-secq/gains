@@ -10,7 +10,15 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
 
-enum class CalendarDayStatus { COMPLETE, MISSED, PENDING, UPCOMING }
+enum class CalendarDayStatus {
+    COMPLETE,
+    MISSED,
+    /** Today, and nothing was logged. Not trained and not missed. */
+    PENDING,
+    UPCOMING,
+    /** Day numeral only. An unlogged day that was not the due date. */
+    EMPTY,
+}
 
 data class CalendarDay(
     val date: LocalDate,
@@ -18,9 +26,13 @@ data class CalendarDay(
     val template: WorkoutTemplateEntity?,
     val status: CalendarDayStatus,
     val isPast: Boolean,
+    /** Non-estimate personal record on this date. The calendar does not paint it. */
+    val hasPr: Boolean = false,
 )
 
 object CalendarCalculator {
+    private const val REST_NOTE = "Rest day"
+
     fun datesForMonth(month: YearMonth): List<LocalDate> {
         val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         return List(42) { first.plusDays(it.toLong()) }
@@ -31,75 +43,105 @@ object CalendarCalculator {
         today: LocalDate,
         sessions: List<WorkoutSessionEntity>,
         templates: List<WorkoutTemplateEntity>,
-        currentSuggestion: ScheduleSuggestion
+        prDates: Set<LocalDate> = emptySet(),
     ): List<CalendarDay> {
+        val dates = datesForMonth(month)
         val sessionsByDate = sessions.groupBy { it.date }
-
-        // We need to project future days
-        // We know the current suggestion's due date and template
-
-        return datesForMonth(month).map { date ->
-            val isPast = date.isBefore(today)
-
-            val template: WorkoutTemplateEntity?
-            val status: CalendarDayStatus
-
-            if (isPast) {
-                // Past days: show what was actually logged
-                val session = sessionsByDate[date]?.find { it.completed }
-                template = session?.templateId?.let { tid -> templates.find { it.id == tid } }
-                status = if (session != null) CalendarDayStatus.COMPLETE else CalendarDayStatus.MISSED
-            } else {
-                // Today or Future
-                // For simplicity, we just project based on the current suggestion
-                // Let's extrapolate the schedule:
-                // If the user does the suggested workout exactly on its dueDate:
-                // We can generate a sequence of future due dates.
-
-                // Let's find out if this date is a projected workout date
-                var iterDate = currentSuggestion.dueDate ?: today
-                var iterTemplate = currentSuggestion.suggestedTemplate
-                var foundTemplate: WorkoutTemplateEntity? = null
-
-                // A quick way to project forward (capped to 42 days for safety)
-                val sortedTemplates = templates.sortedBy { it.orderIndex }
-
-                for (i in 0..42) {
-                    if (iterDate == date) {
-                        foundTemplate = iterTemplate
-                        break
-                    }
-                    if (iterDate.isAfter(date)) {
-                        break
-                    }
-
-                    // advance to next
-                    if (sortedTemplates.isNotEmpty() && iterTemplate != null) {
-                        val currIdx = sortedTemplates.indexOfFirst { it.id == iterTemplate!!.id }
-                        val nextIdx = if (currIdx == -1 || currIdx == sortedTemplates.lastIndex) 0 else currIdx + 1
-                        val nextTmpl = sortedTemplates[nextIdx]
-                        iterDate = iterDate.plusDays(iterTemplate!!.restDaysAfter.toLong() + 1L)
-                        iterTemplate = nextTmpl
-                    } else {
-                        break
-                    }
-                }
-
-                template = foundTemplate
-                status = if (date == today) {
-                    if (template != null) CalendarDayStatus.PENDING else CalendarDayStatus.COMPLETE // no workout today means rest is pending/complete
-                } else {
-                    CalendarDayStatus.UPCOMING
-                }
-            }
-
-            CalendarDay(
+        val live = ScheduleEngine.replay(today, sessions, templates, includeDay = true)
+        val todaySessions = sessionsByDate[today].orEmpty()
+        val projected = ScheduleEngine.projectAfterToday(
+            today = today,
+            live = live,
+            templates = templates,
+            loggedWorkoutToday = completedWorkout(todaySessions) != null,
+            loggedRestToday = todaySessions.any(::isRestMarker),
+            horizon = dates.last(),
+        )
+        return dates.map { date ->
+            dayFor(
                 date = date,
-                inDisplayedMonth = YearMonth.from(date) == month,
-                template = template,
-                status = status,
-                isPast = isPast
+                month = month,
+                today = today,
+                daySessions = sessionsByDate[date].orEmpty(),
+                sessions = sessions,
+                templates = templates,
+                live = live,
+                projected = projected,
+                prDates = prDates,
             )
         }
     }
+
+    fun cellFor(
+        date: LocalDate,
+        today: LocalDate,
+        sessions: List<WorkoutSessionEntity>,
+        templates: List<WorkoutTemplateEntity>,
+        prDates: Set<LocalDate> = emptySet(),
+    ): CalendarDay = buildMonth(YearMonth.from(date), today, sessions, templates, prDates).first { it.date == date }
+
+    private fun dayFor(
+        date: LocalDate,
+        month: YearMonth,
+        today: LocalDate,
+        daySessions: List<WorkoutSessionEntity>,
+        sessions: List<WorkoutSessionEntity>,
+        templates: List<WorkoutTemplateEntity>,
+        live: ScheduleSuggestion,
+        projected: Map<LocalDate, WorkoutTemplateEntity>,
+        prDates: Set<LocalDate>,
+    ): CalendarDay {
+        val workout = completedWorkout(daySessions)
+        val (status, template) = when {
+            workout != null -> CalendarDayStatus.COMPLETE to templates.find { it.id == workout.templateId }
+            daySessions.any(::isRestMarker) -> CalendarDayStatus.COMPLETE to null
+            date.isBefore(today) -> missedOrEmpty(date, sessions, templates)
+            date == today -> CalendarDayStatus.PENDING to emptyTodayTemplate(live)
+            else -> projected[date]?.let { CalendarDayStatus.UPCOMING to it }
+                ?: (CalendarDayStatus.EMPTY to null)
+        }
+        return CalendarDay(
+            date = date,
+            inDisplayedMonth = YearMonth.from(date) == month,
+            template = template,
+            status = status,
+            isPast = date.isBefore(today),
+            hasPr = date in prDates,
+        )
+    }
+
+    private fun missedOrEmpty(
+        date: LocalDate,
+        sessions: List<WorkoutSessionEntity>,
+        templates: List<WorkoutTemplateEntity>,
+    ): Pair<CalendarDayStatus, WorkoutTemplateEntity?> {
+        val morning = ScheduleEngine.replay(date, sessions, templates)
+        // Only the morning that would have called ON_TIME is missed. A later overdue
+        // morning still points at that earlier due date, so it stays empty.
+        return if (morning.status == SuggestionStatus.ON_TIME && morning.dueDate == date) {
+            CalendarDayStatus.MISSED to morning.suggestedTemplate
+        } else {
+            CalendarDayStatus.EMPTY to null
+        }
+    }
+
+    /** The sheet shows the live template once. A rest gap's workout stays on its due date. */
+    private fun emptyTodayTemplate(live: ScheduleSuggestion): WorkoutTemplateEntity? =
+        when (live.status) {
+            SuggestionStatus.ON_TIME,
+            SuggestionStatus.OVERDUE,
+            SuggestionStatus.NO_HISTORY -> live.suggestedTemplate
+            SuggestionStatus.REST_DAY -> null
+        }
+
+    private fun completedWorkout(daySessions: List<WorkoutSessionEntity>): WorkoutSessionEntity? =
+        daySessions
+            .filter { it.completed && it.templateId != null }
+            .maxWithOrNull(
+                compareBy<WorkoutSessionEntity> { it.endTime?.toEpochMilli() ?: Long.MIN_VALUE }
+                    .thenBy { it.id },
+            )
+
+    private fun isRestMarker(session: WorkoutSessionEntity): Boolean =
+        session.completed && session.templateId == null && session.notes == REST_NOTE
 }

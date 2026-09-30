@@ -214,6 +214,7 @@ private fun DayCell(
         CalendarDayStatus.MISSED -> AppColors.warningRed.copy(alpha = 0.15f)
         CalendarDayStatus.PENDING -> colors.secondaryContainer
         CalendarDayStatus.UPCOMING -> colors.surface
+        CalendarDayStatus.EMPTY -> colors.surface
     }
     Surface(
         modifier = modifier.aspectRatio(0.9f).padding(2.dp)
@@ -236,16 +237,21 @@ private fun DayCell(
                     fontWeight = FontWeight.Bold,
                     color = com.example.repsgrams.ui.theme.CategoryColors.getColor(day.template.category),
                 )
-            } else {
+            } else if (day.status == CalendarDayStatus.COMPLETE) {
                 Icon(
                     imageVector = Icons.Outlined.Coffee,
                     contentDescription = "Rest",
                     modifier = Modifier.size(20.dp),
                     tint = colors.onSurfaceVariant
                 )
+            } else {
+                // An empty day is not a missed rest.
+                Spacer(Modifier.size(20.dp))
             }
             if (day.status == CalendarDayStatus.UPCOMING) {
                 Text("·", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            } else if (day.status == CalendarDayStatus.EMPTY) {
+                Spacer(Modifier.size(14.dp))
             } else {
                 Icon(
                     imageVector = when (day.status) {

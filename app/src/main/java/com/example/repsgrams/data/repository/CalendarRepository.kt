@@ -7,7 +7,6 @@ import com.example.repsgrams.data.db.CalendarSetLogRow
 import com.example.repsgrams.data.db.SupplementIntakeLogEntity
 import com.example.repsgrams.domain.calendar.CalendarCalculator
 import com.example.repsgrams.domain.calendar.CalendarDay
-import com.example.repsgrams.domain.schedule.ScheduleEngine
 import java.time.Clock
 import java.time.LocalDate
 import java.time.YearMonth
@@ -44,14 +43,11 @@ class CalendarRepository(
     fun observeMonth(month: YearMonth): Flow<CalendarMonth> {
         val dates = CalendarCalculator.datesForMonth(month)
         return combine(
-            database.workoutSessionDao().observeInRange(dates.first(), dates.last()),
-            database.supplementIntakeLogDao().observeInRange(dates.first(), dates.last()),
+            database.workoutSessionDao().observeOnOrBefore(dates.last()),
             database.workoutTemplateDao().observeAll(),
-            database.workoutSessionDao().observeLastCompletedSession()
-        ) { sessions, supplements, templates, lastSession ->
+            database.personalRecordDao().observeNonEstimateInRange(dates.first(), dates.last()),
+        ) { sessions, templates, records ->
             val today = LocalDate.now(clock)
-            val lastTemplate = lastSession?.templateId?.let { id -> templates.find { it.id == id } }
-            val currentSuggestion = ScheduleEngine.computeSuggestion(today, lastSession, lastTemplate, templates)
             CalendarMonth(
                 month,
                 CalendarCalculator.buildMonth(
@@ -59,7 +55,7 @@ class CalendarRepository(
                     today = today,
                     sessions = sessions,
                     templates = templates,
-                    currentSuggestion = currentSuggestion
+                    prDates = records.map { it.achievedDate }.toSet(),
                 ),
             )
         }
@@ -67,9 +63,11 @@ class CalendarRepository(
 
     suspend fun dayDetail(date: LocalDate): CalendarDayDetail {
         databaseReady.await()
+        val today = LocalDate.now(clock)
         val settings = settingsRepository.settings.first()
+        val sessionsForDate = database.workoutSessionDao().getForDate(date)
         val allSets = database.setLogDao().getForDate(date).groupBy { it.sessionId }
-        val sessions = database.workoutSessionDao().getForDate(date).map { session ->
+        val sessions = sessionsForDate.map { session ->
             val name = session.templateId?.let { database.workoutTemplateDao().getById(it)?.name }
                 ?: if (session.notes == "Rest day") "Rest day" else "Deleted workout"
             CalendarSessionDetail(
@@ -77,51 +75,21 @@ class CalendarRepository(
             )
         }
 
-        // Find if there is a projected template for this date
         val templates = database.workoutTemplateDao().getAll()
-        val lastSession = database.workoutSessionDao().getLastCompletedSession()
-        val lastTemplate = lastSession?.templateId?.let { id -> templates.find { it.id == id } }
-        val currentSuggestion = ScheduleEngine.computeSuggestion(LocalDate.now(clock), lastSession, lastTemplate, templates)
-
-        // Extrapolate like in CalendarCalculator
-        var projectedTemplate: com.example.repsgrams.data.db.WorkoutTemplateEntity? = null
-        if (!date.isBefore(LocalDate.now(clock))) {
-            var iterDate = currentSuggestion.dueDate ?: LocalDate.now(clock)
-            var iterTemplate = currentSuggestion.suggestedTemplate
-            val sortedTemplates = templates.sortedBy { it.orderIndex }
-
-            for (i in 0..42) {
-                if (iterDate == date) {
-                    projectedTemplate = iterTemplate
-                    break
-                }
-                if (iterDate.isAfter(date)) {
-                    break
-                }
-                if (sortedTemplates.isNotEmpty() && iterTemplate != null) {
-                    val currIdx = sortedTemplates.indexOfFirst { it.id == iterTemplate!!.id }
-                    val nextIdx = if (currIdx == -1 || currIdx == sortedTemplates.lastIndex) 0 else currIdx + 1
-                    iterDate = iterDate.plusDays(iterTemplate!!.restDaysAfter.toLong() + 1L)
-                    iterTemplate = sortedTemplates[nextIdx]
-                } else {
-                    break
-                }
-            }
-        } else {
-            val session = sessions.find { it.completed }
-            val tName = session?.workoutName
-            projectedTemplate = templates.find { it.name == tName }
-        }
+        val historyEnd = if (date.isAfter(today)) date else today
+        val history = database.workoutSessionDao().getOnOrBefore(historyEnd)
+        val day = CalendarCalculator.cellFor(date, today, history, templates)
+        val hasLog = sessionsForDate.any { it.completed && (it.templateId != null || it.notes == "Rest day") }
 
         return CalendarDayDetail(
             date,
-            projectedTemplate,
+            day.template,
             sessions,
             database.supplementDao().observeAll().first().map { supp ->
                 supp to database.supplementIntakeLogDao().getForDateAndSupplement(date, supp.id)
             },
             settings.unitSystem,
-            projected = !date.isBefore(LocalDate.now(clock))
+            projected = day.template != null && !hasLog && !date.isBefore(today),
         )
     }
 }
