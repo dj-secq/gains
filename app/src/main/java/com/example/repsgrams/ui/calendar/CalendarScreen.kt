@@ -275,12 +275,13 @@ private fun DayCell(
 
 private fun plannedTitle(detail: CalendarDayDetail, today: LocalDate): String {
     detail.template?.dayLabel?.let { return "Planned: Workout $it" }
-    val restLogged = detail.sessions.any { it.completed && it.workoutName == "Rest day" }
     val due = detail.liveDueDate
     val liveRestGap = detail.liveStatus == SuggestionStatus.REST_DAY &&
         !detail.date.isBefore(today) &&
         due != null &&
         detail.date.isBefore(due)
+    // Template is null here. COMPLETE is a logged rest, the same signal as the coffee icon.
+    val restLogged = detail.status == CalendarDayStatus.COMPLETE
     return if (restLogged || liveRestGap) "Planned: Rest day" else "No log"
 }
 
