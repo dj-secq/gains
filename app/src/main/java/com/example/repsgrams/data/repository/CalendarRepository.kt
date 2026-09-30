@@ -7,6 +7,8 @@ import com.example.repsgrams.data.db.CalendarSetLogRow
 import com.example.repsgrams.data.db.SupplementIntakeLogEntity
 import com.example.repsgrams.domain.calendar.CalendarCalculator
 import com.example.repsgrams.domain.calendar.CalendarDay
+import com.example.repsgrams.domain.calendar.CalendarDayStatus
+import com.example.repsgrams.domain.schedule.SuggestionStatus
 import java.time.Clock
 import java.time.LocalDate
 import java.time.YearMonth
@@ -31,7 +33,10 @@ data class CalendarDayDetail(
     val sessions: List<CalendarSessionDetail>,
     val supplements: List<Pair<com.example.repsgrams.data.db.SupplementEntity, com.example.repsgrams.data.db.SupplementIntakeLogEntity?>>,
     val unitSystem: UnitSystem,
-    val projected: Boolean = false
+    val status: CalendarDayStatus,
+    val projected: Boolean = false,
+    val liveStatus: SuggestionStatus = SuggestionStatus.NO_HISTORY,
+    val liveDueDate: LocalDate? = null,
 )
 
 class CalendarRepository(
@@ -79,17 +84,19 @@ class CalendarRepository(
         val historyEnd = if (date.isAfter(today)) date else today
         val history = database.workoutSessionDao().getOnOrBefore(historyEnd)
         val day = CalendarCalculator.cellFor(date, today, history, templates)
-        val hasLog = sessionsForDate.any { it.completed && (it.templateId != null || it.notes == "Rest day") }
 
         return CalendarDayDetail(
-            date,
-            day.template,
-            sessions,
-            database.supplementDao().observeAll().first().map { supp ->
+            date = date,
+            template = day.template,
+            sessions = sessions,
+            supplements = database.supplementDao().observeAll().first().map { supp ->
                 supp to database.supplementIntakeLogDao().getForDateAndSupplement(date, supp.id)
             },
-            settings.unitSystem,
-            projected = day.template != null && !hasLog && !date.isBefore(today),
+            unitSystem = settings.unitSystem,
+            status = day.status,
+            projected = day.template != null && day.status != CalendarDayStatus.COMPLETE && !date.isBefore(today),
+            liveStatus = day.liveStatus,
+            liveDueDate = day.liveDueDate,
         )
     }
 }

@@ -142,6 +142,22 @@ class CalendarCalculatorTest {
     }
 
     @Test
+    fun `a missing template is not a logged workout and does not drop the projection`() {
+        val today = LocalDate.of(2026, 9, 12)
+        val due = LocalDate.of(2026, 9, 11)
+        val orphanToday = WorkoutSessionEntity(templateId = 99, date = today, completed = true)
+        val orphanDue = WorkoutSessionEntity(templateId = 99, date = due, completed = true)
+        val days = days(today, listOf(workout(workoutA, LocalDate.of(2026, 9, 8)), orphanToday, orphanDue))
+
+        assertEquals(CalendarDayStatus.MISSED, days.getValue(due).status)
+        assertEquals(workoutB.id, days.getValue(due).template?.id)
+        assertEquals(CalendarDayStatus.PENDING, days.getValue(today).status)
+        assertEquals(workoutB.id, days.getValue(today).template?.id)
+        assertEquals(CalendarDayStatus.UPCOMING, days.getValue(LocalDate.of(2026, 9, 14)).status)
+        assertEquals(workoutA.id, days.getValue(LocalDate.of(2026, 9, 14)).template?.id)
+    }
+
+    @Test
     fun `a workout on the same day wins over a rest marker`() {
         val today = LocalDate.of(2026, 9, 12)
         val date = LocalDate.of(2026, 9, 11)

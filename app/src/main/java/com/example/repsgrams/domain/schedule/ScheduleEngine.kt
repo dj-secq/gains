@@ -31,25 +31,17 @@ object ScheduleEngine {
             return ScheduleSuggestion(null, SuggestionStatus.NO_HISTORY, null)
         }
 
+        // Tied orderIndex must not follow whichever list the DAO happened to return.
+        val sortedTemplates = rotationOrder(allTemplates)
         if (lastSession == null || lastTemplate == null) {
-            // "If there is no prior completed session at all: suggestion = whichever template the user picked as 'start with'"
-            // For now, we return the first template by orderIndex
-            val first = allTemplates.minByOrNull { it.orderIndex }
             return ScheduleSuggestion(
-                suggestedTemplate = first,
+                suggestedTemplate = sortedTemplates.first(),
                 status = SuggestionStatus.NO_HISTORY,
                 dueDate = today
             )
         }
 
-        // Find next template in order
-        val sortedTemplates = allTemplates.sortedBy { it.orderIndex }
-        val currentIndex = sortedTemplates.indexOfFirst { it.id == lastTemplate.id }
-        val nextTemplate = if (currentIndex != -1 && currentIndex < sortedTemplates.lastIndex) {
-            sortedTemplates[currentIndex + 1]
-        } else {
-            sortedTemplates.first()
-        }
+        val nextTemplate = templateAfter(sortedTemplates, lastTemplate)
 
         // Compute dueDate = D + T.restDaysAfter + 1
         val lastDate = lastSession.date
@@ -115,8 +107,7 @@ object ScheduleEngine {
     /**
      * Workout dates strictly after [today], through [horizon]. Today is not given a mark here:
      * an open due day already shows its template on the sheet, and a logged workout has moved
-     * the engine's due date. Rest logged on an open due day does not invent a further cell;
-     * rest does not move the due date until the session-kind anchor exists.
+     * the engine's due date. A rest logged on an open due day does not add another cell.
      */
     fun projectAfterToday(
         today: LocalDate,
@@ -126,7 +117,7 @@ object ScheduleEngine {
         loggedRestToday: Boolean,
         horizon: LocalDate,
     ): Map<LocalDate, WorkoutTemplateEntity> {
-        val sorted = templates.sortedBy { it.orderIndex }
+        val sorted = rotationOrder(templates)
         if (sorted.isEmpty()) return emptyMap()
         val anchor = projectionAnchor(today, live, sorted, loggedWorkoutToday, loggedRestToday) ?: return emptyMap()
         return walkProjection(anchor, sorted, today, horizon)
@@ -140,17 +131,12 @@ object ScheduleEngine {
         loggedRestToday: Boolean,
     ): Pair<LocalDate, WorkoutTemplateEntity>? {
         val suggested = live.suggestedTemplate ?: return null
-        if (loggedWorkoutToday) {
-            val due = live.dueDate ?: return null
-            if (!due.isAfter(today)) return null
-            return due to suggested
-        }
-        if (!loggedRestToday && live.status != SuggestionStatus.REST_DAY) {
+        if (!loggedWorkoutToday && !loggedRestToday && live.status != SuggestionStatus.REST_DAY) {
             val nextDate = today.plusDays(suggested.restDaysAfter.toLong() + 1L)
             if (!nextDate.isAfter(today)) return null
             return nextDate to templateAfter(sorted, suggested)
         }
-        if (live.status == SuggestionStatus.REST_DAY) {
+        if (loggedWorkoutToday || live.status == SuggestionStatus.REST_DAY) {
             val due = live.dueDate ?: return null
             if (!due.isAfter(today)) return null
             return due to suggested
@@ -178,6 +164,9 @@ object ScheduleEngine {
         }
         return projected
     }
+
+    private fun rotationOrder(templates: List<WorkoutTemplateEntity>): List<WorkoutTemplateEntity> =
+        templates.sortedWith(compareBy({ it.orderIndex }, { it.dayLabel }, { it.id }))
 
     private fun templateAfter(
         sorted: List<WorkoutTemplateEntity>,

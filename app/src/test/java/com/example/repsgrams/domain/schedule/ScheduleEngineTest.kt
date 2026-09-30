@@ -228,6 +228,40 @@ class ScheduleEngineTest {
         assertEquals(workoutB.id, projected[today.plusDays(2)]?.id)
     }
 
+    @Test
+    fun `replay uses dayLabel then id when orderIndex ties, ignoring list order`() {
+        val labelA = workoutA.copy(id = 30, name = "A", dayLabel = "A", orderIndex = 0, restDaysAfter = 1)
+        val labelB = workoutA.copy(id = 20, name = "B", dayLabel = "B", orderIndex = 0, restDaysAfter = 1)
+        val labelC = workoutA.copy(id = 10, name = "C", dayLabel = "C", orderIndex = 0, restDaysAfter = 1)
+        val reversed = listOf(labelA, labelB, labelC).asReversed()
+
+        val noHistory = ScheduleEngine.replay(lastDate, emptyList(), reversed)
+        assertEquals(labelA.id, noHistory.suggestedTemplate?.id)
+
+        val afterA = ScheduleEngine.replay(
+            lastDate.plusDays(2),
+            listOf(completedSession(labelA, lastDate)),
+            reversed,
+        )
+        assertEquals(SuggestionStatus.ON_TIME, afterA.status)
+        assertEquals(labelB.id, afterA.suggestedTemplate?.id)
+
+        val lowerId = labelA.copy(id = 4, name = "A first")
+        val higherId = labelA.copy(id = 9, name = "A second")
+        val tied = ScheduleEngine.replay(lastDate, emptyList(), listOf(higherId, lowerId))
+        assertEquals(lowerId.id, tied.suggestedTemplate?.id)
+
+        val projected = ScheduleEngine.projectAfterToday(
+            today = lastDate,
+            live = noHistory,
+            templates = reversed,
+            loggedWorkoutToday = false,
+            loggedRestToday = false,
+            horizon = lastDate.plusDays(6),
+        )
+        assertEquals(labelB.id, projected[lastDate.plusDays(2)]?.id)
+    }
+
     private fun project(
         today: LocalDate,
         live: ScheduleSuggestion,

@@ -26,8 +26,11 @@ data class CalendarDay(
     val template: WorkoutTemplateEntity?,
     val status: CalendarDayStatus,
     val isPast: Boolean,
-    /** Non-estimate personal record on this date. The calendar does not paint it. */
+    /** This date has a personal record other than estimated1RM. */
     val hasPr: Boolean = false,
+    /** Engine status as of today, so the sheet can tell a rest gap from an empty day. */
+    val liveStatus: SuggestionStatus = SuggestionStatus.NO_HISTORY,
+    val liveDueDate: LocalDate? = null,
 )
 
 object CalendarCalculator {
@@ -53,7 +56,7 @@ object CalendarCalculator {
             today = today,
             live = live,
             templates = templates,
-            loggedWorkoutToday = completedWorkout(todaySessions) != null,
+            loggedWorkoutToday = completedWorkout(todaySessions, templates) != null,
             loggedRestToday = todaySessions.any(::isRestMarker),
             horizon = dates.last(),
         )
@@ -91,7 +94,7 @@ object CalendarCalculator {
         projected: Map<LocalDate, WorkoutTemplateEntity>,
         prDates: Set<LocalDate>,
     ): CalendarDay {
-        val workout = completedWorkout(daySessions)
+        val workout = completedWorkout(daySessions, templates)
         val (status, template) = when {
             workout != null -> CalendarDayStatus.COMPLETE to templates.find { it.id == workout.templateId }
             daySessions.any(::isRestMarker) -> CalendarDayStatus.COMPLETE to null
@@ -107,6 +110,8 @@ object CalendarCalculator {
             status = status,
             isPast = date.isBefore(today),
             hasPr = date in prDates,
+            liveStatus = live.status,
+            liveDueDate = live.dueDate,
         )
     }
 
@@ -134,13 +139,18 @@ object CalendarCalculator {
             SuggestionStatus.REST_DAY -> null
         }
 
-    private fun completedWorkout(daySessions: List<WorkoutSessionEntity>): WorkoutSessionEntity? =
-        daySessions
-            .filter { it.completed && it.templateId != null }
+    private fun completedWorkout(
+        daySessions: List<WorkoutSessionEntity>,
+        templates: List<WorkoutTemplateEntity>,
+    ): WorkoutSessionEntity? {
+        val templateIds = templates.map { it.id }.toSet()
+        return daySessions
+            .filter { it.completed && it.templateId != null && it.templateId in templateIds }
             .maxWithOrNull(
                 compareBy<WorkoutSessionEntity> { it.endTime?.toEpochMilli() ?: Long.MIN_VALUE }
                     .thenBy { it.id },
             )
+    }
 
     private fun isRestMarker(session: WorkoutSessionEntity): Boolean =
         session.completed && session.templateId == null && session.notes == REST_NOTE

@@ -39,6 +39,7 @@ import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.data.repository.CalendarDayDetail
 import com.example.repsgrams.domain.calendar.CalendarDayStatus
+import com.example.repsgrams.domain.schedule.SuggestionStatus
 import com.example.repsgrams.data.repository.CalendarMonth
 import com.example.repsgrams.data.repository.CalendarSessionDetail
 import com.example.repsgrams.ui.components.IosAlertDialog
@@ -272,6 +273,17 @@ private fun DayCell(
     }
 }
 
+private fun plannedTitle(detail: CalendarDayDetail, today: LocalDate): String {
+    detail.template?.dayLabel?.let { return "Planned: Workout $it" }
+    val restLogged = detail.sessions.any { it.completed && it.workoutName == "Rest day" }
+    val due = detail.liveDueDate
+    val liveRestGap = detail.liveStatus == SuggestionStatus.REST_DAY &&
+        !detail.date.isBefore(today) &&
+        due != null &&
+        detail.date.isBefore(due)
+    return if (restLogged || liveRestGap) "Planned: Rest day" else "No log"
+}
+
 @Composable
 private fun DayDetail(
     detail: CalendarDayDetail,
@@ -285,14 +297,11 @@ private fun DayDetail(
 
         IosCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    detail.template?.dayLabel?.let { "Planned: Workout $it" } ?: "Planned: Rest day",
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Text(plannedTitle(detail, today), style = MaterialTheme.typography.titleMedium)
                 detail.template?.let { com.example.repsgrams.ui.components.CategoryChip(it.category) }
-                if (detail.date.isAfter(today)) {
+                if (detail.date.isAfter(today) && detail.projected) {
                     Text("No entries yet. This is the current plan for this date.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (detail.sessions.isEmpty() && (detail.template != null)) {
+                } else if (detail.status == CalendarDayStatus.MISSED) {
                     Text("Workout not done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 }
                 detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
