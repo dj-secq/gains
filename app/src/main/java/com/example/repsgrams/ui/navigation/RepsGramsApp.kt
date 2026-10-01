@@ -119,6 +119,7 @@ fun RepsGramsApp(
             container.calendarRepository,
             container.cycleSettingsRepository,
             container.reminderScheduler,
+            container.workoutRepository,
             container.clock,
         ),
     )
@@ -259,7 +260,10 @@ fun RepsGramsApp(
                                 onOpenSupplements = { navController.navigate("manage_supplements") },
                             )
 
-                            TopLevelDestination.CALENDAR -> CalendarRoute(calendarViewModel)
+                            TopLevelDestination.CALENDAR -> CalendarRoute(
+                                viewModel = calendarViewModel,
+                                onOpenSession = { sessionId -> navController.navigate("session/$sessionId") },
+                            )
 
                             TopLevelDestination.PROGRESS ->
                                 com.example.repsgrams.ui.progress.ProgressRoute(progressViewModel)

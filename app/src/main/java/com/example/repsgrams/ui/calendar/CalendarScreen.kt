@@ -1,73 +1,103 @@
 package com.example.repsgrams.ui.calendar
-import com.example.repsgrams.ui.components.shimmer
-import androidx.compose.ui.draw.clip
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBackIosNew
-import androidx.compose.material.icons.outlined.ArrowForwardIos
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material.icons.outlined.Science
-import androidx.compose.material.icons.outlined.FlashlightOn
-import com.example.repsgrams.ui.components.BoardTile
-import com.example.repsgrams.ui.components.MonoLabel
-import com.example.repsgrams.ui.components.TextAction
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.WaterDrop
-import androidx.compose.material.icons.outlined.WaterDrop
-import androidx.compose.material.icons.outlined.Coffee
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.datastore.UnitSystem
-import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.data.repository.CalendarDayDetail
-import com.example.repsgrams.domain.calendar.CalendarDayStatus
-import com.example.repsgrams.domain.schedule.SuggestionStatus
 import com.example.repsgrams.data.repository.CalendarMonth
 import com.example.repsgrams.data.repository.CalendarSessionDetail
+import com.example.repsgrams.domain.calendar.CalendarDay
+import com.example.repsgrams.domain.calendar.CalendarDayStatus
+import com.example.repsgrams.domain.calendar.CalendarSheetAction
+import com.example.repsgrams.domain.calendar.calendarSheetAction
+import com.example.repsgrams.domain.calendar.formatCalendarDate
+import com.example.repsgrams.domain.calendar.formatCalendarSet
+import com.example.repsgrams.domain.schedule.SuggestionStatus
+import com.example.repsgrams.domain.session.formatSessionElapsed
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.DayMark
+import com.example.repsgrams.ui.components.InkPill
+import com.example.repsgrams.ui.components.TextAction
+import com.example.repsgrams.ui.components.TileTone
+import com.example.repsgrams.ui.components.shimmer
+import com.example.repsgrams.ui.theme.Ink
+import com.example.repsgrams.ui.theme.LabelDark
+import com.example.repsgrams.ui.theme.LocalDarkTheme
+import com.example.repsgrams.ui.theme.MonoLabelStyle
+import com.example.repsgrams.ui.theme.PaperLight
+import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
 @Composable
-fun CalendarRoute(viewModel: CalendarViewModel) {
+fun CalendarRoute(
+    viewModel: CalendarViewModel,
+    onOpenSession: (Long) -> Unit,
+) {
     val month by viewModel.month.collectAsStateWithLifecycle()
     val selectedDay by viewModel.selectedDay.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val loadingDay by viewModel.loadingDay.collectAsStateWithLifecycle()
-    val today = viewModel.today
-    val locale = LocalConfiguration.current.locales[0]
+    val activeSessionId by viewModel.activeSessionId.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel) { viewModel.openSession.collect(onOpenSession) }
 
     CalendarScreen(
         month = month,
         selectedDay = selectedDay,
+        selectedDate = selectedDate,
         loadingDay = loadingDay,
-        today = today,
+        activeSessionId = activeSessionId,
+        today = viewModel.today,
         onPreviousMonth = viewModel::previousMonth,
         onNextMonth = viewModel::nextMonth,
-        onToday = viewModel::showToday,
+        onThisMonth = viewModel::showToday,
         onSelectDate = viewModel::selectDate,
         onDismissDay = viewModel::closeDay,
-
-        locale = locale,
+        onStart = viewModel::startSuggested,
+        onResume = viewModel::resume,
     )
 }
 
@@ -76,110 +106,80 @@ fun CalendarRoute(viewModel: CalendarViewModel) {
 fun CalendarScreen(
     month: CalendarMonth?,
     selectedDay: CalendarDayDetail?,
+    selectedDate: LocalDate?,
     loadingDay: Boolean,
+    activeSessionId: Long?,
     today: LocalDate,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
-    onToday: () -> Unit,
+    onThisMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onDismissDay: () -> Unit,
-
-    locale: Locale,
+    onStart: (String) -> Unit,
+    onResume: (Long) -> Unit,
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets.statusBars,
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (month == null) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Box(modifier = Modifier.fillMaxWidth().height(60.dp).clip(MaterialTheme.shapes.medium).shimmer())
                     Box(modifier = Modifier.fillMaxWidth().height(350.dp).clip(MaterialTheme.shapes.medium).shimmer())
                 }
             } else {
-                androidx.compose.foundation.lazy.LazyColumn(
+                LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)
+                    contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(onClick = onPreviousMonth) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                Text(
-                                    month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
-                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                    textAlign = TextAlign.Center,
-                                )
-                                TextAction("Today", onClick = onToday)
-                            }
-                            IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        }
+                        MonthHeader(
+                            title = month.month.month.getDisplayName(TextStyle.FULL, Locale.US) +
+                                " ${month.month.year}",
+                            onPreviousMonth = onPreviousMonth,
+                            onNextMonth = onNextMonth,
+                            onThisMonth = onThisMonth,
+                        )
                     }
-
                     item {
-                        BoardTile(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                                    listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
-                                        Text(
-                                            it,
-                                            modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            textAlign = TextAlign.Center,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                month.days.chunked(7).forEach { week ->
-                                    Row(modifier = Modifier.fillMaxWidth()) {
-                                        week.forEach { day ->
-                                            DayCell(day, day.date == today, Modifier.weight(1f), onSelectDate)
-                                        }
-                                    }
+                        WeekdayHeader()
+                        month.days.chunked(7).forEach { week ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                week.forEach { day ->
+                                    DayCell(
+                                        day = day,
+                                        selected = day.date == selectedDate,
+                                        modifier = Modifier.weight(1f),
+                                        onSelectDate = onSelectDate,
+                                    )
                                 }
                             }
                         }
-                    }
-
-                    item {
-                        Row(
+                        Text(
+                            "FILLED TRAINED · HOLLOW MISSED · RED PR",
                             modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceAround,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(14.dp))
-                                Text("Complete", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                                Text("Missed", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Outlined.Circle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                                Text("Pending", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
+                            style = MonoLabelStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
                     }
                 }
             }
 
-
-
-            if (selectedDay != null || loadingDay) {
+            if (selectedDate != null || loadingDay) {
                 ModalBottomSheet(
                     onDismissRequest = onDismissDay,
                     containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
                     scrimColor = Color.Black.copy(alpha = 0.42f),
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                 ) {
-                    if (loadingDay) {
+                    val detail = selectedDay
+                    if (loadingDay || detail == null || detail.date != selectedDate) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -189,10 +189,68 @@ fun CalendarScreen(
                             Box(Modifier.fillMaxWidth().height(96.dp).clip(MaterialTheme.shapes.medium).shimmer())
                         }
                     } else {
-                        selectedDay?.let { DayDetail(it, today) }
+                        DayDetail(
+                            detail = detail,
+                            today = today,
+                            activeSessionId = activeSessionId,
+                            onStart = onStart,
+                            onResume = onResume,
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MonthHeader(
+    title: String,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onThisMonth: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onPreviousMonth) {
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                contentDescription = "Previous month",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Text(
+            title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        IconButton(onClick = onNextMonth) {
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = "Next month",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        TextAction("This month", onClick = onThisMonth)
+    }
+}
+
+@Composable
+private fun WeekdayHeader() {
+    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        DayOfWeek.entries.forEach { day ->
+            Text(
+                day.getDisplayName(TextStyle.NARROW, Locale.US).uppercase(Locale.US),
+                modifier = Modifier.weight(1f),
+                style = MonoLabelStyle,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -200,162 +258,153 @@ fun CalendarScreen(
 @Composable
 private fun DayCell(
     day: CalendarDay,
-    isToday: Boolean,
+    selected: Boolean,
     modifier: Modifier,
     onSelectDate: (LocalDate) -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val background = when (day.status) {
-        CalendarDayStatus.COMPLETE -> colors.onSurface.copy(alpha = 0.08f)
-        else -> colors.surface
-    }
-    Surface(
-        modifier = modifier.aspectRatio(0.9f).padding(2.dp)
+    val dark = LocalDarkTheme.current
+    val ring = if (dark) PaperLight else Ink
+    BoxWithConstraints(
+        modifier = modifier
+            .heightIn(min = 48.dp)
             .alpha(if (day.inDisplayedMonth) 1f else 0.3f)
-            .clickable { onSelectDate(day.date) },
-        shape = MaterialTheme.shapes.small,
-        color = background,
-        border = when {
-            isToday -> BorderStroke(1.5.dp, colors.onSurface)
-            day.status == CalendarDayStatus.MISSED -> BorderStroke(1.dp, colors.outline)
-            else -> null
-        },
+            .then(if (day.inDisplayedMonth) Modifier.clickable { onSelectDate(day.date) } else Modifier),
+        contentAlignment = Alignment.Center,
     ) {
-        Column(
-            modifier = Modifier.padding(4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
-            if (day.template != null) {
-                Text(
-                    day.template.dayLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.onSurface,
-                )
-            } else if (day.status == CalendarDayStatus.COMPLETE) {
-                Icon(
-                    imageVector = Icons.Outlined.Coffee,
-                    contentDescription = "Rest",
-                    modifier = Modifier.size(20.dp),
-                    tint = colors.onSurfaceVariant
-                )
-            } else {
-                // An empty day is not a missed rest.
-                Spacer(Modifier.size(20.dp))
+        val markSize = if (maxWidth < 48.dp) maxWidth else 40.dp
+        Box(modifier = Modifier.size(markSize), contentAlignment = Alignment.Center) {
+            if (selected) {
+                Box(Modifier.matchParentSize().border(1.dp, ring, CircleShape))
             }
-            if (day.status == CalendarDayStatus.UPCOMING) {
-                Text("·", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            } else if (day.status == CalendarDayStatus.EMPTY) {
-                Spacer(Modifier.size(14.dp))
-            } else {
-                Icon(
-                    imageVector = when (day.status) {
-                        CalendarDayStatus.COMPLETE -> Icons.Filled.CheckCircle
-                        CalendarDayStatus.MISSED -> Icons.Outlined.ErrorOutline
-                        else -> Icons.Outlined.Circle
-                    },
-                    contentDescription = null,
-                    tint = when (day.status) {
-                        CalendarDayStatus.COMPLETE -> colors.onSurface
-                        else -> colors.onSurfaceVariant
-                    },
-                    modifier = Modifier.size(14.dp)
-                )
-            }
+            DayMark(
+                day = day,
+                label = day.date.dayOfMonth.toString(),
+                size = if (selected) (markSize - 4.dp).coerceAtLeast(0.dp) else markSize,
+            )
         }
     }
-}
-
-private fun plannedTitle(detail: CalendarDayDetail, today: LocalDate): String {
-    detail.template?.dayLabel?.let { return "Planned: Workout $it" }
-    val due = detail.liveDueDate
-    val liveRestGap = detail.liveStatus == SuggestionStatus.REST_DAY &&
-        !detail.date.isBefore(today) &&
-        due != null &&
-        detail.date.isBefore(due)
-    // Template is null here. COMPLETE is a logged rest, the same signal as the coffee icon.
-    val restLogged = detail.status == CalendarDayStatus.COMPLETE
-    return if (restLogged || liveRestGap) "Planned: Rest day" else "No log"
 }
 
 @Composable
 private fun DayDetail(
     detail: CalendarDayDetail,
     today: LocalDate,
+    activeSessionId: Long?,
+    onStart: (String) -> Unit,
+    onResume: (Long) -> Unit,
 ) {
+    val action = calendarSheetAction(
+        isToday = detail.date == today,
+        hasActiveSession = activeSessionId != null,
+        completedWorkout = detail.status == CalendarDayStatus.COMPLETE && detail.template != null,
+        restDay = detail.liveStatus == SuggestionStatus.REST_DAY,
+        hasTemplate = detail.template != null,
+    )
+    val supplements = detail.supplements.filter { (supplement, _) -> supplement.isActive }
     Column(
-        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(detail.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-
-        BoardTile(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(plannedTitle(detail, today), style = MaterialTheme.typography.titleMedium)
-                detail.template?.let { MonoLabel(it.category) }
-                if (detail.date.isAfter(today) && detail.projected) {
-                    Text("No entries yet. This is the current plan for this date.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (detail.status == CalendarDayStatus.MISSED) {
-                    Text("Workout not done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
+        Text(formatCalendarDate(detail.date), style = MaterialTheme.typography.titleLarge)
+        if (detail.sessions.isEmpty()) {
+            detail.template?.name?.let { name ->
+                Text(name, style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                "No log",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            detail.sessions.forEach { session ->
+                SessionBlock(session, detail.unitSystem)
             }
         }
-
-        Text("Supplements", style = MaterialTheme.typography.titleMedium)
-        BoardTile(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                detail.supplements.forEachIndexed { index, pair ->
-                    val (supp, log) = pair
-                    val taken = log?.taken == true
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        // Normally we'd look up icon and color from token here.
-                        // For simplicity since the app relies on semantic tokens, we just map it.
-                        Icon(Icons.Outlined.Science, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-                        Text("${supp.name}: ${if (taken) "Logged · ${log?.actualAmount} ${supp.unit}" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (index < detail.supplements.lastIndex) {
-                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                }
-                if (detail.supplements.isEmpty()) {
-                    Text("No active supplements", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        supplements.forEach { (supplement, log) ->
+            val taken = log?.taken == true
+            BoardTile(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                tone = if (taken) TileTone.Ink else TileTone.Paper,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        supplement.name,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        if (taken) "taken" else "not taken",
+                        style = MonoLabelStyle,
+                        color = if (taken) LabelDark else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
-
-        Spacer(Modifier.padding(bottom = 24.dp))
+        if (action != null) {
+            InkPill(
+                text = if (action == CalendarSheetAction.START) "START" else "RESUME",
+                onClick = {
+                    when (action) {
+                        CalendarSheetAction.START -> detail.template?.dayLabel?.let(onStart)
+                        CalendarSheetAction.RESUME -> activeSessionId?.let(onResume)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.height(24.dp))
     }
-
 }
 
 @Composable
-private fun SessionDetail(session: CalendarSessionDetail, unitSystem: UnitSystem) {
+private fun SessionBlock(session: CalendarSessionDetail, unitSystem: UnitSystem) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
-        Text(session.workoutName, style = MaterialTheme.typography.titleMedium)
-        Text(
-            (if (session.completed) "Completed" else "Not completed") +
-                (session.durationSeconds?.let { " · ${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: ""),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                session.workoutName,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            session.durationSeconds?.let { seconds ->
+                Text(
+                    formatSessionElapsed(seconds),
+                    style = MonoLabelStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (!session.completed) {
+            Text(
+                "In progress",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         session.notes?.let { notes ->
             Text(notes, style = MaterialTheme.typography.bodyMedium)
         }
-        if (session.sets.isEmpty()) Text("No sets logged", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         session.sets.groupBy { it.exerciseName }.forEach { (exercise, sets) ->
-            Text(exercise, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(top = 8.dp))
+            Text(
+                exercise,
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.bodyLarge,
+            )
             sets.forEach { set ->
-                val performance = set.reps?.let { "$it reps" }
-                    ?: set.durationSeconds?.let { "$it sec" }
-                    ?: "Logged"
-                val weight = set.weightKg?.let {
-                    val shown = if (unitSystem == UnitSystem.LB) it * 2.2046226f else it
-                    " · ${"%.1f".format(shown)} ${unitSystem.name.lowercase()}"
-                } ?: ""
-                Text("Round ${set.roundNumber}: $performance$weight", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                formatCalendarSet(set.reps, set.durationSeconds, set.weightKg, unitSystem)?.let { line ->
+                    Text(
+                        line,
+                        style = MonoLabelStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

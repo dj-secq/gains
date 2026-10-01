@@ -7,25 +7,31 @@ import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.repository.CalendarDayDetail
 import com.example.repsgrams.data.repository.CalendarMonth
 import com.example.repsgrams.data.repository.CalendarRepository
-import com.example.repsgrams.domain.calendar.CalendarCalculator
+import com.example.repsgrams.data.repository.WorkoutRepository
 import com.example.repsgrams.reminder.ReminderScheduler
 import java.time.Clock
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModel(
     private val repository: CalendarRepository,
     private val settingsRepository: CycleSettingsRepository,
     private val reminderScheduler: ReminderScheduler,
+    private val workoutRepository: WorkoutRepository,
     private val clock: Clock,
 ) : ViewModel() {
     val today: LocalDate = LocalDate.now(clock)
@@ -37,36 +43,70 @@ class CalendarViewModel(
 
     private val _selectedDay = MutableStateFlow<CalendarDayDetail?>(null)
     val selectedDay: StateFlow<CalendarDayDetail?> = _selectedDay
+    private val _selectedDate = MutableStateFlow<LocalDate?>(null)
+    val selectedDate: StateFlow<LocalDate?> = _selectedDate
     private val _loadingDay = MutableStateFlow(false)
     val loadingDay: StateFlow<Boolean> = _loadingDay
+    private var request = 0
+
+    private val _openSession = MutableSharedFlow<Long>()
+    val openSession: SharedFlow<Long> = _openSession.asSharedFlow()
+
+    val activeSessionId: StateFlow<Long?> = workoutRepository.observeActiveSession()
+        .map { session -> session?.id }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     fun previousMonth() { displayedMonth.value = displayedMonth.value.minusMonths(1) }
     fun nextMonth() { displayedMonth.value = displayedMonth.value.plusMonths(1) }
     fun showToday() { displayedMonth.value = YearMonth.from(today) }
 
     fun selectDate(date: LocalDate) {
+        val token = ++request
+        _selectedDate.value = date
+        _loadingDay.value = true
         viewModelScope.launch {
-            _loadingDay.value = true
-            _selectedDay.value = runCatching { repository.dayDetail(date) }.getOrNull()
+            val detail = runCatching { repository.dayDetail(date) }.getOrNull()
+            if (token != request) return@launch
+            _selectedDay.value = detail
+            if (detail == null) _selectedDate.value = null
             _loadingDay.value = false
         }
     }
 
-    fun closeDay() { _selectedDay.value = null }
+    fun closeDay() {
+        request++
+        _selectedDate.value = null
+        _selectedDay.value = null
+        _loadingDay.value = false
+    }
 
+    fun startSuggested(dayLabel: String) {
+        if (dayLabel.isBlank()) return
+        viewModelScope.launch { _openSession.emit(workoutRepository.startSession(dayLabel)) }
+    }
 
+    fun resume(sessionId: Long) {
+        viewModelScope.launch { _openSession.emit(sessionId) }
+    }
 
     companion object {
         fun factory(
             repository: CalendarRepository,
             settingsRepository: CycleSettingsRepository,
             reminderScheduler: ReminderScheduler,
+            workoutRepository: WorkoutRepository,
             clock: Clock,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(CalendarViewModel::class.java))
-                return CalendarViewModel(repository, settingsRepository, reminderScheduler, clock) as T
+                return CalendarViewModel(
+                    repository,
+                    settingsRepository,
+                    reminderScheduler,
+                    workoutRepository,
+                    clock,
+                ) as T
             }
         }
     }

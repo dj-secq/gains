@@ -1,7 +1,5 @@
 package com.example.repsgrams.ui.today
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.domain.calendar.CalendarDay
-import com.example.repsgrams.domain.calendar.CalendarDayStatus
 import com.example.repsgrams.domain.today.DOSE_DELETE
 import com.example.repsgrams.domain.today.TodayAlternate
 import com.example.repsgrams.domain.today.TodayExerciseLine
@@ -60,6 +55,7 @@ import com.example.repsgrams.domain.today.supplementItemIndex
 import com.example.repsgrams.reminder.ReminderNotifications
 import com.example.repsgrams.ui.components.BoardDialog
 import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.DayMark
 import com.example.repsgrams.ui.components.InkPill
 import com.example.repsgrams.ui.components.MonoLabel
 import com.example.repsgrams.ui.components.StatusDot
@@ -67,15 +63,9 @@ import com.example.repsgrams.ui.components.TextAction
 import com.example.repsgrams.ui.components.TileTone
 import com.example.repsgrams.ui.components.shimmer
 import com.example.repsgrams.ui.theme.DisplayNumeral
-import com.example.repsgrams.ui.theme.HairlineDark
-import com.example.repsgrams.ui.theme.HairlineLight
-import com.example.repsgrams.ui.theme.Ink
 import com.example.repsgrams.ui.theme.LabelDark
-import com.example.repsgrams.ui.theme.LabelLight
-import com.example.repsgrams.ui.theme.LocalDarkTheme
 import com.example.repsgrams.ui.theme.MonoLabelStyle
 import com.example.repsgrams.ui.theme.PaperLight
-import com.example.repsgrams.ui.theme.SignalRed
 import java.time.Instant
 import java.time.format.TextStyle
 import java.util.Locale
@@ -428,32 +418,8 @@ private fun WeekStrip(days: List<CalendarDay>) {
 
 @Composable
 private fun WeekMark(day: CalendarDay) {
-    val dark = LocalDarkTheme.current
     val letter = day.date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.US).uppercase(Locale.US)
-    val workout = day.status == CalendarDayStatus.COMPLETE && day.template != null
-    val missed = day.status == CalendarDayStatus.MISSED
-    val pending = day.status == CalendarDayStatus.PENDING
-    val fill = when {
-        workout && day.hasPr -> SignalRed
-        workout || pending -> if (dark) PaperLight else Ink
-        else -> Color.Transparent
-    }
-    val letterColor = when {
-        workout && day.hasPr -> PaperLight
-        workout || pending -> if (dark) Ink else PaperLight
-        else -> if (dark) LabelDark else LabelLight
-    }
-    val hairline = if (dark) HairlineDark else HairlineLight
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .then(if (missed) Modifier.border(1.dp, hairline, CircleShape) else Modifier)
-            .clip(CircleShape)
-            .background(fill),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(letter, style = MonoLabelStyle, color = letterColor)
-    }
+    DayMark(day = day, label = letter, size = 40.dp)
 }
 
 @Composable
