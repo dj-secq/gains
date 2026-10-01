@@ -41,6 +41,7 @@ data class CycleSettings(
     val trackedMeasurements: Set<String>,
     val healthConnectEnabled: Boolean,
     val voiceCuesEnabled: Boolean,
+    val keepScreenOn: Boolean = true,
 )
 
 interface CycleSettingsRepository {
@@ -66,6 +67,7 @@ interface CycleSettingsRepository {
     suspend fun setRestTimerAutoAdvance(enabled: Boolean)
     suspend fun setDefaultRestSeconds(seconds: Int)
     suspend fun setThemeMode(mode: ThemeMode)
+    suspend fun setKeepScreenOn(enabled: Boolean)
 }
 
 val Context.cycleSettingsDataStore by preferencesDataStore(name = "cycle_settings")
@@ -114,6 +116,7 @@ class PreferencesCycleSettingsRepository(
             if (REST_TIMER_SOUND !in preferences) preferences[REST_TIMER_SOUND] = "default"
             if (REST_TIMER_VIBRATION !in preferences) preferences[REST_TIMER_VIBRATION] = true
             if (REST_TIMER_AUTO_ADVANCE !in preferences) preferences[REST_TIMER_AUTO_ADVANCE] = true
+            if (KEEP_SCREEN_ON !in preferences) preferences[KEEP_SCREEN_ON] = true
         }
     }
 
@@ -153,6 +156,7 @@ class PreferencesCycleSettingsRepository(
     override suspend fun setRestTimerAutoAdvance(enabled: Boolean) = update(REST_TIMER_AUTO_ADVANCE, enabled)
     override suspend fun setThemeMode(mode: ThemeMode) = update(THEME_MODE, mode.name)
     override suspend fun setDefaultRestSeconds(seconds: Int) = update(DEFAULT_REST_SECONDS, seconds)
+    override suspend fun setKeepScreenOn(enabled: Boolean) = update(KEEP_SCREEN_ON, enabled)
 
     private fun toSettings(preferences: Preferences) = CycleSettings(
         themeMode = preferences[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
@@ -178,6 +182,7 @@ class PreferencesCycleSettingsRepository(
         trackedMeasurements = preferences[TRACKED_MEASUREMENTS] ?: emptySet(),
         healthConnectEnabled = preferences[HEALTH_CONNECT_ENABLED] ?: false,
         voiceCuesEnabled = preferences[VOICE_CUES_ENABLED] ?: false,
+        keepScreenOn = preferences[KEEP_SCREEN_ON] ?: true,
     )
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) {
@@ -208,6 +213,7 @@ class PreferencesCycleSettingsRepository(
         val VOICE_CUES_ENABLED = booleanPreferencesKey("voice_cues_enabled")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DEFAULT_REST_SECONDS = androidx.datastore.preferences.core.intPreferencesKey("default_rest_seconds")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
     }
 }
 

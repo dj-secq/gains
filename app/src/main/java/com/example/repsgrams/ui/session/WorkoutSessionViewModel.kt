@@ -18,15 +18,30 @@ import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.data.db.RepType
+import com.example.repsgrams.data.db.SetLogEntity
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.repository.SupplementRepository
 import com.example.repsgrams.data.repository.WorkoutRepository
+import com.example.repsgrams.domain.session.KeypadField
+import com.example.repsgrams.domain.session.LoggedSetView
+import com.example.repsgrams.domain.session.RecordLine
 import com.example.repsgrams.domain.session.SessionAdvance
 import com.example.repsgrams.domain.session.SessionCursor
 import com.example.repsgrams.domain.session.SessionNavigator
 import com.example.repsgrams.domain.session.WorkoutExercise
 import com.example.repsgrams.domain.session.WorkoutPlan
+import com.example.repsgrams.domain.session.applyLoadKey
+import com.example.repsgrams.domain.session.applyRepKey
+import com.example.repsgrams.domain.session.buildSetRows
+import com.example.repsgrams.domain.session.durationPassed
+import com.example.repsgrams.domain.session.exercisePills
+import com.example.repsgrams.domain.session.formatPrevious
+import com.example.repsgrams.domain.session.formatRecordLine
+import com.example.repsgrams.domain.session.formatWeight
+import com.example.repsgrams.domain.session.loadStep
+import com.example.repsgrams.domain.session.nextExerciseCaption
 import com.example.repsgrams.domain.session.prEligibleExerciseIds
+import com.example.repsgrams.ui.today.TodaySupplement
 import java.time.Clock
 import com.example.repsgrams.domain.progression.PriorRound
 import com.example.repsgrams.domain.progression.ProgressionCalculator
@@ -50,29 +65,20 @@ import kotlinx.coroutines.launch
 sealed interface WorkoutSessionUiState {
     data object Loading : WorkoutSessionUiState
     data class Active(
-        val workoutName: String,
-        val dayLabel: String,
-        val category: String,
         val elapsedSeconds: Int,
         val maxDurationMinutes: Int,
+        val durationPassed: Boolean,
         val blockLabel: String,
-        val blockKind: BlockKind,
-        val blockNumber: Int,
-        val blockCount: Int,
-        val roundNumber: Int,
-        val roundCount: Int,
         val exercise: WorkoutExercise,
-        val valueInput: String,
-        val weightInput: String,
-        val unitSystem: UnitSystem,
+        val pills: List<com.example.repsgrams.domain.session.ExercisePill>,
+        val rows: List<com.example.repsgrams.domain.session.SetRowModel>,
+        val keypadOpen: Boolean,
+        val keypadField: KeypadField,
         val restRemainingSeconds: Int?,
         val restOvertimeSeconds: Int?,
+        val restCaption: String,
         val isOptionalBlock: Boolean,
         val isSaving: Boolean,
-        val progressionSuggestion: ProgressionSuggestion?,
-        val lastTimeRound: PriorRound?,
-        val upNextExercises: List<String>,
-        val rpeTagInput: String?,
         val notesInput: String,
         val isHolding: Boolean,
         val holdElapsedSeconds: Int,
@@ -80,11 +86,11 @@ sealed interface WorkoutSessionUiState {
 
     data class Summary(
         val workoutName: String,
-        val category: String,
         val setCount: Int,
         val durationSeconds: Int,
-        val maxDurationMinutes: Int,
-        val supplements: List<com.example.repsgrams.ui.today.TodaySupplement>,
+        val notes: String,
+        val supplements: List<TodaySupplement>,
+        val records: List<RecordLine>,
     ) : WorkoutSessionUiState
 
     data class Error(val message: String) : WorkoutSessionUiState
@@ -111,6 +117,9 @@ class WorkoutSessionViewModel(
     private val _provisionalRecord = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val provisionalRecord: SharedFlow<Unit> = _provisionalRecord.asSharedFlow()
 
+    private val _keepScreenOn = MutableStateFlow(true)
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
     private lateinit var session: WorkoutSessionEntity
     private lateinit var plan: WorkoutPlan
     private var cursor = SessionCursor(0, 0, 1)
@@ -127,10 +136,17 @@ class WorkoutSessionViewModel(
     private var progressionSuggestion: ProgressionSuggestion? = null
     private var rpeTagInput: String? = null
     private var notesInput: String = ""
-    private var lastTimeRound: PriorRound? = null
     private var holdStartEpochMillis: Long? = null
+    private var keypadOpen = true
+    private var keypadField = KeypadField.VALUE
+    private var keypadFresh = true
+    private var sessionLogs: List<SetLogEntity> = emptyList()
+    private var previousByRound: Map<Int, SetLogEntity?> = emptyMap()
 
     init {
+        viewModelScope.launch {
+            cycleSettingsRepository.settings.collect { _keepScreenOn.value = it.keepScreenOn }
+        }
         viewModelScope.launch {
             runCatching { load() }.onFailure {
                 _uiState.value = WorkoutSessionUiState.Error(it.message ?: "Couldn't load this workout.")
@@ -166,7 +182,9 @@ class WorkoutSessionViewModel(
         session = requireNotNull(workoutRepository.getSession(sessionId)) { "Workout session not found" }
         val templateId = requireNotNull(session.templateId) { "This workout template was deleted" }
         plan = workoutRepository.loadPlan(templateId)
-        unitSystem = cycleSettingsRepository.settings.first().unitSystem
+        val settings = cycleSettingsRepository.settings.first()
+        unitSystem = settings.unitSystem
+        _keepScreenOn.value = settings.keepScreenOn
         if (session.completed) {
             showSummary()
             return
@@ -209,7 +227,9 @@ class WorkoutSessionViewModel(
     }
 
     fun startHold() {
+        if (restEndEpochMillis != null || currentExercise().repType != RepType.SECONDS) return
         holdStartEpochMillis = clock.millis()
+        keypadOpen = false
         publishActive()
     }
 
@@ -252,6 +272,56 @@ class WorkoutSessionViewModel(
     fun adjustWeight(delta: Float) {
         weightInput = ((weightInput.toFloatOrNull() ?: 0f) + delta).coerceAtLeast(0f).let(::formatWeight)
         publishActive()
+    }
+
+    fun aimKeypad(field: KeypadField) {
+        if (restEndEpochMillis != null || holdStartEpochMillis != null) return
+        if (field == KeypadField.LOAD && !currentExercise().tracksWeight) return
+        keypadField = field
+        keypadOpen = true
+        keypadFresh = true
+        publishActive()
+    }
+
+    fun dismissKeypad() {
+        keypadOpen = false
+        publishActive()
+    }
+
+    fun keypadKey(key: String) {
+        if (restEndEpochMillis != null || holdStartEpochMillis != null || !keypadOpen) return
+        val edited = if (keypadField == KeypadField.LOAD) {
+            applyLoadKey(weightInput, key, keypadFresh, loadStep(unitSystem))
+        } else {
+            applyRepKey(valueInput, key, keypadFresh)
+        }
+        if (keypadField == KeypadField.LOAD) weightInput = edited.text else valueInput = edited.text
+        keypadFresh = edited.fresh
+        publishActive()
+    }
+
+    /** Copies the previous column into the active inputs. Does not complete the set. */
+    fun copyPreviousIntoActive() {
+        if (restEndEpochMillis != null || holdStartEpochMillis != null) return
+        val previous = previousByRound[cursor.roundNumber] ?: return
+        val exercise = currentExercise()
+        val figure = if (exercise.repType == RepType.SECONDS) previous.durationSeconds else previous.reps
+        if (figure != null) valueInput = figure.toString()
+        if (exercise.tracksWeight && previous.weightKg != null) {
+            weightInput = formatWeight(displayWeight(previous.weightKg))
+        }
+        keypadOpen = true
+        keypadFresh = true
+        publishActive()
+    }
+
+    fun toggleSummarySupplement(supplementId: Long) {
+        val summary = _uiState.value as? WorkoutSessionUiState.Summary ?: return
+        _uiState.value = summary.copy(
+            supplements = summary.supplements.map { row ->
+                if (row.supplement.id == supplementId) row.copy(taken = !row.taken) else row
+            },
+        )
     }
 
     fun logCurrent() {
@@ -365,6 +435,7 @@ class WorkoutSessionViewModel(
 
     fun previousStep() {
         if (cursor.blockIndex == 0 && cursor.exerciseIndex == 0 && cursor.roundNumber == 1) return
+        holdStartEpochMillis = null
 
         var prevCursor = cursor
         if (cursor.exerciseIndex > 0) {
@@ -382,12 +453,15 @@ class WorkoutSessionViewModel(
         cursor = prevCursor
 
         viewModelScope.launch {
-            val logged = workoutRepository.getSessionSets(sessionId)
+            refreshSessionLogs()
+            val logged = sessionLogs
                 .find { it.exerciseId == currentExercise().id && it.roundNumber == prevCursor.roundNumber }
 
             if (logged != null) {
                 valueInput = (logged.reps ?: logged.durationSeconds)?.toString() ?: ""
-                weightInput = logged.weightKg?.let { formatWeight(if (unitSystem == UnitSystem.LB) kilogramsToPounds(it) else it) } ?: ""
+                weightInput = logged.weightKg?.let { formatWeight(displayWeight(it)) } ?: ""
+                refreshPrevious()
+                openKeypad()
             } else {
                 loadInputDefaults()
             }
@@ -422,6 +496,7 @@ class WorkoutSessionViewModel(
     }
 
     private suspend fun applyAdvance(advance: SessionAdvance) {
+        holdStartEpochMillis = null
         when (advance) {
             is SessionAdvance.Continue -> {
                 progressionSuggestion = null
@@ -465,20 +540,23 @@ class WorkoutSessionViewModel(
     private suspend fun showSummary() {
         val allSupps = supplementRepository.observeAllSupplements().first()
         val logs = supplementRepository.observeIntakesForDate(session.date).first()
+        val records = workoutRepository.recordsForSession(sessionId).mapNotNull { row ->
+            formatRecordLine(row.record.type, row.record.value, row.exerciseName, unitSystem)
+        }
         _uiState.value = WorkoutSessionUiState.Summary(
             workoutName = plan.name,
-            category = plan.category,
             setCount = workoutRepository.setCount(sessionId),
             durationSeconds = session.durationSeconds ?: elapsedSeconds(),
-            maxDurationMinutes = plan.maxDurationMinutes,
+            notes = session.notes?.takeIf { it.isNotBlank() }.orEmpty(),
             supplements = allSupps.filter { it.isActive }.map { supp ->
                 val log = logs.firstOrNull { it.supplementId == supp.id }
-                com.example.repsgrams.ui.today.TodaySupplement(
+                TodaySupplement(
                     supplement = supp,
                     taken = log?.taken == true,
                     actualAmount = log?.actualAmount?.takeIf { it > 0 } ?: supp.doseAmount,
                 )
             },
+            records = records,
         )
     }
 
@@ -509,6 +587,9 @@ class WorkoutSessionViewModel(
         } else {
             if (exercise.tracksWeight) "0" else ""
         }
+        refreshSessionLogs()
+        refreshPrevious()
+        openKeypad()
     }
 
     private fun tick() {
@@ -519,54 +600,87 @@ class WorkoutSessionViewModel(
     private fun publishActive() {
         if (!::plan.isInitialized || session.completed) return
         val block = plan.blocks[cursor.blockIndex]
-
-        val upNext = mutableListOf<String>()
-        var nextCursor = SessionNavigator.afterExercise(plan, cursor)
-        var i = 0
-        while (nextCursor is SessionAdvance.Continue && i < 2) {
-            upNext.add(plan.blocks[nextCursor.cursor.blockIndex].exercises[nextCursor.cursor.exerciseIndex].name)
-            nextCursor = SessionNavigator.afterExercise(plan, nextCursor.cursor)
-            i++
+        val exercise = currentExercise()
+        val warmUp = block.kind == BlockKind.WARM_UP
+        val seconds = exercise.repType == RepType.SECONDS
+        val elapsed = elapsedSeconds()
+        val holding = holdStartEpochMillis != null
+        val logs = sessionLogs.filter { it.exerciseId == exercise.id }.map { log ->
+            LoggedSetView(
+                roundNumber = log.roundNumber,
+                reps = log.reps,
+                durationSeconds = log.durationSeconds,
+                weightDisplay = log.weightKg?.let { formatWeight(displayWeight(it)) },
+            )
         }
-        if (nextCursor is SessionAdvance.Rest) {
-             val c = nextCursor.cursorAfterRest
-             upNext.add(plan.blocks[c.blockIndex].exercises[c.exerciseIndex].name)
-        }
-
         val rest = restEndEpochMillis?.let { restSecondsUntil(it, clock.millis()) }
         _uiState.value = WorkoutSessionUiState.Active(
-            workoutName = plan.name,
-            dayLabel = plan.dayLabel,
-            category = plan.category,
-            elapsedSeconds = elapsedSeconds(),
+            elapsedSeconds = elapsed,
             maxDurationMinutes = plan.maxDurationMinutes,
+            durationPassed = durationPassed(elapsed, plan.maxDurationMinutes),
             blockLabel = block.label,
-            blockKind = block.kind,
-            blockNumber = cursor.blockIndex + 1,
-            blockCount = plan.blocks.size,
-            roundNumber = cursor.roundNumber,
-            roundCount = if (block.kind == BlockKind.WARM_UP) 1 else block.targetRoundsMax,
-            exercise = currentExercise(),
-            valueInput = valueInput,
-            weightInput = weightInput,
-            unitSystem = unitSystem,
+            exercise = exercise,
+            pills = exercisePills(plan.blocks, cursor),
+            rows = buildSetRows(
+                warmUp = warmUp,
+                roundCount = block.targetRoundsMax,
+                activeRound = cursor.roundNumber,
+                tracksWeight = exercise.tracksWeight,
+                seconds = seconds,
+                activeLoad = weightInput,
+                activeValue = valueInput,
+                holdingSeconds = if (holding) ((clock.millis() - holdStartEpochMillis!!) / 1000).toInt() else null,
+                logs = logs,
+                previousText = previousByRound.mapValues { (_, prior) -> previousLabel(prior, seconds) },
+                previousCopyable = previousByRound.mapValues { (_, prior) -> prior != null },
+            ),
+            keypadOpen = keypadOpen,
+            keypadField = keypadField,
             restRemainingSeconds = rest?.remaining,
             restOvertimeSeconds = rest?.overtime?.takeIf { it > 0 },
+            restCaption = restCaption,
             isOptionalBlock = block.isOptional,
             isSaving = isSaving,
-            progressionSuggestion = progressionSuggestion,
-            lastTimeRound = lastTimeRound,
-            upNextExercises = upNext,
-            rpeTagInput = rpeTagInput,
             notesInput = notesInput,
-            isHolding = holdStartEpochMillis != null,
+            isHolding = holding,
             holdElapsedSeconds = holdStartEpochMillis?.let { ((clock.millis() - it) / 1000).toInt() } ?: 0,
         )
     }
 
     private fun restCaptionForCursor(): String {
         val exercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
-        return "Up next: Round ${cursor.roundNumber} - ${exercise.name}"
+        return nextExerciseCaption(exercise.name)
+    }
+
+    private fun previousLabel(prior: SetLogEntity?, seconds: Boolean): String {
+        if (prior == null) return "—"
+        val figure = if (seconds) prior.durationSeconds?.toString() else prior.reps?.toString()
+        val load = prior.weightKg?.let { formatWeight(displayWeight(it)) }
+        return formatPrevious(load, figure, seconds)
+    }
+
+    private fun displayWeight(kilograms: Float): Float =
+        if (unitSystem == UnitSystem.LB) kilogramsToPounds(kilograms) else kilograms
+
+    private fun openKeypad() {
+        keypadOpen = true
+        keypadField = KeypadField.VALUE
+        keypadFresh = true
+    }
+
+    private suspend fun refreshSessionLogs() {
+        sessionLogs = workoutRepository.getSessionSets(sessionId)
+    }
+
+    private suspend fun refreshPrevious() {
+        val exercise = currentExercise()
+        val block = plan.blocks[cursor.blockIndex]
+        val rounds = if (block.kind == BlockKind.WARM_UP) 1 else block.targetRoundsMax.coerceAtLeast(1)
+        val loaded = LinkedHashMap<Int, SetLogEntity?>()
+        for (round in 1..rounds) {
+            loaded[round] = workoutRepository.previousColumn(exercise.id, round, sessionId)
+        }
+        previousByRound = loaded
     }
 
     private fun startRestTimerService(endMillis: Long, upNext: String) {
@@ -657,6 +771,3 @@ class WorkoutSessionViewModel(
         }
     }
 }
-
-private fun formatWeight(value: Float): String =
-    if (value % 1f == 0f) value.toInt().toString() else "%.2f".format(value).trimEnd('0').trimEnd('.')

@@ -47,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -191,10 +193,16 @@ fun TextAction(
     enabled: Boolean = true,
     destructive: Boolean = false,
     color: Color? = null,
+    contentDescription: String? = null,
 ) {
     TextButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 48.dp)) {
         Text(
             text,
+            modifier = if (contentDescription == null) {
+                Modifier
+            } else {
+                Modifier.clearAndSetSemantics { this.contentDescription = contentDescription }
+            },
             style = MaterialTheme.typography.titleMedium,
             color = when {
                 !enabled -> MaterialTheme.colorScheme.onSurfaceVariant

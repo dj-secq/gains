@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.example.repsgrams.data.db.AppDatabase
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.SessionKind
+import com.example.repsgrams.data.db.SessionRecordRow
 import com.example.repsgrams.data.db.SetLogEntity
 import com.example.repsgrams.data.db.SetType
 import com.example.repsgrams.data.db.TemplateBlockEntity
@@ -121,6 +122,15 @@ class WorkoutRepository(
 
     suspend fun previousSet(exerciseId: Long, roundNumber: Int, sessionId: Long): SetLogEntity? =
         database.setLogDao().getPreviousForExercise(exerciseId, roundNumber, sessionId)
+
+    /** Same template and round, then any template at this round, then any working round. */
+    suspend fun previousColumn(exerciseId: Long, roundNumber: Int, sessionId: Long): SetLogEntity? =
+        database.setLogDao().getPreviousInTemplate(exerciseId, roundNumber, sessionId)
+            ?: previousSet(exerciseId, roundNumber, sessionId)
+            ?: database.setLogDao().getPreviousWorkingAnyRound(exerciseId, sessionId)
+
+    suspend fun recordsForSession(sessionId: Long): List<SessionRecordRow> =
+        database.personalRecordDao().recordsForSession(sessionId)
 
     suspend fun previousSessionRounds(exerciseId: Long, sessionId: Long): List<SetLogEntity> =
         database.setLogDao().getPreviousSessionRounds(exerciseId, sessionId)

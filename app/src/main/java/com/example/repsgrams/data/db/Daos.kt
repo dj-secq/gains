@@ -2,6 +2,7 @@ package com.example.repsgrams.data.db
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -224,6 +225,42 @@ interface SetLogDao {
     )
     suspend fun getPreviousForExercise(exerciseId: Long, roundNumber: Int, sessionId: Long): SetLogEntity?
 
+    @Query(
+        """
+        SELECT set_logs.* FROM set_logs
+        INNER JOIN workout_sessions AS logged_session ON logged_session.id = set_logs.sessionId
+        INNER JOIN workout_sessions AS active_session ON active_session.id = :sessionId
+        WHERE set_logs.exerciseId = :exerciseId
+          AND set_logs.roundNumber = :roundNumber
+          AND set_logs.setType = 'WORKING'
+          AND set_logs.sessionId != :sessionId
+          AND logged_session.completed = 1
+          AND logged_session.templateId = active_session.templateId
+          AND logged_session.date <= active_session.date
+        ORDER BY logged_session.date DESC, logged_session.startTime DESC, set_logs.loggedAt DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun getPreviousInTemplate(exerciseId: Long, roundNumber: Int, sessionId: Long): SetLogEntity?
+
+    @Query(
+        """
+        SELECT set_logs.* FROM set_logs
+        INNER JOIN workout_sessions ON workout_sessions.id = set_logs.sessionId
+        WHERE set_logs.exerciseId = :exerciseId
+          AND set_logs.setType = 'WORKING'
+          AND set_logs.sessionId != :sessionId
+          AND workout_sessions.completed = 1
+          AND workout_sessions.date <= (
+              SELECT date FROM workout_sessions WHERE id = :sessionId
+          )
+        ORDER BY workout_sessions.date DESC, workout_sessions.startTime DESC,
+                 set_logs.roundNumber DESC, set_logs.loggedAt DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun getPreviousWorkingAnyRound(exerciseId: Long, sessionId: Long): SetLogEntity?
+
     @Query("SELECT * FROM set_logs WHERE sessionId = :sessionId ORDER BY loggedAt, id")
     fun observeForSession(sessionId: Long): Flow<List<SetLogEntity>>
 
@@ -339,6 +376,11 @@ interface SupplyInventoryDao {
 }
 
 
+data class SessionRecordRow(
+    @Embedded val record: PersonalRecordEntity,
+    val exerciseName: String,
+)
+
 @Dao
 interface PersonalRecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -361,6 +403,19 @@ interface PersonalRecordDao {
         """,
     )
     fun observeNonEstimateInRange(start: LocalDate, end: LocalDate): Flow<List<PersonalRecordEntity>>
+
+    @Query(
+        """
+        SELECT personal_records.*, exercises.name AS exerciseName
+        FROM personal_records
+        INNER JOIN set_logs ON set_logs.id = personal_records.sourceSetLogId
+        INNER JOIN exercises ON exercises.id = personal_records.exerciseId
+        WHERE set_logs.sessionId = :sessionId
+          AND personal_records.type != 'estimated1RM'
+        ORDER BY personal_records.id
+        """,
+    )
+    suspend fun recordsForSession(sessionId: Long): List<SessionRecordRow>
 
     @Query(
         """
