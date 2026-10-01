@@ -10,6 +10,7 @@ import com.example.repsgrams.data.db.TemplateBlockEntity
 import com.example.repsgrams.data.db.TemplateBlockExerciseEntity
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
+import com.example.repsgrams.data.db.WorkoutTemplateWithBlocks
 import com.example.repsgrams.domain.session.WorkoutBlock
 import com.example.repsgrams.domain.session.WorkoutExercise
 import com.example.repsgrams.domain.session.WorkoutPlan
@@ -80,6 +81,9 @@ class WorkoutRepository(
 
     suspend fun getSession(sessionId: Long): WorkoutSessionEntity? =
         database.workoutSessionDao().getById(sessionId)
+
+    fun observePlanGraph(templateId: Long): Flow<WorkoutTemplateWithBlocks?> =
+        database.workoutTemplateDao().observeGraphById(templateId)
 
     suspend fun loadPlan(templateId: Long): WorkoutPlan {
         databaseReady.await()

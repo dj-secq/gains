@@ -190,6 +190,7 @@ fun TextAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    color: Color? = null,
 ) {
     TextButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 48.dp)) {
         Text(
@@ -198,7 +199,7 @@ fun TextAction(
             color = when {
                 !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
                 destructive -> SignalRed
-                else -> MaterialTheme.colorScheme.onSurface
+                else -> color ?: MaterialTheme.colorScheme.onSurface
             },
         )
     }

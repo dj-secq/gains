@@ -129,6 +129,12 @@ object CalendarCalculator {
         }
     }
 
+    /** Latest completed workout whose template still exists. A rest log is not a workout. */
+    fun completedWorkoutOn(
+        daySessions: List<WorkoutSessionEntity>,
+        templates: List<WorkoutTemplateEntity>,
+    ): WorkoutSessionEntity? = completedWorkout(daySessions, templates)
+
     /** The sheet shows the live template once. A rest gap's workout stays on its due date. */
     private fun emptyTodayTemplate(live: ScheduleSuggestion): WorkoutTemplateEntity? =
         when (live.status) {

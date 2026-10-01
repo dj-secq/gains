@@ -60,6 +60,10 @@ interface WorkoutTemplateDao {
     @Query("SELECT * FROM workout_templates WHERE id = :id")
     suspend fun getTemplateGraph(id: Long): WorkoutTemplateWithBlocks?
 
+    @Transaction
+    @Query("SELECT * FROM workout_templates WHERE id = :id")
+    fun observeGraphById(id: Long): Flow<WorkoutTemplateWithBlocks?>
+
     @Insert suspend fun insert(template: WorkoutTemplateEntity): Long
     @Insert suspend fun insertAll(templates: List<WorkoutTemplateEntity>): List<Long>
     @Update suspend fun update(template: WorkoutTemplateEntity)

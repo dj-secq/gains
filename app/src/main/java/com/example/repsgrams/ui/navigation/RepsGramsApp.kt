@@ -110,6 +110,8 @@ fun RepsGramsApp(
             workoutRepository = container.workoutRepository,
             cycleSettingsRepository = container.cycleSettingsRepository,
             progressRepository = container.progressRepository,
+            calendarRepository = container.calendarRepository,
+            sessionProgressStore = container.sessionProgressStore,
         ),
     )
     val calendarViewModel: CalendarViewModel = viewModel(
@@ -253,6 +255,8 @@ fun RepsGramsApp(
                                 notificationTarget = notificationTarget,
                                 onNotificationHandled = onNotificationHandled,
                                 onOpenSession = { sessionId -> navController.navigate("session/$sessionId") },
+                                onOpenTemplates = { navController.navigate("templates") },
+                                onOpenSupplements = { navController.navigate("manage_supplements") },
                             )
 
                             TopLevelDestination.CALENDAR -> CalendarRoute(calendarViewModel)

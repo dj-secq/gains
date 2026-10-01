@@ -4,54 +4,84 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
+import com.example.repsgrams.data.datastore.SessionProgress
+import com.example.repsgrams.data.datastore.SessionProgressStore
 import com.example.repsgrams.data.db.SupplementEntity
-import com.example.repsgrams.data.db.SupplyInventoryEntity
+import com.example.repsgrams.data.db.WorkoutSessionEntity
+import com.example.repsgrams.data.db.WorkoutTemplateEntity
+import com.example.repsgrams.data.db.WorkoutTemplateWithBlocks
+import com.example.repsgrams.data.repository.CalendarRepository
 import com.example.repsgrams.data.repository.ProgressRepository
 import com.example.repsgrams.data.repository.ScheduleRepository
 import com.example.repsgrams.data.repository.SupplementRepository
 import com.example.repsgrams.data.repository.WorkoutRepository
+import com.example.repsgrams.domain.calendar.CalendarCalculator
+import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.domain.progress.ProgressStatsCalculator
 import com.example.repsgrams.domain.schedule.ScheduleSuggestion
-import com.example.repsgrams.domain.streak.StreakInfo
+import com.example.repsgrams.domain.session.WorkoutExercise
+import com.example.repsgrams.domain.today.TodayExerciseLine
+import com.example.repsgrams.domain.today.TodayHero
+import com.example.repsgrams.domain.today.TodaySupply
+import com.example.repsgrams.domain.today.heroFor
+import com.example.repsgrams.domain.today.lowSupplyTile
+import com.example.repsgrams.domain.today.previewLines
+import com.example.repsgrams.domain.today.upNextTemplateId
+import com.example.repsgrams.domain.today.weekContaining
+import java.time.Instant
 import java.time.LocalDate
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
+import java.time.YearMonth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import com.example.repsgrams.domain.schedule.SuggestionStatus
 
 data class TodaySupplement(val supplement: SupplementEntity, val taken: Boolean, val actualAmount: Float)
 
-private data class TodayPlanData(
+private data class TodayPlan(
     val suggestion: ScheduleSuggestion,
     val supplements: List<TodaySupplement>,
-    val activeSession: com.example.repsgrams.data.db.WorkoutSessionEntity?,
-    val templates: List<com.example.repsgrams.data.db.WorkoutTemplateEntity>,
-    val workoutCompletedToday: Boolean,
+    val activeSession: WorkoutSessionEntity?,
+    val templates: List<WorkoutTemplateEntity>,
+    val completedToday: WorkoutTemplateEntity?,
+)
+
+private data class TodaySnapshot(
+    val plan: TodayPlan,
+    val progress: SessionProgress?,
+    val streak: Int,
+    val supply: TodaySupply?,
+    val week: List<CalendarDay>,
 )
 
 sealed interface TodayUiState {
     data object Loading : TodayUiState
 
-
     data class Content(
-        val suggestion: ScheduleSuggestion,
-        val supplements: List<TodaySupplement>,
+        val hero: TodayHero,
         val activeSessionId: Long?,
-        val templates: List<com.example.repsgrams.data.db.WorkoutTemplateEntity> = emptyList(),
-        val currentStreak: Int = 0,
-        val lowSupplyWarnings: List<String> = emptyList(),
+        val sessionStartedAt: Instant?,
+        val week: List<CalendarDay>,
+        val upNext: List<TodayExerciseLine>,
+        val supplements: List<TodaySupplement>,
+        val templates: List<WorkoutTemplateEntity>,
+        val suggestion: ScheduleSuggestion,
+        val currentStreak: Int,
+        val supply: TodaySupply?,
     ) : TodayUiState
+
     data class Error(val message: String) : TodayUiState
 }
 
@@ -62,6 +92,8 @@ class TodayViewModel(
     private val workoutRepository: WorkoutRepository,
     private val cycleSettingsRepository: CycleSettingsRepository,
     private val progressRepository: ProgressRepository,
+    private val calendarRepository: CalendarRepository,
+    private val sessionProgressStore: SessionProgressStore,
     private val today: LocalDate = LocalDate.now(),
 ) : ViewModel() {
     private val _openSession = MutableSharedFlow<Long>()
@@ -69,65 +101,89 @@ class TodayViewModel(
 
     private val progressStatsCalculator = ProgressStatsCalculator()
 
-    val uiState: StateFlow<TodayUiState> = combine(
+    private val planFlow: Flow<TodayPlan> = combine(
+        scheduleRepository.observeSuggestion(today),
         combine(
-            scheduleRepository.observeSuggestion(today),
-            combine(
-                supplementRepository.observeAllSupplements(),
-                supplementRepository.observeIntakesForDate(today)
-            ) { allSupps, logs ->
-                allSupps.filter { it.isActive }.map { supp ->
-                    val log = logs.firstOrNull { it.supplementId == supp.id }
-                    if (log != null && log.taken) {
-                        TodaySupplement(supp, true, log.actualAmount)
-                    } else {
-                        TodaySupplement(supp, false, supp.doseAmount)
-                    }
+            supplementRepository.observeAllSupplements(),
+            supplementRepository.observeIntakesForDate(today),
+        ) { allSupps, logs ->
+            allSupps.filter { it.isActive }.map { supplement ->
+                val log = logs.firstOrNull { it.supplementId == supplement.id }
+                if (log != null && log.taken) {
+                    TodaySupplement(supplement, true, log.actualAmount)
+                } else {
+                    TodaySupplement(supplement, false, supplement.doseAmount)
                 }
-            },
-            workoutRepository.observeActiveSession(),
-            workoutRepository.observeAllTemplates(),
-            workoutRepository.observeSessionsForDate(today),
-        ) { suggestion, todaySupps, activeSession, templates, sessionsToday ->
-            TodayPlanData(
-                suggestion,
-                todaySupps,
-                activeSession,
-                templates.sortedBy { it.orderIndex },
-                sessionsToday.any { it.completed && it.templateId != null },
-            )
+            }
+        },
+        workoutRepository.observeActiveSession(),
+        workoutRepository.observeAllTemplates(),
+        workoutRepository.observeSessionsForDate(today),
+    ) { suggestion, todaySupps, activeSession, templates, sessionsToday ->
+        val ordered = templates.sortedWith(compareBy({ it.orderIndex }, { it.dayLabel }))
+        val logged = CalendarCalculator.completedWorkoutOn(sessionsToday, ordered)
+        val completed = ordered.find { it.id == logged?.templateId }
+        TodayPlan(
+            suggestion = suggestion,
+            supplements = dueToday(todaySupps, completed != null),
+            activeSession = activeSession,
+            templates = ordered,
+            completedToday = completed,
+        )
+    }
+
+    val uiState: StateFlow<TodayUiState> = combine(
+        planFlow,
+        sessionProgressStore.progress,
+        cycleSettingsRepository.settings.flatMapLatest { settings ->
+            progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
         },
         combine(
-            cycleSettingsRepository.settings.flatMapLatest { settings ->
-                progressRepository.observeStreakInfo(today, settings.adherenceGraceDays)
-            },
             progressRepository.observeSupplyInventory(),
-            supplementRepository.observeAllSupplements()
-        ) { streakInfo, supplies, allSupps ->
-            Triple(streakInfo, supplies, allSupps)
-        }
-    ) { plan, (streakInfo, supplies, allSupps) ->
-        // Only show supplements that are due today according to scheduleType
-        val filteredSupps = plan.supplements.filter {
-            val supp = it.supplement
-            when (supp.scheduleType) {
-                "daily" -> true
-                "workoutDayOnly" -> plan.workoutCompletedToday
-                "customDays" -> {
-                    val currentDay = today.dayOfWeek.name.take(3).replaceFirstChar { it.uppercase() }
-                    supp.customDays?.contains(currentDay, ignoreCase = true) == true
-                }
-                else -> true
+            supplementRepository.observeAllSupplements(),
+        ) { supplies, allSupps ->
+            lowSupplyTile(supplies, allSupps, today, progressStatsCalculator)
+        },
+        calendarRepository.observeMonth(YearMonth.from(today)),
+    ) { plan, progress, streak, supply, month ->
+        TodaySnapshot(plan, progress, streak.currentStreak, supply, weekContaining(month.days, today))
+    }.flatMapLatest { snapshot ->
+        val plan = snapshot.plan
+        val templateId = upNextTemplateId(
+            hasActiveSession = plan.activeSession != null,
+            activeTemplateId = plan.activeSession?.templateId,
+            completedToday = plan.completedToday,
+            suggestion = plan.suggestion,
+            hasTemplates = plan.templates.isNotEmpty(),
+        )
+        val cursor = snapshot.progress?.takeIf { it.sessionId == plan.activeSession?.id }
+        val lines = if (templateId == null) {
+            flowOf(emptyList())
+        } else {
+            workoutRepository.observePlanGraph(templateId).map { graph ->
+                exerciseLines(graph, cursor?.blockIndex ?: 0, cursor?.exerciseIndex ?: 0)
             }
         }
-        val warnings = buildWarnings(supplies, allSupps)
+        lines.map { snapshot to it }
+    }.map { (snapshot, lines) ->
+        val plan = snapshot.plan
         TodayUiState.Content(
-            suggestion = plan.suggestion,
-            supplements = filteredSupps,
+            hero = heroFor(
+                hasActiveSession = plan.activeSession != null,
+                completedToday = plan.completedToday,
+                suggestion = plan.suggestion,
+                hasTemplates = plan.templates.isNotEmpty(),
+                activeTemplateName = plan.templates.find { it.id == plan.activeSession?.templateId }?.name,
+            ),
             activeSessionId = plan.activeSession?.id,
+            sessionStartedAt = plan.activeSession?.startTime,
+            week = snapshot.week,
+            upNext = lines,
+            supplements = plan.supplements,
             templates = plan.templates,
-            currentStreak = streakInfo.currentStreak,
-            lowSupplyWarnings = warnings
+            suggestion = plan.suggestion,
+            currentStreak = snapshot.streak,
+            supply = snapshot.supply,
         ) as TodayUiState
     }.flowOn(Dispatchers.Default).catch {
         emit(TodayUiState.Error("Couldn't load today's plan."))
@@ -137,27 +193,26 @@ class TodayViewModel(
         initialValue = TodayUiState.Loading,
     )
 
-    private fun buildWarnings(supplies: List<com.example.repsgrams.data.db.SupplyInventoryEntity>, allSupps: List<com.example.repsgrams.data.db.SupplementEntity>): List<String> {
-        val warnings = mutableListOf<String>()
-        for (inv in supplies) {
-            val supp = allSupps.find { it.id == inv.supplementId } ?: continue
-            if (!supp.isActive) continue
-            val status = progressStatsCalculator.calculateSupplyStatus(inv, today, lowThreshold = supp.lowSupplyThreshold.toFloat())
-            if (status.isLow) {
-                val remaining = status.servingsRemaining
-                val shown = if (remaining % 1f == 0f) remaining.toInt().toString() else remaining.toString()
-                val unit = if (remaining == 1f) "serving" else "servings"
-                warnings.add("${supp.name} running low — $shown $unit left.")
+    private fun dueToday(supplements: List<TodaySupplement>, workoutCompletedToday: Boolean): List<TodaySupplement> =
+        supplements.filter {
+            val supplement = it.supplement
+            when (supplement.scheduleType) {
+                "daily" -> true
+                "workoutDayOnly" -> workoutCompletedToday
+                "customDays" -> {
+                    val currentDay = today.dayOfWeek.name.take(3).replaceFirstChar { char -> char.uppercase() }
+                    supplement.customDays?.contains(currentDay, ignoreCase = true) == true
+                }
+                else -> true
             }
         }
-        return warnings
-    }
 
-    fun setSupplementTaken(supplement: com.example.repsgrams.data.db.SupplementEntity, taken: Boolean, amount: Float? = null) {
+    fun setSupplementTaken(supplement: SupplementEntity, taken: Boolean, amount: Float? = null) {
         viewModelScope.launch { supplementRepository.setSupplementTaken(today, supplement, taken, amount) }
     }
 
     fun startWorkout(dayLabel: String) {
+        if (dayLabel.isBlank()) return
         viewModelScope.launch { _openSession.emit(workoutRepository.startSession(dayLabel)) }
     }
 
@@ -176,6 +231,8 @@ class TodayViewModel(
             workoutRepository: WorkoutRepository,
             cycleSettingsRepository: CycleSettingsRepository,
             progressRepository: ProgressRepository,
+            calendarRepository: CalendarRepository,
+            sessionProgressStore: SessionProgressStore,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -185,9 +242,37 @@ class TodayViewModel(
                     supplementRepository,
                     workoutRepository,
                     cycleSettingsRepository,
-                    progressRepository
+                    progressRepository,
+                    calendarRepository,
+                    sessionProgressStore,
                 ) as T
             }
         }
     }
+}
+
+private fun exerciseLines(
+    graph: WorkoutTemplateWithBlocks?,
+    blockIndex: Int,
+    exerciseIndex: Int,
+): List<TodayExerciseLine> {
+    if (graph == null) return emptyList()
+    val blocks = graph.blocks.sortedBy { it.block.orderIndex }.map { block ->
+        block.block.kind to block.exercises.sortedBy { it.assignment.orderIndex }.map { row ->
+            val link = row.assignment
+            val exercise = row.exercise
+            WorkoutExercise(
+                id = exercise.id,
+                name = exercise.name,
+                imageAssetName = exercise.imageAssetName,
+                notes = exercise.notes,
+                tracksWeight = exercise.tracksWeight,
+                targetValueLow = link.targetValueLow,
+                targetValueHigh = link.targetValueHigh,
+                repType = link.repType,
+                perSide = link.perSide,
+            )
+        }
+    }
+    return previewLines(blocks, blockIndex, exerciseIndex)
 }
