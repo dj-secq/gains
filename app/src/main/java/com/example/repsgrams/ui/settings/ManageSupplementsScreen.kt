@@ -24,6 +24,7 @@ import com.example.repsgrams.ui.components.BackChevron
 import com.example.repsgrams.ui.components.BoardDialog
 import com.example.repsgrams.ui.components.BoardTile
 import com.example.repsgrams.ui.components.MonoChip
+import com.example.repsgrams.ui.components.RestockDialog
 import com.example.repsgrams.ui.components.TextAction
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -121,17 +122,13 @@ fun ManageSupplementsRoute(viewModel: ManageSupplementsViewModel, onNavigateBack
         )
     }
     restocking?.let { item ->
-        var servings by remember(item.id) { mutableStateOf(item.containerSize.toString()) }
-        BoardDialog(
-            title = "Restock ${item.name}",
+        RestockDialog(
+            name = item.name,
+            initialServings = item.containerSize.toString(),
             onDismiss = { restocking = null },
-            confirmText = "Restock",
-            onConfirm = {
-                servings.toIntOrNull()?.takeIf { it > 0 }?.let { viewModel.restock(item.id, it) }
+            onConfirm = { servings ->
+                viewModel.restock(item.id, servings)
                 restocking = null
-            },
-            content = {
-                OutlinedTextField(servings, { servings = it }, label = { Text("Total servings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
             },
         )
     }

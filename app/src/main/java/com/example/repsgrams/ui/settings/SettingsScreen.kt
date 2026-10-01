@@ -404,7 +404,7 @@ fun SettingsScreen(
                     BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Tracked Body Measurements", style = MaterialTheme.typography.bodyLarge)
-                            Text("Select the measurements you want to track in Progress", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Shown on Progress when selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
                             val options = listOf("waist", "chest", "arms", "thighs", "calves", "shoulders", "neck")
                             androidx.compose.foundation.layout.FlowRow(

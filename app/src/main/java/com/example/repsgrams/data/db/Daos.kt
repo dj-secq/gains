@@ -281,6 +281,7 @@ interface SetLogDao {
         INNER JOIN workout_sessions ON workout_sessions.id = set_logs.sessionId
         WHERE set_logs.exerciseId = :exerciseId
           AND workout_sessions.completed = 1
+          AND set_logs.setType != 'WARMUP'
         ORDER BY workout_sessions.date, set_logs.roundNumber
         """,
     )
@@ -424,6 +425,9 @@ interface PersonalRecordDao {
         """,
     )
     suspend fun deleteForSession(sessionId: Long)
+
+    @Query("DELETE FROM personal_records WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
 
 @Dao
@@ -433,6 +437,9 @@ interface BodyMeasurementLogDao {
 
     @Query("SELECT * FROM body_measurements WHERE type = :type ORDER BY date ASC")
     fun observeByType(type: String): Flow<List<BodyMeasurementLogEntity>>
+
+    @Query("SELECT * FROM body_measurements ORDER BY date ASC, id ASC")
+    fun observeAll(): Flow<List<BodyMeasurementLogEntity>>
 
     @Query("SELECT DISTINCT type FROM body_measurements ORDER BY type ASC")
     fun observeTypes(): Flow<List<String>>

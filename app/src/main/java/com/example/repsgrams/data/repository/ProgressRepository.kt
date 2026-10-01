@@ -1,9 +1,11 @@
 package com.example.repsgrams.data.repository
 
 import com.example.repsgrams.data.db.AppDatabase
+import com.example.repsgrams.data.db.BodyMeasurementLogEntity
 import com.example.repsgrams.data.db.BodyweightLogEntity
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.ExerciseSetHistoryRow
+import com.example.repsgrams.data.db.PersonalRecordEntity
 import com.example.repsgrams.data.db.SupplementIntakeLogEntity
 import com.example.repsgrams.data.db.SupplyInventoryEntity
 import java.time.LocalDate
@@ -16,8 +18,11 @@ import com.example.repsgrams.domain.streak.StreakCalculator
 interface ProgressRepository {
     fun observeStreakInfo(today: LocalDate, graceDays: Int): Flow<StreakInfo>
     fun observeAllExercises(): Flow<List<ExerciseEntity>>
-    fun observePersonalRecords(exerciseId: Long): Flow<List<com.example.repsgrams.data.db.PersonalRecordEntity>>
-    fun observeBodyMeasurements(type: String): Flow<List<com.example.repsgrams.data.db.BodyMeasurementLogEntity>>
+    fun observePersonalRecords(exerciseId: Long): Flow<List<PersonalRecordEntity>>
+    fun observeAllPersonalRecords(): Flow<List<PersonalRecordEntity>>
+    suspend fun deletePersonalRecord(id: Long)
+    fun observeBodyMeasurements(type: String): Flow<List<BodyMeasurementLogEntity>>
+    fun observeAllBodyMeasurements(): Flow<List<BodyMeasurementLogEntity>>
     suspend fun logBodyMeasurement(type: String, date: java.time.LocalDate, valueCm: Float)
     fun observeAchievements(): Flow<List<com.example.repsgrams.data.db.AchievementEntity>>
     fun observeExerciseHistory(exerciseId: Long): Flow<List<ExerciseSetHistoryRow>>
@@ -47,16 +52,28 @@ class DefaultProgressRepository(
         return database.exerciseDao().observeAll()
     }
 
-    override fun observePersonalRecords(exerciseId: Long): Flow<List<com.example.repsgrams.data.db.PersonalRecordEntity>> {
+    override fun observePersonalRecords(exerciseId: Long): Flow<List<PersonalRecordEntity>> {
         return database.personalRecordDao().observeAll().map { list -> list.filter { it.exerciseId == exerciseId } }
     }
 
-    override fun observeBodyMeasurements(type: String): Flow<List<com.example.repsgrams.data.db.BodyMeasurementLogEntity>> {
+    override fun observeAllPersonalRecords(): Flow<List<PersonalRecordEntity>> {
+        return database.personalRecordDao().observeAll()
+    }
+
+    override suspend fun deletePersonalRecord(id: Long) {
+        database.personalRecordDao().deleteById(id)
+    }
+
+    override fun observeBodyMeasurements(type: String): Flow<List<BodyMeasurementLogEntity>> {
         return database.bodyMeasurementLogDao().observeByType(type)
     }
 
+    override fun observeAllBodyMeasurements(): Flow<List<BodyMeasurementLogEntity>> {
+        return database.bodyMeasurementLogDao().observeAll()
+    }
+
     override suspend fun logBodyMeasurement(type: String, date: java.time.LocalDate, valueCm: Float) {
-        database.bodyMeasurementLogDao().insert(com.example.repsgrams.data.db.BodyMeasurementLogEntity(date = date, type = type, valueCm = valueCm))
+        database.bodyMeasurementLogDao().insert(BodyMeasurementLogEntity(date = date, type = type, valueCm = valueCm))
     }
 
     override fun observeAchievements(): Flow<List<com.example.repsgrams.data.db.AchievementEntity>> {
