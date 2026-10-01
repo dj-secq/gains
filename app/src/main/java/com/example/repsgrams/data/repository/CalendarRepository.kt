@@ -3,6 +3,7 @@ package com.example.repsgrams.data.repository
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.AppDatabase
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.CalendarSetLogRow
 import com.example.repsgrams.data.db.SupplementIntakeLogEntity
 import com.example.repsgrams.domain.calendar.CalendarCalculator
@@ -75,7 +76,7 @@ class CalendarRepository(
         val allSets = database.setLogDao().getForDate(date).groupBy { it.sessionId }
         val sessions = sessionsForDate.map { session ->
             val name = session.templateId?.let { database.workoutTemplateDao().getById(it)?.name }
-                ?: if (session.notes == "Rest day") "Rest day" else "Deleted workout"
+                ?: if (session.sessionKind == SessionKind.REST) "Rest" else "Deleted workout"
             val notes = session.notes?.takeUnless { it.isBlank() || it == "Rest day" }
             CalendarSessionDetail(
                 session.id, name, session.completed, session.durationSeconds, allSets[session.id].orEmpty(), notes,

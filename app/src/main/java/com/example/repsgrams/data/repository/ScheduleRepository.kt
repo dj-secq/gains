@@ -22,23 +22,18 @@ class DefaultScheduleRepository(
     private val clock: Clock,
 ) : ScheduleRepository {
     override fun observeSuggestion(today: LocalDate): Flow<ScheduleSuggestion> {
-        val lastSessionFlow = database.workoutSessionDao().observeLastCompletedSession()
-        val templatesFlow = database.workoutTemplateDao().observeAll()
-
-        return combine(lastSessionFlow, templatesFlow) { lastSession, templates ->
-            val lastTemplate = lastSession?.templateId?.let { id ->
-                templates.find { it.id == id }
-            }
-            ScheduleEngine.computeSuggestion(today, lastSession, lastTemplate, templates)
+        // observeAll, not the last workout: a rest insert has to recompute the due date.
+        return combine(
+            database.workoutSessionDao().observeAll(),
+            database.workoutTemplateDao().observeAll(),
+        ) { sessions, templates ->
+            ScheduleEngine.replay(today, sessions, templates, includeDay = true)
         }.distinctUntilChanged()
     }
 
     override suspend fun getSuggestion(today: LocalDate): ScheduleSuggestion {
-        val lastSession = database.workoutSessionDao().getLastCompletedSession()
+        val sessions = database.workoutSessionDao().getOnOrBefore(today)
         val templates = database.workoutTemplateDao().getAll()
-        val lastTemplate = lastSession?.templateId?.let { id ->
-            templates.find { it.id == id }
-        }
-        return ScheduleEngine.computeSuggestion(today, lastSession, lastTemplate, templates)
+        return ScheduleEngine.replay(today, sessions, templates, includeDay = true)
     }
 }

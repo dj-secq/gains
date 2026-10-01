@@ -1,12 +1,12 @@
 package com.example.repsgrams.domain.schedule
 
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScheduleEngineTest {
@@ -106,8 +106,72 @@ class ScheduleEngineTest {
     }
 
     @Test
-    fun `replay does not treat a rest marker as the last workout`() {
-        val rest = WorkoutSessionEntity(
+    fun `a rest on the due date moves due without advancing the rotation`() {
+        // restDaysAfter 1 → the original due is two days later. Resting that day restarts the same gap.
+        val due = lastDate.plusDays(2)
+        val result = ScheduleEngine.replay(
+            due.plusDays(2),
+            listOf(restOn(due), completedSession(workoutA, lastDate)),
+            templates,
+        )
+
+        assertEquals(SuggestionStatus.ON_TIME, result.status)
+        assertEquals(due.plusDays(2), result.dueDate)
+        assertEquals(workoutB.id, result.suggestedTemplate?.id)
+    }
+
+    @Test
+    fun `a rest strictly before the due date does not move it`() {
+        val duringGap = lastDate.plusDays(1)
+        val result = ScheduleEngine.replay(
+            duringGap,
+            listOf(completedSession(workoutA, lastDate), restOn(duringGap)),
+            templates,
+            includeDay = true,
+        )
+
+        assertEquals(SuggestionStatus.REST_DAY, result.status)
+        assertEquals(lastDate.plusDays(2), result.dueDate)
+        assertEquals(1, result.daysUntilDue)
+        assertEquals(workoutB.id, result.suggestedTemplate?.id)
+    }
+
+    @Test
+    fun `a second rest inside the restarted gap does not push again`() {
+        val due = lastDate.plusDays(2)
+        val dayAfter = due.plusDays(1)
+        val result = ScheduleEngine.replay(
+            dayAfter,
+            listOf(completedSession(workoutA, lastDate), restOn(due), restOn(dayAfter)),
+            templates,
+            includeDay = true,
+        )
+
+        assertEquals(SuggestionStatus.REST_DAY, result.status)
+        assertEquals(due.plusDays(2), result.dueDate)
+        assertEquals(1, result.daysUntilDue)
+        assertEquals(workoutB.id, result.suggestedTemplate?.id)
+    }
+
+    @Test
+    fun `a rest while overdue restarts the gap from that rest`() {
+        val dayAfterDue = lastDate.plusDays(3)
+        val result = ScheduleEngine.replay(
+            dayAfterDue,
+            listOf(completedSession(workoutA, lastDate), restOn(dayAfterDue)),
+            templates,
+            includeDay = true,
+        )
+
+        assertEquals(SuggestionStatus.REST_DAY, result.status)
+        assertEquals(dayAfterDue.plusDays(2), result.dueDate)
+        assertEquals(2, result.daysUntilDue)
+        assertEquals(workoutB.id, result.suggestedTemplate?.id)
+    }
+
+    @Test
+    fun `the old rest note is not a rest anchor until sessionKind says so`() {
+        val note = WorkoutSessionEntity(
             templateId = null,
             date = lastDate.plusDays(2),
             completed = true,
@@ -115,12 +179,13 @@ class ScheduleEngineTest {
         )
         val result = ScheduleEngine.replay(
             lastDate.plusDays(4),
-            listOf(rest, completedSession(workoutA, lastDate)),
+            listOf(note, completedSession(workoutA, lastDate)),
             templates,
         )
 
         assertEquals(SuggestionStatus.OVERDUE, result.status)
         assertEquals(lastDate.plusDays(2), result.dueDate)
+        assertEquals(workoutB.id, result.suggestedTemplate?.id)
     }
 
     @Test
@@ -207,13 +272,21 @@ class ScheduleEngineTest {
     }
 
     @Test
-    fun `rest logged on an open due day does not project another workout`() {
+    fun `rest logged on an open due day projects the restarted due date`() {
         val today = lastDate.plusDays(2)
-        val live = ScheduleEngine.replay(today, listOf(completedSession(workoutA, lastDate)), templates)
+        val live = ScheduleEngine.replay(
+            today,
+            listOf(completedSession(workoutA, lastDate), restOn(today)),
+            templates,
+            includeDay = true,
+        )
         val projected = project(today, live, loggedRestToday = true)
 
-        assertEquals(SuggestionStatus.ON_TIME, live.status)
-        assertTrue(projected.isEmpty())
+        assertEquals(SuggestionStatus.REST_DAY, live.status)
+        assertEquals(today.plusDays(2), live.dueDate)
+        assertEquals(workoutB.id, live.suggestedTemplate?.id)
+        assertEquals(workoutB.id, projected[today.plusDays(2)]?.id)
+        assertFalse(projected.containsKey(today))
     }
 
     @Test
@@ -278,4 +351,11 @@ class ScheduleEngineTest {
 
     private fun completedSession(template: WorkoutTemplateEntity, date: LocalDate) =
         WorkoutSessionEntity(templateId = template.id, date = date, completed = true)
+
+    private fun restOn(date: LocalDate) = WorkoutSessionEntity(
+        templateId = null,
+        date = date,
+        completed = true,
+        sessionKind = SessionKind.REST,
+    )
 }

@@ -220,4 +220,63 @@ class MigrationTest {
         conn.rollback()
         conn.close()
     }
+
+    @Test
+    fun `migrate7To8 marks explicit rests and drops detached personal records`() {
+        Class.forName("org.sqlite.JDBC")
+        val conn = DriverManager.getConnection("jdbc:sqlite::memory:")
+        conn.createStatement().use { statement ->
+            statement.execute(
+                """CREATE TABLE workout_sessions (
+                    id INTEGER PRIMARY KEY,
+                    templateId INTEGER,
+                    date INTEGER NOT NULL,
+                    notes TEXT
+                )""",
+            )
+            statement.execute(
+                """CREATE TABLE personal_records (
+                    id INTEGER PRIMARY KEY,
+                    sourceSetLogId INTEGER
+                )""",
+            )
+            statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (1, NULL, 1, 'Rest day')")
+            statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (2, 4, 2, 'Rest day')")
+            statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (3, NULL, 3, 'knee was sore')")
+            statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (4, 4, 4, NULL)")
+            statement.execute("INSERT INTO personal_records (id, sourceSetLogId) VALUES (10, NULL)")
+            statement.execute("INSERT INTO personal_records (id, sourceSetLogId) VALUES (11, 7)")
+            SessionKindMigration.STATEMENTS.forEach(statement::execute)
+            statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (5, 4, 5, NULL)")
+        }
+
+        data class Row(val kind: String, val notes: String?)
+        val rows = conn.createStatement().use { statement ->
+            val result = statement.executeQuery(
+                "SELECT id, sessionKind, notes FROM workout_sessions ORDER BY id",
+            )
+            buildMap {
+                while (result.next()) {
+                    put(
+                        result.getInt(1),
+                        Row(result.getString(2), result.getString(3).takeUnless { result.wasNull() }),
+                    )
+                }
+            }
+        }
+        assertEquals(Row("REST", null), rows.getValue(1))
+        assertEquals(Row("WORKOUT", "Rest day"), rows.getValue(2))
+        assertEquals(Row("WORKOUT", "knee was sore"), rows.getValue(3))
+        assertEquals(Row("WORKOUT", null), rows.getValue(4))
+        assertEquals(Row("WORKOUT", null), rows.getValue(5))
+
+        val recordIds = conn.createStatement().use { statement ->
+            val result = statement.executeQuery("SELECT id FROM personal_records ORDER BY id")
+            buildList {
+                while (result.next()) add(result.getInt(1))
+            }
+        }
+        assertEquals(listOf(11), recordIds)
+        conn.close()
+    }
 }

@@ -1,5 +1,6 @@
 package com.example.repsgrams.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -111,6 +112,8 @@ data class WorkoutSessionEntity(
     val completed: Boolean = false,
     val durationSeconds: Int? = null,
     val notes: String? = null,
+    @ColumnInfo(defaultValue = "'WORKOUT'")
+    val sessionKind: SessionKind = SessionKind.WORKOUT,
 )
 
 @Entity(

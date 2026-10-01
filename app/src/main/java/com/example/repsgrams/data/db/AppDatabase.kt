@@ -6,7 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-const val APP_SCHEMA_VERSION = 7
+const val APP_SCHEMA_VERSION = 8
 
 @Database(
     entities = [
@@ -45,6 +45,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun databaseMetadataDao(): DatabaseMetadataDao
 
     companion object {
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                SessionKindMigration.STATEMENTS.forEach(db::execSQL)
+            }
+        }
+
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Version 6 introduced this column as nullable, leaving existing

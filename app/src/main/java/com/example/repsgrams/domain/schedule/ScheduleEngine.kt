@@ -1,5 +1,6 @@
 package com.example.repsgrams.domain.schedule
 
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
 import java.time.LocalDate
@@ -26,6 +27,7 @@ object ScheduleEngine {
         lastSession: WorkoutSessionEntity?,
         lastTemplate: WorkoutTemplateEntity?,
         allTemplates: List<WorkoutTemplateEntity>,
+        restsSinceWorkout: List<WorkoutSessionEntity> = emptyList(),
     ): ScheduleSuggestion {
         if (allTemplates.isEmpty()) {
             return ScheduleSuggestion(null, SuggestionStatus.NO_HISTORY, null)
@@ -43,9 +45,22 @@ object ScheduleEngine {
 
         val nextTemplate = templateAfter(sortedTemplates, lastTemplate)
 
-        // Compute dueDate = D + T.restDaysAfter + 1
+        // due = W.date + T.restDaysAfter + 1. A rest strictly before due stays a calendar
+        // fact. A rest on or after due restarts that same gap and does not advance rotation.
+        // A second rest inside the new gap does not push again.
         val lastDate = lastSession.date
-        val dueDate = lastDate.plusDays(lastTemplate.restDaysAfter.toLong() + 1L)
+        val gapDays = lastTemplate.restDaysAfter.toLong() + 1L
+        var dueDate = lastDate.plusDays(gapDays)
+        restsSinceWorkout
+            .asSequence()
+            .filter { it.completed && it.sessionKind == SessionKind.REST && !it.date.isBefore(lastDate) }
+            .map { it.date }
+            .sorted()
+            .forEach { restDate ->
+                if (!restDate.isBefore(dueDate)) {
+                    dueDate = restDate.plusDays(gapDays)
+                }
+            }
 
         return when {
             today.isBefore(dueDate) -> {
@@ -80,7 +95,9 @@ object ScheduleEngine {
      * Suggestion as of [day]. Sessions on [day] are excluded unless [includeDay] is set,
      * so a later overdue morning keeps the original due date instead of becoming a new one.
      * A row whose template was deleted is skipped; treating it as the last workout would
-     * erase older history into [SuggestionStatus.NO_HISTORY]. Rest rows are not workouts.
+     * erase older history into [SuggestionStatus.NO_HISTORY]. A completed [SessionKind.REST]
+     * row is not a workout and does not advance the rotation. Rests on or after the workout
+     * date, and visible on [day], restart the gap when they land on or after the due date.
      */
     fun replay(
         day: LocalDate,
@@ -89,10 +106,13 @@ object ScheduleEngine {
         includeDay: Boolean = false,
     ): ScheduleSuggestion {
         val templatesById = templates.associateBy { it.id }
+        val visible: (WorkoutSessionEntity) -> Boolean = { session ->
+            if (includeDay) !session.date.isAfter(day) else session.date.isBefore(day)
+        }
         val latest = sessions
             .asSequence()
-            .filter { it.completed && it.templateId != null }
-            .filter { session -> if (includeDay) !session.date.isAfter(day) else session.date.isBefore(day) }
+            .filter { it.completed && it.templateId != null && it.sessionKind != SessionKind.REST }
+            .filter(visible)
             .sortedWith(workoutOrder)
             .firstNotNullOfOrNull { session ->
                 templatesById[session.templateId]?.let { template -> session to template }
@@ -100,14 +120,22 @@ object ScheduleEngine {
         return if (latest == null) {
             computeSuggestion(day, null, null, templates)
         } else {
-            computeSuggestion(day, latest.first, latest.second, templates)
+            val (workout, template) = latest
+            val rests = sessions.filter { session ->
+                session.completed &&
+                    session.sessionKind == SessionKind.REST &&
+                    !session.date.isBefore(workout.date) &&
+                    visible(session)
+            }
+            computeSuggestion(day, workout, template, templates, rests)
         }
     }
 
     /**
-     * Workout dates strictly after [today], through [horizon]. Today is not given a mark here:
-     * an open due day already shows its template on the sheet, and a logged workout has moved
-     * the engine's due date. A rest logged on an open due day does not add another cell.
+     * Workout dates strictly after [today], through [horizon]. Today is not given a mark here.
+     * When [live] is already a rest gap, or a logged rest has restarted that gap, the next cell
+     * is [ScheduleSuggestion.dueDate] with the same next template. An empty result is only the
+     * stale case where [loggedRestToday] is set and the live due date did not move.
      */
     fun projectAfterToday(
         today: LocalDate,
@@ -141,6 +169,7 @@ object ScheduleEngine {
             if (!due.isAfter(today)) return null
             return due to suggested
         }
+        // loggedRestToday was set, but the live suggestion is still the open due day.
         return null
     }
 

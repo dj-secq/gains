@@ -1,5 +1,6 @@
 package com.example.repsgrams.domain.calendar
 
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
 import com.example.repsgrams.domain.schedule.ScheduleEngine
@@ -34,8 +35,6 @@ data class CalendarDay(
 )
 
 object CalendarCalculator {
-    private const val REST_NOTE = "Rest day"
-
     fun datesForMonth(month: YearMonth): List<LocalDate> {
         val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         return List(42) { first.plusDays(it.toLong()) }
@@ -153,5 +152,5 @@ object CalendarCalculator {
     }
 
     private fun isRestMarker(session: WorkoutSessionEntity): Boolean =
-        session.completed && session.templateId == null && session.notes == REST_NOTE
+        session.completed && session.sessionKind == SessionKind.REST
 }

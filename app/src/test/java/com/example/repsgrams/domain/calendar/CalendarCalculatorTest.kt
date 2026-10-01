@@ -1,5 +1,6 @@
 package com.example.repsgrams.domain.calendar
 
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
 import java.time.DayOfWeek
@@ -136,9 +137,14 @@ class CalendarCalculatorTest {
         val onDueDate = days(today, listOf(workout(workoutA, LocalDate.of(2026, 9, 8)), rest(today)))
         assertEquals(CalendarDayStatus.COMPLETE, onDueDate.getValue(today).status)
         assertNull(onDueDate.getValue(today).template)
-        assertTrue(
-            (12..16).map { LocalDate.of(2026, 9, it) }.none { onDueDate.getValue(it).status == CalendarDayStatus.UPCOMING },
-        )
+        // restDaysAfter 2 restarts from Sept 11, so B is due Sept 14 and A follows on Sept 16.
+        assertEquals(CalendarDayStatus.EMPTY, onDueDate.getValue(LocalDate.of(2026, 9, 12)).status)
+        assertEquals(CalendarDayStatus.EMPTY, onDueDate.getValue(LocalDate.of(2026, 9, 13)).status)
+        assertEquals(CalendarDayStatus.UPCOMING, onDueDate.getValue(LocalDate.of(2026, 9, 14)).status)
+        assertEquals(workoutB.id, onDueDate.getValue(LocalDate.of(2026, 9, 14)).template?.id)
+        assertEquals(CalendarDayStatus.EMPTY, onDueDate.getValue(LocalDate.of(2026, 9, 15)).status)
+        assertEquals(CalendarDayStatus.UPCOMING, onDueDate.getValue(LocalDate.of(2026, 9, 16)).status)
+        assertEquals(workoutA.id, onDueDate.getValue(LocalDate.of(2026, 9, 16)).template?.id)
     }
 
     @Test
@@ -184,6 +190,10 @@ class CalendarCalculatorTest {
     private fun workout(template: WorkoutTemplateEntity, date: LocalDate) =
         WorkoutSessionEntity(templateId = template.id, date = date, completed = true)
 
-    private fun rest(date: LocalDate) =
-        WorkoutSessionEntity(templateId = null, date = date, completed = true, notes = "Rest day")
+    private fun rest(date: LocalDate) = WorkoutSessionEntity(
+        templateId = null,
+        date = date,
+        completed = true,
+        sessionKind = SessionKind.REST,
+    )
 }

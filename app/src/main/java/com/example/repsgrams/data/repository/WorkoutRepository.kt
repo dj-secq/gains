@@ -3,6 +3,7 @@ package com.example.repsgrams.data.repository
 import androidx.room.withTransaction
 import com.example.repsgrams.data.db.AppDatabase
 import com.example.repsgrams.data.db.ExerciseEntity
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.SetLogEntity
 import com.example.repsgrams.data.db.TemplateBlockEntity
 import com.example.repsgrams.data.db.TemplateBlockExerciseEntity
@@ -50,7 +51,7 @@ class WorkoutRepository(
         databaseReady.await()
         database.withTransaction {
             val alreadyLogged = database.workoutSessionDao().getForDate(date)
-                .any { it.completed && it.templateId == null }
+                .any { it.completed && it.sessionKind == SessionKind.REST }
             if (!alreadyLogged) {
                 val now = Instant.now(clock)
                 database.workoutSessionDao().insert(
@@ -61,7 +62,8 @@ class WorkoutRepository(
                         endTime = now,
                         completed = true,
                         durationSeconds = 0,
-                        notes = "Rest day",
+                        notes = null,
+                        sessionKind = SessionKind.REST,
                     ),
                 )
             }

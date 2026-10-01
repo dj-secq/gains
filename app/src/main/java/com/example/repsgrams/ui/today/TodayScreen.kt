@@ -293,7 +293,11 @@ private fun TodayContent(
                     )
                 }
                 IosButton(
-                    text = "Rest today",
+                    text = if (state.suggestion.status == com.example.repsgrams.domain.schedule.SuggestionStatus.REST_DAY) {
+                        "Log rest"
+                    } else {
+                        "Rest today"
+                    },
                     onClick = {
                         showAlternatives = false
                         onLogRestDay()
