@@ -17,11 +17,32 @@ data class ExerciseEntity(
     val muscleGroup: String = "Uncategorized",
     val imageAssetName: String? = null,
     val isCustom: Boolean = false,
+    @ColumnInfo(defaultValue = "'OTHER'")
+    val equipment: Equipment = Equipment.OTHER,
+)
+
+@Entity(tableName = "programs")
+data class ProgramEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val active: Boolean,
+    val scheduleMode: ScheduleMode,
 )
 
 @Entity(
     tableName = "workout_templates",
-    indices = [Index(value = ["dayLabel"], unique = true)],
+    foreignKeys = [
+        ForeignKey(
+            entity = ProgramEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["programId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("programId"),
+        Index(value = ["programId", "dayLabel"], unique = true),
+    ],
 )
 data class WorkoutTemplateEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -31,6 +52,10 @@ data class WorkoutTemplateEntity(
     val restDaysAfter: Int = 1,
     val orderIndex: Int = 0,
     val category: String = "Custom",
+    /** Zero is not a program. [com.example.repsgrams.data.repository.WorkoutRepository.insertTemplate] assigns the active one. */
+    val programId: Long = 0,
+    /** [java.time.DayOfWeek.value], Monday = 1 through Sunday = 7. Null on a rotation template. */
+    val weekday: Int? = null,
 )
 
 @Entity(
@@ -89,6 +114,8 @@ data class TemplateBlockExerciseEntity(
     val targetValueHigh: Int,
     val repType: RepType = RepType.REPS,
     val perSide: Boolean = false,
+    val restSecondsAfter: Int? = null,
+    val progressionIncrementKg: Float? = null,
 )
 
 @Entity(
@@ -151,6 +178,10 @@ data class SetLogEntity(
     val loggedAt: Instant,
     val rpeTag: String? = null,
     val substitutedFrom: Long? = null,
+    @ColumnInfo(defaultValue = "'WORKING'")
+    val setType: SetType = SetType.WORKING,
+    val rpe: Float? = null,
+    val notes: String? = null,
 )
 
 @Entity(tableName = "supplements")

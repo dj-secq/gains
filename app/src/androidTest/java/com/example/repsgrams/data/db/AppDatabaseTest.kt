@@ -66,8 +66,16 @@ class AppDatabaseTest {
     @Test
     fun templateDeleteCascadesConfigurationButPreservesSessionHistory() = runTest {
         val exerciseId = database.exerciseDao().insert(ExerciseEntity(name = "Test", tracksWeight = true))
+        val programId = database.programDao().insert(
+            ProgramEntity(name = "Program", active = true, scheduleMode = ScheduleMode.ROTATION),
+        )
         val templateId = database.workoutTemplateDao().insert(
-            WorkoutTemplateEntity(name = "Workout A", dayLabel = "A", maxDurationMinutes = 40),
+            WorkoutTemplateEntity(
+                name = "Workout A",
+                dayLabel = "A",
+                maxDurationMinutes = 40,
+                programId = programId,
+            ),
         )
         val blockId = database.templateBlockDao().insert(
             TemplateBlockEntity(templateId = templateId, label = "Block", orderIndex = 0,

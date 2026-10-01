@@ -15,4 +15,10 @@ class DatabaseConverters {
     @TypeConverter fun stringToBlockKind(value: String?): BlockKind? = value?.let(BlockKind::valueOf)
     @TypeConverter fun sessionKindToString(value: SessionKind?): String? = value?.name
     @TypeConverter fun stringToSessionKind(value: String?): SessionKind? = value?.let(SessionKind::valueOf)
+    @TypeConverter fun scheduleModeToString(value: ScheduleMode?): String? = value?.name
+    @TypeConverter fun stringToScheduleMode(value: String?): ScheduleMode? = value?.let(ScheduleMode::valueOf)
+    @TypeConverter fun setTypeToString(value: SetType?): String? = value?.name
+    @TypeConverter fun stringToSetType(value: String?): SetType? = value?.let(SetType::valueOf)
+    @TypeConverter fun equipmentToString(value: Equipment?): String? = value?.name
+    @TypeConverter fun stringToEquipment(value: String?): Equipment? = value?.let(Equipment::valueOf)
 }

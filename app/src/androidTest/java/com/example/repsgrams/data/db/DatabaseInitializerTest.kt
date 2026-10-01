@@ -68,11 +68,24 @@ class DatabaseInitializerTest {
     @Test
     fun rewritesOnlyTheUntouchedDefaultPair() = runTest {
         val templateDao = database.workoutTemplateDao()
-        templateDao.insert(
-            WorkoutTemplateEntity(name = "Workout A", dayLabel = "A", maxDurationMinutes = 40),
+        val programId = database.programDao().insert(
+            ProgramEntity(name = "Program", active = true, scheduleMode = ScheduleMode.ROTATION),
         )
         templateDao.insert(
-            WorkoutTemplateEntity(name = "Custom B name", dayLabel = "B", maxDurationMinutes = 40),
+            WorkoutTemplateEntity(
+                name = "Workout A",
+                dayLabel = "A",
+                maxDurationMinutes = 40,
+                programId = programId,
+            ),
+        )
+        templateDao.insert(
+            WorkoutTemplateEntity(
+                name = "Custom B name",
+                dayLabel = "B",
+                maxDurationMinutes = 40,
+                programId = programId,
+            ),
         )
 
         DatabaseInitializer(database, clock).ensureSeeded()

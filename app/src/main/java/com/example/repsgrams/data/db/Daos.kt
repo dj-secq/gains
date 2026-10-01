@@ -31,6 +31,15 @@ interface ExerciseDao {
 }
 
 @Dao
+interface ProgramDao {
+    @Query("SELECT * FROM programs WHERE active = 1 ORDER BY id LIMIT 1")
+    suspend fun getActive(): ProgramEntity?
+
+    @Insert
+    suspend fun insert(program: ProgramEntity): Long
+}
+
+@Dao
 interface WorkoutTemplateDao {
     @Query("SELECT * FROM workout_templates WHERE id = :id")
     suspend fun getById(id: Long): WorkoutTemplateEntity?

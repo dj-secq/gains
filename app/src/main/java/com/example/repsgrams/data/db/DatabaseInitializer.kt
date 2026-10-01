@@ -46,6 +46,7 @@ class DatabaseInitializer(
             val templateDao = database.workoutTemplateDao()
             val blockDao = database.templateBlockDao()
             val assignmentDao = database.templateBlockExerciseDao()
+            val programId = ensureDefaultProgram()
 
             if (templateDao.getByDayLabel("A") == null) seedTemplate(
                 template = WorkoutTemplateEntity(
@@ -54,6 +55,7 @@ class DatabaseInitializer(
                     maxDurationMinutes = 40,
                     orderIndex = 0,
                     restDaysAfter = 1,
+                    programId = programId,
                 ),
                 blocks = workoutABlocks,
                 exerciseIds = exerciseIds,
@@ -68,6 +70,7 @@ class DatabaseInitializer(
                     maxDurationMinutes = 40,
                     orderIndex = 1,
                     restDaysAfter = 2,
+                    programId = programId,
                 ),
                 blocks = workoutBBlocks,
                 exerciseIds = exerciseIds,
@@ -112,6 +115,18 @@ class DatabaseInitializer(
             metadataDao.put(DatabaseMetadataEntity(SEED_VERSION_KEY, CURRENT_SEED_VERSION))
             }
 
+    }
+
+    private suspend fun ensureDefaultProgram(): Long {
+        val existing = database.programDao().getActive()
+        if (existing != null) return existing.id
+        return database.programDao().insert(
+            ProgramEntity(
+                name = "Program",
+                active = true,
+                scheduleMode = ScheduleMode.ROTATION,
+            ),
+        )
     }
 
     private suspend fun applySeedOrder(templateDao: WorkoutTemplateDao) {
@@ -199,7 +214,9 @@ class DatabaseInitializer(
             ExerciseEntity(name = "DB Overhead Triceps Extension", muscleGroup = "Arms", imageAssetName = "ex_db_overhead_triceps_extension", tracksWeight = true),
             ExerciseEntity(name = "Band Face Pull", muscleGroup = "Back", imageAssetName = "ex_band_face_pull", tracksWeight = false),
             ExerciseEntity(name = "Hollow Body Hold", muscleGroup = "Core", imageAssetName = "ex_hollow_body_hold", tracksWeight = false),
-        )
+        ).map { exercise ->
+            exercise.copy(equipment = ExerciseEquipment.BY_NAME.getValue(exercise.name))
+        }
 
         val warmUpTargets = listOf(
             SeedTarget("Jumping Jacks", 40, 60),

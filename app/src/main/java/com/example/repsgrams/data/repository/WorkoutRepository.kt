@@ -5,6 +5,7 @@ import com.example.repsgrams.data.db.AppDatabase
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.SetLogEntity
+import com.example.repsgrams.data.db.SetType
 import com.example.repsgrams.data.db.TemplateBlockEntity
 import com.example.repsgrams.data.db.TemplateBlockExerciseEntity
 import com.example.repsgrams.data.db.WorkoutSessionEntity
@@ -17,6 +18,13 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
+
+internal fun isSameLoggedSet(
+    row: SetLogEntity,
+    exerciseId: Long,
+    roundNumber: Int,
+    setType: SetType,
+): Boolean = row.exerciseId == exerciseId && row.roundNumber == roundNumber && row.setType == setType
 
 class WorkoutRepository(
     private val database: AppDatabase,
@@ -122,10 +130,11 @@ class WorkoutRepository(
         weightKg: Float?,
         rpeTag: String? = null,
         substitutedFrom: Long? = null,
+        setType: SetType = SetType.WORKING,
     ): Long {
         database.workoutSessionDao().getById(sessionId) ?: return -1L
         val existing = database.setLogDao().getForSession(sessionId)
-            .find { it.exerciseId == exerciseId && it.roundNumber == roundNumber }
+            .find { isSameLoggedSet(it, exerciseId, roundNumber, setType) }
 
         return if (existing != null) {
             database.setLogDao().update(existing.copy(
@@ -148,6 +157,7 @@ class WorkoutRepository(
                     loggedAt = Instant.now(clock),
                     rpeTag = rpeTag,
                     substitutedFrom = substitutedFrom,
+                    setType = setType,
                 ),
             )
         }
@@ -205,8 +215,12 @@ class WorkoutRepository(
     suspend fun getExercise(id: Long): ExerciseEntity? = database.exerciseDao().getById(id)
 
     suspend fun insertTemplate(template: WorkoutTemplateEntity) {
+        val programId = template.programId.takeIf { it != 0L }
+            ?: checkNotNull(database.programDao().getActive()) { "No active program" }.id
         val nextOrder = (database.workoutTemplateDao().getAll().maxOfOrNull { it.orderIndex } ?: -1) + 1
-        database.workoutTemplateDao().insert(template.copy(orderIndex = nextOrder))
+        database.workoutTemplateDao().insert(
+            template.copy(orderIndex = nextOrder, programId = programId),
+        )
     }
 
     suspend fun updateTemplate(template: WorkoutTemplateEntity) {

@@ -1,8 +1,14 @@
 package com.example.repsgrams.data.db
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
 
 /**
  * Pure-JVM migration test using xerial sqlite-jdbc.
@@ -278,5 +284,276 @@ class MigrationTest {
         }
         assertEquals(listOf(11), recordIds)
         conn.close()
+    }
+
+    @Test
+    fun `equipment map is the nineteen seed names and never barbell`() {
+        assertEquals(19, ExerciseEquipment.BY_NAME.size)
+        assertEquals(
+            setOf(Equipment.DUMBBELL, Equipment.BAND, Equipment.BODYWEIGHT),
+            ExerciseEquipment.BY_NAME.values.toSet(),
+        )
+        assertEquals(Equipment.DUMBBELL, ExerciseEquipment.BY_NAME.getValue("Single-Arm DB Row"))
+        assertFalse(Schema9Migration.STATEMENTS.any { "FREESTYLE" in it || "BARBELL" in it })
+    }
+
+    @Test
+    fun `migrate8To9 keeps the session set and template on the default program`() {
+        val conn = openProgramFixture(schema8 = true)
+        conn.createStatement().use { statement ->
+            Schema9Migration.STATEMENTS.forEach(statement::execute)
+        }
+        assertProgramBackfill(conn)
+        conn.close()
+    }
+
+    @Test
+    fun `migrate7To9 keeps history after the session-kind migration`() {
+        val conn = openProgramFixture(schema8 = false)
+        conn.createStatement().use { statement ->
+            SessionKindMigration.STATEMENTS.forEach(statement::execute)
+            Schema9Migration.STATEMENTS.forEach(statement::execute)
+        }
+        assertProgramBackfill(conn)
+        conn.close()
+    }
+
+    private fun openProgramFixture(schema8: Boolean): Connection {
+        Class.forName("org.sqlite.JDBC")
+        val conn = DriverManager.getConnection("jdbc:sqlite::memory:")
+        conn.createStatement().use { statement ->
+            statement.execute("PRAGMA foreign_keys = OFF")
+            statement.execute(
+                """CREATE TABLE exercises (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    notes TEXT,
+                    tracksWeight INTEGER NOT NULL,
+                    muscleGroup TEXT NOT NULL,
+                    imageAssetName TEXT,
+                    isCustom INTEGER NOT NULL
+                )""",
+            )
+            statement.execute(
+                """CREATE TABLE workout_templates (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    dayLabel TEXT NOT NULL,
+                    maxDurationMinutes INTEGER NOT NULL,
+                    restDaysAfter INTEGER NOT NULL,
+                    orderIndex INTEGER NOT NULL,
+                    category TEXT NOT NULL
+                )""",
+            )
+            statement.execute(
+                "CREATE UNIQUE INDEX index_workout_templates_dayLabel ON workout_templates(dayLabel)",
+            )
+            statement.execute(
+                """CREATE TABLE template_blocks (
+                    id INTEGER PRIMARY KEY,
+                    templateId INTEGER NOT NULL,
+                    label TEXT NOT NULL,
+                    orderIndex INTEGER NOT NULL
+                )""",
+            )
+            statement.execute(
+                """CREATE TABLE template_block_exercises (
+                    id INTEGER PRIMARY KEY,
+                    blockId INTEGER NOT NULL,
+                    exerciseId INTEGER NOT NULL,
+                    orderIndex INTEGER NOT NULL,
+                    targetValueLow INTEGER NOT NULL,
+                    targetValueHigh INTEGER NOT NULL,
+                    repType TEXT NOT NULL,
+                    perSide INTEGER NOT NULL
+                )""",
+            )
+            val sessionKind = if (schema8) ", sessionKind TEXT NOT NULL DEFAULT 'WORKOUT'" else ""
+            statement.execute(
+                """CREATE TABLE workout_sessions (
+                    id INTEGER PRIMARY KEY,
+                    templateId INTEGER,
+                    date INTEGER NOT NULL,
+                    notes TEXT
+                    $sessionKind
+                )""",
+            )
+            statement.execute(
+                """CREATE TABLE personal_records (
+                    id INTEGER PRIMARY KEY,
+                    sourceSetLogId INTEGER
+                )""",
+            )
+            statement.execute(
+                """CREATE TABLE set_logs (
+                    id INTEGER PRIMARY KEY,
+                    sessionId INTEGER NOT NULL,
+                    exerciseId INTEGER NOT NULL,
+                    roundNumber INTEGER NOT NULL,
+                    reps INTEGER,
+                    durationSeconds INTEGER,
+                    weightKg REAL,
+                    loggedAt INTEGER NOT NULL,
+                    rpeTag TEXT,
+                    substitutedFrom INTEGER
+                )""",
+            )
+            statement.execute("INSERT INTO exercises (id, name, tracksWeight, muscleGroup, isCustom) VALUES (1, 'Jumping Jacks', 0, 'Full Body', 0)")
+            statement.execute("INSERT INTO exercises (id, name, tracksWeight, muscleGroup, isCustom) VALUES (2, 'Single-Arm DB Row', 1, 'Back', 0)")
+            statement.execute("INSERT INTO exercises (id, name, tracksWeight, muscleGroup, isCustom) VALUES (3, 'My Custom Move', 1, 'Arms', 1)")
+            statement.execute(
+                "INSERT INTO workout_templates (id, name, dayLabel, maxDurationMinutes, restDaysAfter, orderIndex, category) " +
+                    "VALUES (4, 'Workout A — Upper Body + Light Legs', 'A', 40, 1, 0, 'Custom')",
+            )
+            statement.execute("INSERT INTO template_blocks (id, templateId, label, orderIndex) VALUES (9, 4, 'Superset A', 1)")
+            statement.execute(
+                "INSERT INTO template_block_exercises (id, blockId, exerciseId, orderIndex, targetValueLow, targetValueHigh, repType, perSide) " +
+                    "VALUES (15, 9, 2, 0, 8, 12, 'REPS', 0)",
+            )
+            if (schema8) {
+                statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes, sessionKind) VALUES (1, NULL, 100, NULL, 'REST')")
+                statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes, sessionKind) VALUES (2, 4, 150, 'Rest day', 'WORKOUT')")
+                statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes, sessionKind) VALUES (3, 4, 200, NULL, 'WORKOUT')")
+            } else {
+                statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (1, NULL, 100, 'Rest day')")
+                statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (2, 4, 150, 'Rest day')")
+                statement.execute("INSERT INTO workout_sessions (id, templateId, date, notes) VALUES (3, 4, 200, NULL)")
+            }
+            statement.execute(
+                "INSERT INTO set_logs (id, sessionId, exerciseId, roundNumber, reps, weightKg, loggedAt, rpeTag) " +
+                    "VALUES (8, 3, 2, 1, 8, 12.5, 1000, '7.5')",
+            )
+            statement.execute(
+                "INSERT INTO set_logs (id, sessionId, exerciseId, roundNumber, reps, loggedAt, rpeTag) " +
+                    "VALUES (9, 3, 1, 1, 40, 1001, 'Right')",
+            )
+            statement.execute(
+                "INSERT INTO set_logs (id, sessionId, exerciseId, roundNumber, reps, loggedAt, rpeTag) " +
+                    "VALUES (10, 3, 3, 1, 5, 1002, 'Easy')",
+            )
+            statement.execute(
+                "INSERT INTO set_logs (id, sessionId, exerciseId, roundNumber, reps, weightKg, loggedAt, rpeTag) " +
+                    "VALUES (11, 3, 2, 2, 6, 20.0, 1003, '10')",
+            )
+            statement.execute(
+                "INSERT INTO set_logs (id, sessionId, exerciseId, roundNumber, reps, loggedAt, rpeTag) " +
+                    "VALUES (12, 3, 3, 2, 4, 1004, '7.5.1')",
+            )
+        }
+        return conn
+    }
+
+    private fun assertProgramBackfill(conn: Connection) {
+        val program = conn.createStatement().use { statement ->
+            val result = statement.executeQuery("SELECT id, name, active, scheduleMode FROM programs")
+            assertTrue(result.next())
+            val row = listOf(result.getInt(1), result.getString(2), result.getInt(3), result.getString(4))
+            assertFalse(result.next())
+            row
+        }
+        assertEquals(listOf(1, "Program", 1, "ROTATION"), program)
+
+        val template = conn.createStatement().use { statement ->
+            val result = statement.executeQuery(
+                "SELECT id, name, dayLabel, programId, weekday, restDaysAfter, orderIndex FROM workout_templates WHERE id = 4",
+            )
+            assertTrue(result.next())
+            val weekday = result.getInt(5).takeUnless { result.wasNull() }
+            listOf(result.getInt(1), result.getString(2), result.getString(3), result.getInt(4), weekday, result.getInt(6), result.getInt(7))
+        }
+        assertEquals(
+            listOf(4, "Workout A — Upper Body + Light Legs", "A", 1, null, 1, 0),
+            template,
+        )
+
+        val sessions = conn.createStatement().use { statement ->
+            val result = statement.executeQuery(
+                "SELECT id, templateId, sessionKind, notes FROM workout_sessions ORDER BY id",
+            )
+            buildMap {
+                while (result.next()) {
+                    val templateId = result.getInt(2).takeUnless { result.wasNull() }
+                    val notes = result.getString(4).takeUnless { result.wasNull() }
+                    put(result.getInt(1), Triple(templateId, result.getString(3), notes))
+                }
+            }
+        }
+        assertEquals(Triple(null, "REST", null), sessions.getValue(1))
+        assertEquals(Triple(4, "WORKOUT", "Rest day"), sessions.getValue(2))
+        assertEquals(Triple(4, "WORKOUT", null), sessions.getValue(3))
+        assertNull(sessions.values.find { it.second == "FREESTYLE" })
+
+        val sets = conn.createStatement().use { statement ->
+            val result = statement.executeQuery(
+                "SELECT id, reps, weightKg, rpeTag, setType, rpe FROM set_logs ORDER BY id",
+            )
+            buildMap {
+                while (result.next()) {
+                    val weight = result.getDouble(3).takeUnless { result.wasNull() }
+                    val rpe = result.getDouble(6).takeUnless { result.wasNull() }
+                    put(
+                        result.getInt(1),
+                        listOf(result.getInt(2), weight, result.getString(4), result.getString(5), rpe),
+                    )
+                }
+            }
+        }
+        assertEquals(listOf(8, 12.5, "7.5", "WORKING", 7.5), sets.getValue(8))
+        assertEquals(listOf(40, null, "Right", "WORKING", null), sets.getValue(9))
+        assertEquals(listOf(5, null, "Easy", "WORKING", null), sets.getValue(10))
+        assertEquals(listOf(6, 20.0, "10", "WORKING", 10.0), sets.getValue(11))
+        assertEquals(listOf(4, null, "7.5.1", "WORKING", null), sets.getValue(12))
+
+        val equipment = conn.createStatement().use { statement ->
+            val result = statement.executeQuery("SELECT name, equipment FROM exercises ORDER BY id")
+            buildMap {
+                while (result.next()) put(result.getString(1), result.getString(2))
+            }
+        }
+        assertEquals("BODYWEIGHT", equipment.getValue("Jumping Jacks"))
+        assertEquals("DUMBBELL", equipment.getValue("Single-Arm DB Row"))
+        assertEquals("OTHER", equipment.getValue("My Custom Move"))
+        assertFalse(equipment.containsValue("BARBELL"))
+
+        val block = conn.createStatement().use { statement ->
+            val result = statement.executeQuery(
+                "SELECT templateId, restSecondsAfter, progressionIncrementKg " +
+                    "FROM template_blocks b JOIN template_block_exercises e ON e.blockId = b.id WHERE b.id = 9",
+            )
+            assertTrue(result.next())
+            val rest = result.getInt(2).takeUnless { result.wasNull() }
+            val increment = result.getDouble(3).takeUnless { result.wasNull() }
+            listOf(result.getInt(1), rest, increment)
+        }
+        assertEquals(listOf(4, null, null), block)
+
+        val oldIndex = conn.createStatement().use { statement ->
+            val result = statement.executeQuery(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'index_workout_templates_dayLabel'",
+            )
+            result.next()
+            result.getInt(1)
+        }
+        assertEquals(0, oldIndex)
+
+        assertThrows(SQLException::class.java) {
+            conn.createStatement().execute(
+                "INSERT INTO workout_templates (name, dayLabel, maxDurationMinutes, restDaysAfter, orderIndex, category, programId, weekday) " +
+                    "VALUES ('Duplicate', 'A', 30, 1, 3, 'Custom', 1, NULL)",
+            )
+        }
+        conn.createStatement().execute(
+            "INSERT INTO programs (id, name, active, scheduleMode) VALUES (2, 'Other', 0, 'WEEKLY')",
+        )
+        conn.createStatement().execute(
+            "INSERT INTO workout_templates (name, dayLabel, maxDurationMinutes, restDaysAfter, orderIndex, category, programId, weekday) " +
+                "VALUES ('Other A', 'A', 30, 1, 4, 'Custom', 2, NULL)",
+        )
+        val sharedLabels = conn.createStatement().use { statement ->
+            val result = statement.executeQuery("SELECT COUNT(*) FROM workout_templates WHERE dayLabel = 'A'")
+            result.next()
+            result.getInt(1)
+        }
+        assertEquals(2, sharedLabels)
     }
 }

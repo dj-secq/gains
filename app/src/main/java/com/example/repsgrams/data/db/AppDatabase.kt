@@ -6,7 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-const val APP_SCHEMA_VERSION = 8
+const val APP_SCHEMA_VERSION = 9
 
 @Database(
     entities = [
@@ -14,6 +14,7 @@ const val APP_SCHEMA_VERSION = 8
         BodyMeasurementLogEntity::class,
         AchievementEntity::class,
         ExerciseEntity::class,
+        ProgramEntity::class,
         WorkoutTemplateEntity::class,
         TemplateBlockEntity::class,
         TemplateBlockExerciseEntity::class,
@@ -30,6 +31,7 @@ const val APP_SCHEMA_VERSION = 8
 @TypeConverters(DatabaseConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun exerciseDao(): ExerciseDao
+    abstract fun programDao(): ProgramDao
     abstract fun workoutTemplateDao(): WorkoutTemplateDao
     abstract fun templateBlockDao(): TemplateBlockDao
     abstract fun templateBlockExerciseDao(): TemplateBlockExerciseDao
@@ -45,6 +47,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun databaseMetadataDao(): DatabaseMetadataDao
 
     companion object {
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Schema9Migration.STATEMENTS.forEach(db::execSQL)
+            }
+        }
+
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 SessionKindMigration.STATEMENTS.forEach(db::execSQL)
