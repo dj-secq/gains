@@ -5,6 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.repsgrams.RepsGramsApplication
 import com.example.repsgrams.domain.reminder.ReminderPolicy
+import com.example.repsgrams.widget.refreshHomeWidget
 import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 
@@ -14,6 +15,7 @@ class WorkoutReminderWorker(context: Context, params: WorkerParameters) : Corout
         // The pre-open gate leaves this unset. Do not await it, and do not open Room.
         val ready = container.databaseInitialization ?: return runCatching {
             container.reminderScheduler.scheduleNextWorkoutReminder()
+            refreshHomeWidget(applicationContext)
             Result.success()
         }.getOrElse { Result.retry() }
         return runCatching {
@@ -34,6 +36,7 @@ class WorkoutReminderWorker(context: Context, params: WorkerParameters) : Corout
                 )
             }
             container.reminderScheduler.scheduleNextWorkoutReminder()
+            refreshHomeWidget(applicationContext)
             Result.success()
         }.getOrElse { Result.retry() }
     }
@@ -44,6 +47,7 @@ class SupplementReminderWorker(context: Context, params: WorkerParameters) : Cor
         val container = (applicationContext as RepsGramsApplication).container
         val ready = container.databaseInitialization ?: return runCatching {
             container.reminderScheduler.scheduleNextSupplementReminder()
+            refreshHomeWidget(applicationContext)
             Result.success()
         }.getOrElse { Result.retry() }
         return runCatching {
@@ -65,6 +69,7 @@ class SupplementReminderWorker(context: Context, params: WorkerParameters) : Cor
                 ReminderNotifications.showSupplements(applicationContext, dueUntaken.map { it.name })
             }
             container.reminderScheduler.scheduleNextSupplementReminder()
+            refreshHomeWidget(applicationContext)
             Result.success()
         }.getOrElse { Result.retry() }
     }

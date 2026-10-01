@@ -32,6 +32,7 @@ class WorkoutRepository(
     private val database: AppDatabase,
     private val clock: Clock,
     private val databaseReady: Deferred<Unit>,
+    private val onPlanChanged: suspend () -> Unit = {},
     private val onSessionFinished: suspend (WorkoutSessionEntity) -> Unit = {},
 ) {
     fun observeActiveSession(): Flow<WorkoutSessionEntity?> = database.workoutSessionDao().observeActive()
@@ -41,7 +42,7 @@ class WorkoutRepository(
 
     suspend fun startSession(dayLabel: String): Long {
         databaseReady.await()
-        return database.withTransaction {
+        val id = database.withTransaction {
             database.workoutSessionDao().getActive()?.id ?: run {
                 val template = requireNotNull(database.workoutTemplateDao().getByDayLabel(dayLabel)) {
                     "Workout $dayLabel is not available"
@@ -55,6 +56,8 @@ class WorkoutRepository(
                 )
             }
         }
+        onPlanChanged()
+        return id
     }
 
     suspend fun logRestDay(date: LocalDate = LocalDate.now(clock)) {
@@ -78,6 +81,7 @@ class WorkoutRepository(
                 )
             }
         }
+        onPlanChanged()
     }
 
     suspend fun getSession(sessionId: Long): WorkoutSessionEntity? =
@@ -210,6 +214,7 @@ class WorkoutRepository(
         val finished = session.copy(endTime = end, completed = true, durationSeconds = duration, notes = notes)
         database.workoutSessionDao().update(finished)
         onSessionFinished(finished)
+        onPlanChanged()
         return finished
     }
 
@@ -368,6 +373,7 @@ class WorkoutRepository(
             val session = database.workoutSessionDao().getById(sessionId) ?: return@withTransaction
             database.workoutSessionDao().delete(session)
         }
+        onPlanChanged()
     }
 
 }

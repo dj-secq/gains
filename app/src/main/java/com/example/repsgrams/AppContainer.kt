@@ -27,6 +27,7 @@ import com.example.repsgrams.data.repository.WorkoutRepository
 import com.example.repsgrams.reminder.ReminderScheduler
 import com.example.repsgrams.reminder.WorkManagerReminderScheduler
 import java.io.File
+import com.example.repsgrams.widget.refreshHomeWidget
 import java.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -34,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 interface AppContainer {
     val database: AppDatabase
@@ -150,7 +152,12 @@ class DefaultAppContainer(
             backupManager.attachDatabase(db)
             scheduleRepository = DefaultScheduleRepository(db, cycleSettingsRepository, clock)
             supplementRepository = DefaultSupplementRepository(db, clock)
-            workoutRepository = WorkoutRepository(db, clock, deferred) { session ->
+            workoutRepository = WorkoutRepository(
+                db,
+                clock,
+                deferred,
+                onPlanChanged = { runCatching { refreshHomeWidget(appContext) } },
+            ) { session ->
                 runCatching { publishFinishedWorkout(db, session) }
                     .onFailure { error ->
                         Log.e("HealthConnect", "${error.javaClass.simpleName}: ${error.message}")
@@ -159,6 +166,10 @@ class DefaultAppContainer(
             calendarRepository = CalendarRepository(db, cycleSettingsRepository, clock, deferred)
             progressRepository = DefaultProgressRepository(db)
             databaseInitialization = deferred
+            applicationScope.launch {
+                runCatching { deferred.await() }
+                runCatching { refreshHomeWidget(appContext) }
+            }
         }
     }
 
