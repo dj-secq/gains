@@ -12,12 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBackIosNew
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
-import androidx.compose.material.icons.outlined.FitnessCenter
-import com.example.repsgrams.ui.theme.AppColors
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.example.repsgrams.ui.components.BackChevron
+import com.example.repsgrams.ui.components.BoardDialog
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.TextAction
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -42,15 +43,10 @@ fun ExerciseDictionaryRoute(
         topBar = {
             TopAppBar(
                 title = { Text("Exercise Dictionary") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Back") }
-                }
+                navigationIcon = { BackChevron(onClick = onBack) },
+                actions = { TextAction("Add", onClick = { editingExercise = null; showDialog = true }) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { editingExercise = null; showDialog = true }) {
-                Text("+")
-            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
@@ -62,14 +58,14 @@ fun ExerciseDictionaryRoute(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(exercises) { ex ->
-                com.example.repsgrams.ui.components.IosCard(
+                BoardTile(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(0.85f)
-                        .clickable {
-                            editingExercise = ex
-                            showDialog = true
-                        }
+                        .aspectRatio(0.85f),
+                    onClick = {
+                        editingExercise = ex
+                        showDialog = true
+                    },
                 ) {
                     Column {
                         Box(
@@ -89,10 +85,10 @@ fun ExerciseDictionaryRoute(
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                     )
                                 } else {
-                                    Text(ex.name.take(1).uppercase(), style = MaterialTheme.typography.displayMedium, color = AppColors.workout)
+                                    Text(ex.name.take(1).uppercase(), style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.onSurface)
                                 }
                             } else {
-                                Text(ex.name.take(1).uppercase(), style = MaterialTheme.typography.displayMedium, color = AppColors.workout)
+                                Text(ex.name.take(1).uppercase(), style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                         Column(modifier = Modifier.padding(12.dp)) {
@@ -146,64 +142,54 @@ private fun ExerciseDialog(
     var muscleGroup by remember { mutableStateOf(exercise?.muscleGroup ?: "Back") }
     var expanded by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (exercise == null) "New Exercise" else "Edit Exercise") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    BoardDialog(
+        title = if (exercise == null) "New Exercise" else "Edit Exercise",
+        onDismiss = onDismiss,
+        confirmText = "Save",
+        confirmEnabled = name.isNotBlank() && muscleGroup.isNotBlank() && muscleGroup != "Uncategorized",
+        onConfirm = { onSave(name, tracksWeight, notes, muscleGroup) },
+        content = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Notes (optional)") },
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = tracksWeight, onCheckedChange = { tracksWeight = it })
+                Text("Tracks Weight")
+            }
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded },
+            ) {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true
+                    value = muscleGroup,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Muscle Group") },
+                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                 )
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes (optional)") }
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = tracksWeight, onCheckedChange = { tracksWeight = it })
-                    Text("Tracks Weight")
-                }
-                ExposedDropdownMenuBox(
+                ExposedDropdownMenu(
                     expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
+                    onDismissRequest = { expanded = false },
                 ) {
-                    OutlinedTextField(
-                        value = muscleGroup,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Muscle Group") },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        listOf("Back", "Chest", "Legs", "Arms", "Shoulders", "Core", "Full Body").forEach { group ->
-                            DropdownMenuItem(
-                                text = { Text(group) },
-                                onClick = { muscleGroup = group; expanded = false }
-                            )
-                        }
+                    listOf("Back", "Chest", "Legs", "Arms", "Shoulders", "Core", "Full Body").forEach { group ->
+                        DropdownMenuItem(
+                            text = { Text(group) },
+                            onClick = { muscleGroup = group; expanded = false },
+                        )
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(name, tracksWeight, notes, muscleGroup) }, enabled = name.isNotBlank() && muscleGroup.isNotBlank() && muscleGroup != "Uncategorized") {
-                Text("Save")
+            if (exercise != null) {
+                TextAction("Delete", onClick = onDelete, destructive = true)
             }
         },
-        dismissButton = {
-            Row {
-                if (exercise != null) {
-                    TextButton(onClick = onDelete) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        }
     )
 }

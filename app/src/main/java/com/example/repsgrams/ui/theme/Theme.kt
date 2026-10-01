@@ -1,7 +1,8 @@
 package com.example.repsgrams.ui.theme
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -9,15 +10,20 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import com.example.repsgrams.data.datastore.ThemeMode
 
 val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    extraSmall = RoundedCornerShape(24.dp),
+    small = RoundedCornerShape(24.dp),
+    medium = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
 object AppSpacing {
@@ -28,66 +34,99 @@ object AppSpacing {
     val xl = 32.dp
 }
 
-fun <T> iosSpring() = spring<T>(
-    dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessHigh
+private val LightColorScheme = lightColorScheme(
+    primary = Ink,
+    onPrimary = PaperLight,
+    primaryContainer = Ink,
+    onPrimaryContainer = PaperLight,
+    secondary = Ink,
+    onSecondary = PaperLight,
+    secondaryContainer = CanvasLight,
+    onSecondaryContainer = Ink,
+    background = CanvasLight,
+    onBackground = Ink,
+    surface = PaperLight,
+    onSurface = Ink,
+    surfaceVariant = PaperLight,
+    onSurfaceVariant = LabelLight,
+    surfaceContainer = PaperLight,
+    surfaceContainerHigh = PaperLight,
+    surfaceContainerHighest = PaperLight,
+    surfaceContainerLow = CanvasLight,
+    outline = HairlineLight,
+    outlineVariant = HairlineLight,
+    error = SignalRed,
+    onError = PaperLight,
+    inverseSurface = Ink,
+    inverseOnSurface = PaperLight,
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF0A84FF),
-    onPrimary = Color.White,
-    background = DarkBackground,
-    onBackground = DarkText,
-    surface = DarkSurface,
-    surfaceContainer = DarkSurface,
-    surfaceContainerHigh = DarkSurfaceVariant,
-    surfaceContainerHighest = DarkSurfaceElevated,
-    onSurface = DarkText,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkTextSecondary,
-    outlineVariant = DarkDivider
+    primary = PaperLight,
+    onPrimary = Ink,
+    primaryContainer = PaperLight,
+    onPrimaryContainer = Ink,
+    secondary = PaperLight,
+    onSecondary = Ink,
+    secondaryContainer = InkTile,
+    onSecondaryContainer = PaperLight,
+    background = CanvasDark,
+    onBackground = PaperLight,
+    surface = PaperDark,
+    onSurface = PaperLight,
+    surfaceVariant = InkTile,
+    onSurfaceVariant = LabelDark,
+    surfaceContainer = PaperDark,
+    surfaceContainerHigh = PaperDark,
+    surfaceContainerHighest = InkTile,
+    surfaceContainerLow = CanvasDark,
+    outline = HairlineDark,
+    outlineVariant = HairlineDark,
+    error = SignalRed,
+    onError = PaperLight,
+    inverseSurface = PaperLight,
+    inverseOnSurface = Ink,
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF007AFF),
-    onPrimary = Color.White,
-    background = LightBackground,
-    onBackground = LightText,
-    surface = LightSurface,
-    surfaceContainer = LightSurface,
-    surfaceContainerHigh = LightSurfaceElevated,
-    surfaceContainerHighest = LightSurfaceElevated,
-    onSurface = LightText,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightTextSecondary,
-    outlineVariant = LightDivider
-)
-
-val LocalDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { false }
+val LocalDarkTheme = staticCompositionLocalOf { false }
 
 @Composable
 fun RepsGramsTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val darkTheme = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        val window = view.context.findActivity()?.window
+        if (window != null) {
+            SideEffect {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
             shapes = AppShapes,
             typography = Typography,
-            content = content
+            content = content,
         )
     }
 }
 
-object AppColors {
-    val workout: Color @Composable get() = if (LocalDarkTheme.current) DarkWorkoutOrange else WorkoutOrange
-    val wheyGreen: Color @Composable get() = if (LocalDarkTheme.current) DarkWheyGreen else WheyGreen
-    val creatineTeal: Color @Composable get() = if (LocalDarkTheme.current) DarkCreatineTeal else CreatineTeal
-    val progressPurple: Color @Composable get() = if (LocalDarkTheme.current) DarkProgressPurple else ProgressPurple
-    val streakAmber: Color @Composable get() = if (LocalDarkTheme.current) DarkStreakAmber else StreakAmber
-    val successGreen: Color @Composable get() = if (LocalDarkTheme.current) DarkSuccessGreen else SuccessGreen
-    val warningRed: Color @Composable get() = if (LocalDarkTheme.current) DarkWarningRed else WarningRed
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
 }

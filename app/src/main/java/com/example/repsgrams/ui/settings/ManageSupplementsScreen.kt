@@ -3,9 +3,9 @@ package com.example.repsgrams.ui.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +20,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.db.SupplementEntity
 import com.example.repsgrams.data.db.SupplyInventoryEntity
 import com.example.repsgrams.data.repository.SupplementRepository
-import com.example.repsgrams.ui.components.IosCard
+import com.example.repsgrams.ui.components.BackChevron
+import com.example.repsgrams.ui.components.BoardDialog
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.MonoChip
+import com.example.repsgrams.ui.components.TextAction
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -72,11 +76,12 @@ fun ManageSupplementsRoute(viewModel: ManageSupplementsViewModel, onNavigateBack
         topBar = {
             TopAppBar(
                 title = { Text("Manage Supplements", fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onNavigateBack) { Icon(Icons.Filled.ArrowBack, "Back") } },
+                navigationIcon = { BackChevron(onClick = onNavigateBack) },
+                actions = { TextAction("Add", onClick = { creating = true }) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = { ExtendedFloatingActionButton(onClick = { creating = true }) { Text("Add supplement") } },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         LazyColumn(
@@ -86,7 +91,7 @@ fun ManageSupplementsRoute(viewModel: ManageSupplementsViewModel, onNavigateBack
         ) {
             items(supplements, key = { it.id }) { item ->
                 val stock = inventory.firstOrNull { it.supplementId == item.id }
-                IosCard {
+                BoardTile(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
@@ -99,7 +104,7 @@ fun ManageSupplementsRoute(viewModel: ManageSupplementsViewModel, onNavigateBack
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { editing = item }, modifier = Modifier.weight(1f)) { Text("Edit") }
                             OutlinedButton(onClick = { restocking = item }, modifier = Modifier.weight(1f)) { Text("Restock") }
-                            TextButton(onClick = { viewModel.delete(item) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                            TextAction("Delete", onClick = { viewModel.delete(item) })
                         }
                     }
                 }
@@ -117,12 +122,17 @@ fun ManageSupplementsRoute(viewModel: ManageSupplementsViewModel, onNavigateBack
     }
     restocking?.let { item ->
         var servings by remember(item.id) { mutableStateOf(item.containerSize.toString()) }
-        AlertDialog(
-            onDismissRequest = { restocking = null },
-            title = { Text("Restock ${item.name}") },
-            text = { OutlinedTextField(servings, { servings = it }, label = { Text("Total servings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true) },
-            confirmButton = { Button(onClick = { servings.toIntOrNull()?.takeIf { it > 0 }?.let { viewModel.restock(item.id, it) }; restocking = null }) { Text("Restock") } },
-            dismissButton = { TextButton(onClick = { restocking = null }) { Text("Cancel") } },
+        BoardDialog(
+            title = "Restock ${item.name}",
+            onDismiss = { restocking = null },
+            confirmText = "Restock",
+            onConfirm = {
+                servings.toIntOrNull()?.takeIf { it > 0 }?.let { viewModel.restock(item.id, it) }
+                restocking = null
+            },
+            content = {
+                OutlinedTextField(servings, { servings = it }, label = { Text("Total servings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+            },
         )
     }
 }
@@ -141,61 +151,53 @@ private fun SupplementEditorDialog(original: SupplementEntity?, onDismiss: () ->
     val dose = amount.toFloatOrNull()
     val size = container.toIntOrNull()
     val low = threshold.toIntOrNull()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (original == null) "New Supplement" else "Edit Supplement") },
-        text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                item { OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true) }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(amount, { amount = it }, label = { Text("Dose") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(unit, { unit = it }, label = { Text("Unit") }, modifier = Modifier.weight(1f), singleLine = true)
+    val canSave = name.isNotBlank() && unit.isNotBlank() && dose != null && dose > 0 && size != null && size > 0 && low != null && low >= 0
+    BoardDialog(
+        title = if (original == null) "New Supplement" else "Edit Supplement",
+        onDismiss = onDismiss,
+        confirmText = "Save",
+        confirmEnabled = canSave,
+        onConfirm = {
+            val base = original ?: SupplementEntity(name = "", doseAmount = 1f, unit = "serving", scheduleType = "daily", containerSize = 30, lowSupplyThreshold = 5, colorToken = "blue", iconName = "supplement")
+            onSave(base.copy(name = name.trim(), doseAmount = dose!!, unit = unit.trim(), scheduleType = schedule, customDays = customDays.takeIf { schedule == "customDays" && it.isNotBlank() }, containerSize = size!!, lowSupplyThreshold = low!!, colorToken = colorToken, iconName = iconName))
+        },
+        content = {
+            Column(
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(amount, { amount = it }, label = { Text("Dose") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(unit, { unit = it }, label = { Text("Unit") }, modifier = Modifier.weight(1f), singleLine = true)
+                }
+                Text("Color", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("orange", "teal", "green", "purple", "blue").forEach { value ->
+                        MonoChip(text = value.replaceFirstChar { it.uppercase() }, selected = colorToken == value, onClick = { colorToken = value })
                     }
                 }
-                item {
-                    Text("Color", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("orange", "teal", "green", "purple", "blue").forEach { value ->
-                            FilterChip(selected = colorToken == value, onClick = { colorToken = value }, label = { Text(value.replaceFirstChar { it.uppercase() }) })
-                        }
+                Text("Icon", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("supplement", "science", "water_drop", "bolt").forEach { value ->
+                        MonoChip(text = value.replace('_', ' ').replaceFirstChar { it.uppercase() }, selected = iconName == value, onClick = { iconName = value })
                     }
                 }
-                item {
-                    Text("Icon", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("supplement", "science", "water_drop", "bolt").forEach { value ->
-                            FilterChip(selected = iconName == value, onClick = { iconName = value }, label = { Text(value.replace('_', ' ').replaceFirstChar { it.uppercase() }) })
-                        }
+                Text("Schedule", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("daily", "workoutDayOnly", "customDays").forEach { value ->
+                        MonoChip(text = value.scheduleLabel(), selected = schedule == value, onClick = { schedule = value })
                     }
                 }
-                item {
-                    Text("Schedule", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("daily", "workoutDayOnly", "customDays").forEach { value ->
-                            FilterChip(selected = schedule == value, onClick = { schedule = value }, label = { Text(value.scheduleLabel()) })
-                        }
-                    }
+                if (schedule == "customDays") {
+                    OutlinedTextField(customDays, { customDays = it }, label = { Text("Days, e.g. MONDAY,WEDNESDAY") })
                 }
-                if (schedule == "customDays") item { OutlinedTextField(customDays, { customDays = it }, label = { Text("Days, e.g. MONDAY,WEDNESDAY") }) }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(container, { container = it }, label = { Text("Container servings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                        OutlinedTextField(threshold, { threshold = it }, label = { Text("Low at") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(container, { container = it }, label = { Text("Container servings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                    OutlinedTextField(threshold, { threshold = it }, label = { Text("Low at") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
                 }
             }
         },
-        confirmButton = {
-            Button(
-                enabled = name.isNotBlank() && unit.isNotBlank() && dose != null && dose > 0 && size != null && size > 0 && low != null && low >= 0,
-                onClick = {
-                    val base = original ?: SupplementEntity(name = "", doseAmount = 1f, unit = "serving", scheduleType = "daily", containerSize = 30, lowSupplyThreshold = 5, colorToken = "blue", iconName = "supplement")
-                    onSave(base.copy(name = name.trim(), doseAmount = dose!!, unit = unit.trim(), scheduleType = schedule, customDays = customDays.takeIf { schedule == "customDays" && it.isNotBlank() }, containerSize = size!!, lowSupplyThreshold = low!!, colorToken = colorToken, iconName = iconName))
-                },
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 

@@ -14,8 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -23,8 +24,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,8 +31,13 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
@@ -46,7 +50,6 @@ import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -60,8 +63,10 @@ import androidx.navigation.navArgument
 import com.example.repsgrams.AppContainer
 import com.example.repsgrams.ui.today.TodayRoute
 import com.example.repsgrams.ui.today.TodayViewModel
+import com.example.repsgrams.data.datastore.ThemeMode
 import com.example.repsgrams.ui.session.WorkoutSessionRoute
 import com.example.repsgrams.ui.session.WorkoutSessionViewModel
+import com.example.repsgrams.ui.theme.RepsGramsTheme
 
 import com.example.repsgrams.ui.calendar.CalendarRoute
 import com.example.repsgrams.ui.calendar.CalendarViewModel
@@ -91,13 +96,7 @@ fun RepsGramsApp(
         val text = backupNotice?.text ?: return@LaunchedEffect
         backupSnackbar.showSnackbar(text)
     }
-    val pagerState = rememberPagerState(pageCount = { TopLevelDestination.entries.size })
-    val tabSlideSpec = remember {
-        androidx.compose.animation.core.tween<Float>(
-            durationMillis = 180,
-            easing = androidx.compose.animation.core.FastOutSlowInEasing,
-        )
-    }
+    var selectedTab by rememberSaveable { mutableIntStateOf(TopLevelDestination.TODAY.ordinal) }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val isTopLevel = currentRoute == MAIN_ROUTE
@@ -141,7 +140,7 @@ fun RepsGramsApp(
             if (currentRoute != MAIN_ROUTE) {
                 navController.popBackStack(MAIN_ROUTE, inclusive = false)
             }
-            pagerState.scrollToPage(TopLevelDestination.TODAY.ordinal)
+            selectedTab = TopLevelDestination.TODAY.ordinal
         }
     }
 
@@ -163,41 +162,42 @@ fun RepsGramsApp(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                            .background(MaterialTheme.colorScheme.background)
+                            .windowInsetsPadding(WindowInsets.navigationBars),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TopLevelDestination.entries.forEachIndexed { index, destination ->
-                            val selected = pagerState.currentPage == index
-                            val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            val selected = selectedTab == index
+                            val contentColor = if (selected) {
+                                MaterialTheme.colorScheme.onBackground
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
+                                    .height(48.dp)
+                                    .semantics { this.selected = selected }
                                     .clickable(
-                                        enabled = !selected && !pagerState.isScrollInProgress,
+                                        enabled = !selected,
+                                        role = Role.Tab,
                                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(
-                                                page = index,
-                                                animationSpec = tabSlideSpec,
-                                            )
-                                        }
-                                    },
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                        indication = null,
+                                        onClick = { selectedTab = index },
+                                    ),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
                             ) {
                                 Icon(
                                     imageVector = if (selected) destination.iconFilled else destination.iconOutlined,
-                                    contentDescription = destination.label,
-                                    tint = contentColor
+                                    contentDescription = null,
+                                    tint = contentColor,
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = destination.label,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
-                                    color = contentColor
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = contentColor,
                                 )
                             }
                         }
@@ -206,9 +206,9 @@ fun RepsGramsApp(
             }
         },
     ) { innerPadding ->
-        val detailSlideSpec = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(
+        val detailSlideSpec = tween<androidx.compose.ui.unit.IntOffset>(
             durationMillis = 220,
-            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            easing = EaseOutCubic,
         )
 
         NavHost(
@@ -241,12 +241,12 @@ fun RepsGramsApp(
             }
         ) {
             composable(MAIN_ROUTE) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
-                    beyondViewportPageCount = TopLevelDestination.entries.lastIndex,
+                Crossfade(
+                    targetState = selectedTab,
+                    animationSpec = tween(durationMillis = 200, easing = EaseOutCubic),
+                    label = "tab",
                 ) { page ->
-                    Box(modifier = Modifier.fillMaxSize().graphicsLayer()) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         when (TopLevelDestination.entries[page]) {
                             TopLevelDestination.TODAY -> TodayRoute(
                                 viewModel = todayViewModel,
@@ -373,9 +373,11 @@ fun RepsGramsApp(
                         clock = container.clock,
                     ),
                 )
-                WorkoutSessionRoute(sessionViewModel) {
-                    scope.launch { pagerState.scrollToPage(TopLevelDestination.TODAY.ordinal) }
-                    navController.popBackStack(MAIN_ROUTE, inclusive = false)
+                RepsGramsTheme(themeMode = ThemeMode.DARK) {
+                    WorkoutSessionRoute(sessionViewModel) {
+                        selectedTab = TopLevelDestination.TODAY.ordinal
+                        navController.popBackStack(MAIN_ROUTE, inclusive = false)
+                    }
                 }
             }
         }
@@ -383,10 +385,3 @@ fun RepsGramsApp(
 }
 
 private data class BackupNotice(val token: Long, val text: String)
-
-@Composable
-private fun PlaceholderScreen(name: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text = "$name coming in a later phase", style = MaterialTheme.typography.titleMedium)
-    }
-}

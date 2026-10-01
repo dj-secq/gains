@@ -6,8 +6,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBackIosNew
-
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -15,13 +13,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.repsgrams.data.db.ExerciseEntity
-import com.example.repsgrams.ui.components.IosCard
-import com.example.repsgrams.ui.theme.AppColors
+import com.example.repsgrams.ui.components.BackChevron
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.MonoChip
+import com.example.repsgrams.ui.components.MonoLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,11 +44,8 @@ fun ExerciseLibraryScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Exercise Library") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Back")
-                    }
-                }
+                navigationIcon = { BackChevron(onClick = onBack) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -71,10 +67,10 @@ fun ExerciseLibraryScreen(
             ) {
                 items(allCategories) { cat ->
                     val isSelected = selectedCategory == cat || (selectedCategory == null && cat == "All")
-                    FilterChip(
+                    MonoChip(
+                        text = cat,
                         selected = isSelected,
                         onClick = { selectedCategory = if (cat == "All") null else cat },
-                        label = { Text(cat) }
                     )
                 }
             }
@@ -89,11 +85,11 @@ fun ExerciseLibraryScreen(
             } else {
                 LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(filtered) { ex ->
-                        IosCard {
+                        BoardTile(modifier = Modifier.fillMaxWidth()) {
                             Column {
                                 val resourceId = com.example.repsgrams.ui.components.exerciseImageResource(ex.imageAssetName)
                                 Box(
-                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(MaterialTheme.shapes.large).background(AppColors.workout.copy(alpha = 0.1f)),
+                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (resourceId != 0) {
@@ -104,24 +100,13 @@ fun ExerciseLibraryScreen(
                                             contentScale = ContentScale.Crop,
                                         )
                                     } else {
-                                        Icon(Icons.Outlined.FitnessCenter, contentDescription = null, tint = AppColors.workout, modifier = Modifier.size(48.dp))
+                                        Icon(Icons.Outlined.FitnessCenter, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(48.dp))
                                     }
                                 }
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(ex.name, style = MaterialTheme.typography.titleMedium)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    // Muscle group badge
-                                    Surface(
-                                        color = AppColors.wheyGreen.copy(alpha = 0.2f),
-                                        shape = CircleShape,
-                                    ) {
-                                        Text(
-                                            ex.muscleGroup,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = AppColors.wheyGreen,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                        )
-                                    }
+                                    MonoLabel(ex.muscleGroup)
                                 }
                             }
                         }

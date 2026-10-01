@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -23,7 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.repsgrams.data.DatabaseGateDecision
-import com.example.repsgrams.ui.components.IosButton
+import com.example.repsgrams.ui.components.InkPill
+import com.example.repsgrams.ui.components.OutlinePill
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -96,37 +98,39 @@ fun DatabaseGateScreen(
         }
         Spacer(modifier = Modifier.height(24.dp))
         if (gate == DatabaseGateDecision.EXPORT_THEN_CONTINUE && !unreadable) {
-            IosButton(
+            InkPill(
                 text = "Export backup",
                 onClick = {
-                    if (blocked) return@IosButton
+                    if (blocked) return@InkPill
                     picking = true
                     launchers.export.launch("gains-backup-${LocalDate.now()}.zip")
                 },
                 enabled = !blocked,
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(12.dp))
-            IosButton(
+            OutlinePill(
                 text = "Continue",
                 onClick = {
-                    if (blocked) return@IosButton
+                    if (blocked) return@OutlinePill
                     busy = true
                     onContinue()
                 },
                 enabled = !blocked,
-                isSecondary = true,
+                modifier = Modifier.fillMaxWidth(),
             )
         } else if (gate == DatabaseGateDecision.IMPORT_ONLY || unreadable) {
-            IosButton(
+            InkPill(
                 text = "Import backup",
                 onClick = {
-                    if (blocked) return@IosButton
+                    if (blocked) return@InkPill
                     picking = true
                     launchers.import.launch(
                         arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"),
                     )
                 },
                 enabled = !blocked,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

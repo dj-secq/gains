@@ -36,11 +36,16 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.repsgrams.reminder.ReminderNotifications
-import com.example.repsgrams.ui.components.IosCard
-import com.example.repsgrams.ui.components.IosButton
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.InkPill
+import com.example.repsgrams.ui.components.MonoLabel
+import com.example.repsgrams.ui.components.OutlinePill
+import com.example.repsgrams.ui.components.TextAction
+import com.example.repsgrams.ui.components.TileTone
 import com.example.repsgrams.ui.components.shimmer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.repsgrams.ui.theme.iosSpring
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,20 +59,8 @@ fun TodayRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.openSession.collect(onOpenSession) }
 
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text("Today", fontWeight = FontWeight.Bold) },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
+        contentWindowInsets = WindowInsets.statusBars,
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         TodayScreen(
@@ -108,7 +101,7 @@ fun TodayScreen(
             modifier = modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-        ) { Text(state.message, color = MaterialTheme.colorScheme.error) }
+        ) { Text(state.message, color = MaterialTheme.colorScheme.onSurface) }
 
         is TodayUiState.Content -> TodayContent(
             state, onToggleSupplement, onStartWorkout, onLogRestDay, onResumeWorkout,
@@ -148,27 +141,17 @@ private fun TodayContent(
     ) {
         if (state.lowSupplyWarnings.isNotEmpty()) {
             item {
-                IosCard {
+                BoardTile(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         state.lowSupplyWarnings.forEach { warning ->
-                            Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                            Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             }
         }
         item {
-            IosCard {
-                Box(
-                    modifier = Modifier.background(
-                        androidx.compose.ui.graphics.Brush.linearGradient(
-                            colors = listOf(
-                                com.example.repsgrams.ui.theme.AppColors.workout.copy(alpha = 0.1f),
-                                androidx.compose.ui.graphics.Color.Transparent
-                            )
-                        )
-                    )
-                ) {
+            BoardTile(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
                             when (state.suggestion.status) {
@@ -190,7 +173,7 @@ private fun TodayContent(
                         )
                         state.suggestion.suggestedTemplate?.let {
                             Spacer(Modifier.height(8.dp))
-                            com.example.repsgrams.ui.components.CategoryChip(it.category)
+                            MonoLabel(it.category)
                         }
                         val scheduleMessage = when (state.suggestion.status) {
                             com.example.repsgrams.domain.schedule.SuggestionStatus.REST_DAY ->
@@ -205,14 +188,16 @@ private fun TodayContent(
                         }
                         Spacer(Modifier.height(16.dp))
                         if (state.activeSessionId != null) {
-                            IosButton(
+                            InkPill(
                                 text = "Resume Workout",
-                                onClick = { onResumeWorkout(state.activeSessionId) }
+                                onClick = { onResumeWorkout(state.activeSessionId) },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else if ((state.suggestion.status != com.example.repsgrams.domain.schedule.SuggestionStatus.REST_DAY)) {
-                            IosButton(
+                            InkPill(
                                 text = "Start Workout ${state.suggestion.suggestedTemplate?.dayLabel}",
-                                onClick = { onStartWorkout(requireNotNull(state.suggestion.suggestedTemplate?.dayLabel)) }
+                                onClick = { onStartWorkout(requireNotNull(state.suggestion.suggestedTemplate?.dayLabel)) },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else {
                             Text(
@@ -222,44 +207,29 @@ private fun TodayContent(
                             )
                         }
                         if (state.activeSessionId == null) {
-                            TextButton(
+                            TextAction(
+                                text = "Do something else",
                                 onClick = { showAlternatives = true },
                                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            ) { Text("Do something else", style = MaterialTheme.typography.bodyMedium) }
+                            )
                         }
                     }
-                }
             }
         }
         item(key = ReminderNotifications.TARGET_SUPPLEMENTS) { SupplementCard(state, onToggleSupplement) }
         item {
-            IosCard {
+            BoardTile(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                            .background(
-                                androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    colors = listOf(
-                                        com.example.repsgrams.ui.theme.AppColors.streakAmber,
-                                        com.example.repsgrams.ui.theme.AppColors.streakAmber.copy(alpha = 0.7f)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        androidx.compose.material3.Icon(
-                            if (state.currentStreak > 0) androidx.compose.material.icons.Icons.Rounded.LocalFireDepartment else androidx.compose.material.icons.Icons.Outlined.LocalFireDepartment,
-                            contentDescription = null,
-                            tint = androidx.compose.ui.graphics.Color.White,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
+                    androidx.compose.material3.Icon(
+                        if (state.currentStreak > 0) androidx.compose.material.icons.Icons.Rounded.LocalFireDepartment else androidx.compose.material.icons.Icons.Outlined.LocalFireDepartment,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(32.dp)
+                    )
                     Column {
                         Text("Current streak", style = MaterialTheme.typography.bodyLarge)
                         Spacer(Modifier.height(4.dp))
@@ -273,7 +243,7 @@ private fun TodayContent(
     if (showAlternatives) {
         ModalBottomSheet(
             onDismissRequest = { showAlternatives = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.surface,
             scrimColor = Color.Black.copy(alpha = 0.42f),
             shape = MaterialTheme.shapes.extraLarge,
         ) {
@@ -283,16 +253,28 @@ private fun TodayContent(
             ) {
                 Text("Choose today’s activity", style = MaterialTheme.typography.titleLarge)
                 state.templates.forEach { template ->
-                    IosButton(
-                        text = template.name,
-                        onClick = {
-                            showAlternatives = false
-                            onStartWorkout(template.dayLabel)
-                        },
-                        isSecondary = template.id != state.suggestion.suggestedTemplate?.id,
-                    )
+                    val suggested = template.id == state.suggestion.suggestedTemplate?.id
+                    if (suggested) {
+                        InkPill(
+                            text = template.name,
+                            onClick = {
+                                showAlternatives = false
+                                onStartWorkout(template.dayLabel)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        OutlinePill(
+                            text = template.name,
+                            onClick = {
+                                showAlternatives = false
+                                onStartWorkout(template.dayLabel)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                IosButton(
+                OutlinePill(
                     text = if (state.suggestion.status == com.example.repsgrams.domain.schedule.SuggestionStatus.REST_DAY) {
                         "Log rest"
                     } else {
@@ -302,7 +284,7 @@ private fun TodayContent(
                         showAlternatives = false
                         onLogRestDay()
                     },
-                    isSecondary = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(24.dp))
             }
@@ -317,7 +299,7 @@ private fun SupplementCard(
 ) {
     val focusManager = LocalFocusManager.current
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    com.example.repsgrams.ui.components.IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Supplements today", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -349,6 +331,11 @@ private fun SupplementCard(
                     if (fieldFocused && imeWasOpen && !imeOpen) commitDose()
                     imeWasOpen = imeOpen
                 }
+                BoardTile(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    tone = if (taken) TileTone.Ink else TileTone.Paper,
+                    onClick = { onToggleSupplement(supp, !taken, parseAmount(amountText)) },
+                ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -356,20 +343,6 @@ private fun SupplementCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    com.example.repsgrams.ui.components.IconBadge(
-                        icon = when (supp.iconName.lowercase()) {
-                            "water_drop" -> androidx.compose.material.icons.Icons.Outlined.WaterDrop
-                            "bolt" -> androidx.compose.material.icons.Icons.Outlined.FlashlightOn
-                            else -> androidx.compose.material.icons.Icons.Outlined.Science
-                        },
-                        tint = when (supp.colorToken.lowercase()) {
-                            "orange" -> com.example.repsgrams.ui.theme.AppColors.workout
-                            "teal", "creatineteal" -> com.example.repsgrams.ui.theme.AppColors.creatineTeal
-                            "green", "wheygreen" -> com.example.repsgrams.ui.theme.AppColors.wheyGreen
-                            "purple" -> com.example.repsgrams.ui.theme.AppColors.progressPurple
-                            else -> MaterialTheme.colorScheme.primary
-                        }
-                    )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(supp.name, style = MaterialTheme.typography.bodyLarge)
                         Text("Planned ${supp.doseAmount} ${supp.unit}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -388,10 +361,7 @@ private fun SupplementCard(
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         singleLine = true,
                     )
-                    Switch(
-                        checked = taken,
-                        onCheckedChange = { checked -> onToggleSupplement(supp, checked, parseAmount(amountText)) }
-                    )
+                }
                 }
                 if (index < state.supplements.lastIndex) {
                     androidx.compose.material3.HorizontalDivider(

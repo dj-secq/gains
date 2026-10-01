@@ -18,8 +18,9 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.FlashlightOn
-import com.example.repsgrams.ui.theme.AppColors
-import com.example.repsgrams.ui.components.IconBadge
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.MonoLabel
+import com.example.repsgrams.ui.components.TextAction
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.WaterDrop
@@ -42,9 +43,6 @@ import com.example.repsgrams.domain.calendar.CalendarDayStatus
 import com.example.repsgrams.domain.schedule.SuggestionStatus
 import com.example.repsgrams.data.repository.CalendarMonth
 import com.example.repsgrams.data.repository.CalendarSessionDetail
-import com.example.repsgrams.ui.components.IosAlertDialog
-import com.example.repsgrams.ui.components.IosButton
-import com.example.repsgrams.ui.components.IosCard
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -88,25 +86,8 @@ fun CalendarScreen(
 
     locale: Locale,
 ) {
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text("Calendar", fontWeight = FontWeight.Bold) },
-                actions = {
-                    TextButton(onClick = onToday) {
-                        Text("Today", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
+        contentWindowInsets = WindowInsets.statusBars,
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -129,18 +110,21 @@ fun CalendarScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            IconButton(onClick = onPreviousMonth) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous", tint = MaterialTheme.colorScheme.primary) }
-                            Text(
-                                month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                textAlign = TextAlign.Center,
-                            )
-                            IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.primary) }
+                            IconButton(onClick = onPreviousMonth) { Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                Text(
+                                    month.month.month.getDisplayName(TextStyle.FULL, locale) + " ${month.month.year}",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                    textAlign = TextAlign.Center,
+                                )
+                                TextAction("Today", onClick = onToday)
+                            }
+                            IconButton(onClick = onNextMonth) { Icon(Icons.Outlined.ArrowForwardIos, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     }
 
                     item {
-                        IosCard {
+                        BoardTile(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(8.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                                     listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach {
@@ -170,15 +154,15 @@ fun CalendarScreen(
                             horizontalArrangement = Arrangement.SpaceAround,
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                IconBadge(icon = Icons.Outlined.CheckCircle, tint = AppColors.successGreen)
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(14.dp))
                                 Text("Complete", style = MaterialTheme.typography.bodySmall)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                IconBadge(icon = Icons.Outlined.ErrorOutline, tint = AppColors.warningRed)
+                                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                                 Text("Missed", style = MaterialTheme.typography.bodySmall)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                IconBadge(icon = Icons.Outlined.Circle, tint = MaterialTheme.colorScheme.outlineVariant)
+                                Icon(Icons.Outlined.Circle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                                 Text("Pending", style = MaterialTheme.typography.bodySmall)
                             }
                         }
@@ -188,14 +172,25 @@ fun CalendarScreen(
 
 
 
-            selectedDay?.let { detail ->
+            if (selectedDay != null || loadingDay) {
                 ModalBottomSheet(
                     onDismissRequest = onDismissDay,
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = MaterialTheme.colorScheme.surface,
                     scrimColor = Color.Black.copy(alpha = 0.42f),
                     shape = MaterialTheme.shapes.extraLarge,
                 ) {
-                    DayDetail(detail, today)
+                    if (loadingDay) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Box(Modifier.fillMaxWidth().height(28.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                            Box(Modifier.fillMaxWidth().height(120.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                            Box(Modifier.fillMaxWidth().height(96.dp).clip(MaterialTheme.shapes.medium).shimmer())
+                        }
+                    } else {
+                        selectedDay?.let { DayDetail(it, today) }
+                    }
                 }
             }
         }
@@ -211,11 +206,8 @@ private fun DayCell(
 ) {
     val colors = MaterialTheme.colorScheme
     val background = when (day.status) {
-        CalendarDayStatus.COMPLETE -> AppColors.successGreen.copy(alpha = 0.15f)
-        CalendarDayStatus.MISSED -> AppColors.warningRed.copy(alpha = 0.15f)
-        CalendarDayStatus.PENDING -> colors.secondaryContainer
-        CalendarDayStatus.UPCOMING -> colors.surface
-        CalendarDayStatus.EMPTY -> colors.surface
+        CalendarDayStatus.COMPLETE -> colors.onSurface.copy(alpha = 0.08f)
+        else -> colors.surface
     }
     Surface(
         modifier = modifier.aspectRatio(0.9f).padding(2.dp)
@@ -223,7 +215,11 @@ private fun DayCell(
             .clickable { onSelectDate(day.date) },
         shape = MaterialTheme.shapes.small,
         color = background,
-        border = if (isToday) BorderStroke(1.5.dp, colors.primary) else null,
+        border = when {
+            isToday -> BorderStroke(1.5.dp, colors.onSurface)
+            day.status == CalendarDayStatus.MISSED -> BorderStroke(1.dp, colors.outline)
+            else -> null
+        },
     ) {
         Column(
             modifier = Modifier.padding(4.dp),
@@ -236,7 +232,7 @@ private fun DayCell(
                     day.template.dayLabel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = com.example.repsgrams.ui.theme.CategoryColors.getColor(day.template.category),
+                    color = colors.onSurface,
                 )
             } else if (day.status == CalendarDayStatus.COMPLETE) {
                 Icon(
@@ -262,8 +258,7 @@ private fun DayCell(
                     },
                     contentDescription = null,
                     tint = when (day.status) {
-                        CalendarDayStatus.COMPLETE -> AppColors.successGreen
-                        CalendarDayStatus.MISSED -> AppColors.warningRed
+                        CalendarDayStatus.COMPLETE -> colors.onSurface
                         else -> colors.onSurfaceVariant
                     },
                     modifier = Modifier.size(14.dp)
@@ -296,21 +291,21 @@ private fun DayDetail(
     ) {
         Text(detail.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
 
-        IosCard {
+        BoardTile(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(plannedTitle(detail, today), style = MaterialTheme.typography.titleMedium)
-                detail.template?.let { com.example.repsgrams.ui.components.CategoryChip(it.category) }
+                detail.template?.let { MonoLabel(it.category) }
                 if (detail.date.isAfter(today) && detail.projected) {
                     Text("No entries yet. This is the current plan for this date.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else if (detail.status == CalendarDayStatus.MISSED) {
-                    Text("Workout not done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    Text("Workout not done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 detail.sessions.forEach { SessionDetail(it, detail.unitSystem) }
             }
         }
 
         Text("Supplements", style = MaterialTheme.typography.titleMedium)
-        IosCard {
+        BoardTile(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
                 detail.supplements.forEachIndexed { index, pair ->
                     val (supp, log) = pair
@@ -318,7 +313,7 @@ private fun DayDetail(
                     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         // Normally we'd look up icon and color from token here.
                         // For simplicity since the app relies on semantic tokens, we just map it.
-                        IconBadge(icon = Icons.Outlined.Science, tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Outlined.Science, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
                         Text("${supp.name}: ${if (taken) "Logged · ${log?.actualAmount} ${supp.unit}" else "Not logged"}", style = MaterialTheme.typography.bodyMedium)
                     }
                     if (index < detail.supplements.lastIndex) {

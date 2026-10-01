@@ -4,7 +4,9 @@ import android.os.Bundle
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import android.graphics.Color as AndroidColor
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.repsgrams.ui.navigation.RepsGramsApp
 import com.example.repsgrams.ui.theme.RepsGramsTheme
@@ -44,7 +46,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+        )
         notificationTarget = intent.getStringExtra(ReminderNotifications.EXTRA_TARGET)
         openSessionId = sessionIdExtra(intent)
         val container = (application as RepsGramsApplication).container
@@ -69,7 +74,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalGainsLaunchers provides launchers) {
             Box(modifier = Modifier.fillMaxSize()) {
                 if (!pastGate) {
-                    RepsGramsTheme {
+                    RepsGramsTheme(themeMode = com.example.repsgrams.data.datastore.ThemeMode.SYSTEM) {
                         DatabaseGateScreen(
                             gate = container.databaseGate,
                             unreadable = container.databaseUnreadable,
@@ -89,12 +94,9 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     val settings by container.cycleSettingsRepository.settings.collectAsState(initial = null)
-                    val darkTheme = when (settings?.themeMode) {
-                        com.example.repsgrams.data.datastore.ThemeMode.LIGHT -> false
-                        com.example.repsgrams.data.datastore.ThemeMode.DARK -> true
-                        else -> androidx.compose.foundation.isSystemInDarkTheme()
-                    }
-                    RepsGramsTheme(darkTheme = darkTheme) {
+                    RepsGramsTheme(
+                        themeMode = settings?.themeMode ?: com.example.repsgrams.data.datastore.ThemeMode.SYSTEM,
+                    ) {
                         RepsGramsApp(
                             container = container,
                             notificationTarget = notificationTarget,

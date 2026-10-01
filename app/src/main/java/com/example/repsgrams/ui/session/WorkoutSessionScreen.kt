@@ -10,14 +10,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBackIosNew
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Remove
-import androidx.compose.material.icons.outlined.Science
-import androidx.compose.material.icons.outlined.FlashlightOn
-import com.example.repsgrams.ui.theme.AppColors
-import com.example.repsgrams.ui.components.IconBadge
-import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.repsgrams.ui.components.BackChevron
+import com.example.repsgrams.ui.components.BoardDialog
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.InkPill
+import com.example.repsgrams.ui.components.MonoLabel
+import com.example.repsgrams.ui.components.OutlinePill
+import com.example.repsgrams.ui.components.TextAction
+import com.example.repsgrams.ui.theme.DisplayNumeral
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
@@ -39,9 +42,6 @@ import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.domain.progression.ProgressionSuggestion
 import com.example.repsgrams.data.db.RepType
 import com.example.repsgrams.data.datastore.UnitSystem
-import com.example.repsgrams.ui.components.IosAlertDialog
-import com.example.repsgrams.ui.components.IosButton
-import com.example.repsgrams.ui.components.IosCard
 import com.example.repsgrams.ui.components.shimmer
 
 import androidx.activity.compose.BackHandler
@@ -65,11 +65,12 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
     }
 
     if (showCancelDialog) {
-        IosAlertDialog(
+        BoardDialog(
             title = "Discard this workout?",
             message = "Nothing from this session will be saved.",
             confirmText = "Discard",
             dismissText = "Cancel",
+            destructive = true,
             onConfirm = {
                 showCancelDialog = false
                 scope.launch {
@@ -77,7 +78,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
                     onFinished()
                 }
             },
-            onDismiss = { showCancelDialog = false }
+            onDismiss = { showCancelDialog = false },
         )
     }
     LaunchedEffect(viewModel) { viewModel.summaryDone.collect { onFinished() } }
@@ -170,16 +171,12 @@ fun WorkoutSessionScreen(
                 },
                 navigationIcon = {
                     if (state !is WorkoutSessionUiState.Summary) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
-                        }
+                        BackChevron(onClick = onBack)
                     }
                 },
                 actions = {
                     if (state is WorkoutSessionUiState.Active) {
-                        IconButton(onClick = onPrevious) {
-                            Icon(Icons.Outlined.ArrowBackIosNew, contentDescription = "Previous step", tint = MaterialTheme.colorScheme.primary)
-                        }
+                        BackChevron(onClick = onPrevious, contentDescription = "Previous step")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -250,7 +247,7 @@ private fun ActiveSession(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        com.example.repsgrams.ui.components.CategoryChip(state.category)
+        MonoLabel(state.category)
         val rest = state.restRemainingSeconds
         if (rest != null) {
             RestCard(
@@ -276,7 +273,7 @@ private fun ActiveSession(
 
 
         if (state.upNextExercises.isNotEmpty()) {
-            IosCard {
+            BoardTile(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                     Text("Up Next", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(4.dp))
@@ -302,10 +299,10 @@ private fun ActiveSession(
 
         if (rest == null) {
             if (state.isOptionalBlock) {
-                IosButton(text = "Skip optional core", onClick = onSkipBlock, isSecondary = true)
+                TextAction(text = "Skip optional core", onClick = onSkipBlock, modifier = Modifier.fillMaxWidth())
             }
             TextButton(onClick = { showFinishDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("End workout early", color = MaterialTheme.colorScheme.error)
+                Text("End workout early", color = MaterialTheme.colorScheme.onSurface)
             }
         }
         TextButton(onClick = onCancelWorkout, modifier = Modifier.fillMaxWidth()) {
@@ -314,13 +311,13 @@ private fun ActiveSession(
     }
 
     if (showFinishDialog) {
-        IosAlertDialog(
+        BoardDialog(
             title = "End workout?",
             message = "Your logged sets will be saved and this session will be marked complete.",
             confirmText = "End workout",
             onConfirm = { showFinishDialog = false; onFinish() },
             dismissText = "Keep going",
-            onDismiss = { showFinishDialog = false }
+            onDismiss = { showFinishDialog = false },
         )
     }
 }
@@ -338,8 +335,12 @@ private fun ExerciseCard(
 ) {
     val exercise = state.exercise
     val haptic = LocalHapticFeedback.current
+    val stepColors = IconButtonDefaults.filledTonalIconButtonColors(
+        containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    )
     var showExerciseImage by remember(exercise.id) { mutableStateOf(false) }
-    IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("${state.blockLabel} · Set ${state.roundNumber} of ${state.roundCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(
@@ -378,25 +379,25 @@ private fun ExerciseCard(
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
                         Text(
                             text = "${state.holdElapsedSeconds}s",
-                            style = MaterialTheme.typography.displayLarge,
-                            color = AppColors.workout
+                            style = DisplayNumeral,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         LinearProgressIndicator(
                             progress = {
                                 if (exercise.targetValueHigh > 0) (state.holdElapsedSeconds.toFloat() / exercise.targetValueHigh).coerceIn(0f, 1f) else 0f
                             },
                             modifier = Modifier.fillMaxWidth().height(8.dp),
-                            color = AppColors.workout
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        IosButton(text = "Stop", onClick = onStopHold, isSecondary = true, modifier = Modifier.fillMaxWidth())
+                        OutlinePill(text = "Stop", onClick = onStopHold, modifier = Modifier.fillMaxWidth())
                     }
                 } else {
-                    IosButton(text = "Start Hold", onClick = onStartHold, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                    InkPill(text = "Start Hold", onClick = onStartHold, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
 
                     // Allow manual entry fallback
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                        FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = CircleShape, colors = stepColors) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                         OutlinedTextField(
                             value = state.valueInput,
                             onValueChange = onValueChanged,
@@ -405,12 +406,12 @@ private fun ExerciseCard(
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
-                        FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                        FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = CircleShape, colors = stepColors) { Icon(Icons.Outlined.Add, contentDescription = "+") }
                     }
                 }
             } else {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(-1) }, modifier = Modifier.size(48.dp), shape = CircleShape, colors = stepColors) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                     OutlinedTextField(
                         value = state.valueInput,
                         onValueChange = onValueChanged,
@@ -419,13 +420,13 @@ private fun ExerciseCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
-                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustValue(1) }, modifier = Modifier.size(48.dp), shape = CircleShape, colors = stepColors) { Icon(Icons.Outlined.Add, contentDescription = "+") }
                 }
             }
             if (exercise.tracksWeight) {
                 val step = if (state.unitSystem == UnitSystem.KG) 1f else 2.5f
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustWeight(-step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustWeight(-step) }, modifier = Modifier.size(48.dp), shape = CircleShape, colors = stepColors) { Icon(Icons.Outlined.Remove, contentDescription = "-") }
                     OutlinedTextField(
                         value = state.weightInput,
                         onValueChange = onWeightChanged,
@@ -434,17 +435,18 @@ private fun ExerciseCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
-                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustWeight(step) }, modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AppColors.workout.copy(alpha=0.1f), contentColor = AppColors.workout)) { Icon(Icons.Outlined.Add, contentDescription = "+") }
+                    FilledTonalIconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onAdjustWeight(step) }, modifier = Modifier.size(48.dp), shape = CircleShape, colors = stepColors) { Icon(Icons.Outlined.Add, contentDescription = "+") }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
-            IosButton(
+            InkPill(
                 text = if (state.blockKind == BlockKind.WARM_UP) "Done" else "Log set",
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLog()
                 },
-                enabled = state.valueInput.isNotBlank() && !state.isSaving
+                enabled = state.valueInput.isNotBlank() && !state.isSaving,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -454,8 +456,8 @@ private fun ExerciseCard(
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { showExerciseImage = false },
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = 20.dp,
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 0.dp,
             ) {
                 Column {
                     ExerciseMedia(
@@ -500,7 +502,7 @@ private fun ExerciseMedia(
             Text(
                 exerciseName.take(1).uppercase(),
                 style = MaterialTheme.typography.headlineLarge,
-                color = AppColors.workout,
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -518,7 +520,7 @@ private fun RestCard(
 ) {
     val expired = remaining == 0 || (overtime != null && overtime > 0)
     val label = if (overtime != null && overtime > 0) "+${formatTime(overtime)}" else formatTime(remaining)
-    IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -527,14 +529,14 @@ private fun RestCard(
             Text("Rest", style = MaterialTheme.typography.titleLarge)
             Text(
                 label,
-                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 48.sp),
+                style = DisplayNumeral,
                 color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             )
             Text("Next: $nextExercise · set $round of $roundCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                IosButton(text = "−15", onClick = { onAddRest(-15) }, isSecondary = true, modifier = Modifier.weight(1f))
-                IosButton(text = "+15", onClick = { onAddRest(15) }, isSecondary = true, modifier = Modifier.weight(1f))
-                IosButton(text = "Skip", onClick = onSkipRest, modifier = Modifier.weight(1f))
+                OutlinePill(text = "−15", onClick = { onAddRest(-15) }, modifier = Modifier.weight(1f))
+                OutlinePill(text = "+15", onClick = { onAddRest(15) }, modifier = Modifier.weight(1f))
+                TextAction(text = "Skip", onClick = onSkipRest, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -553,7 +555,7 @@ private fun SummaryScreen(
     ) {
         Text("Workout complete", style = MaterialTheme.typography.headlineLarge)
 
-        IosCard {
+        BoardTile(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(20.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
@@ -564,7 +566,7 @@ private fun SummaryScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        IosButton(text = "Save and return to Today", onClick = onDone)
+        InkPill(text = "Save and return to Today", onClick = onDone, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -573,29 +575,6 @@ private fun SummaryMetric(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun CheckRow(label: String, icon: ImageVector, iconTint: Color, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(role = Role.Switch) { onChecked(!checked) }.padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        IconBadge(icon = icon, tint = iconTint)
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = iconTint,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                uncheckedBorderColor = Color.Transparent
-            )
-        )
     }
 }
 

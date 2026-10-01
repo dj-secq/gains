@@ -30,8 +30,10 @@ import androidx.compose.material.icons.outlined.ImportExport
 import androidx.compose.material.icons.outlined.MonitorWeight
 import androidx.compose.material.icons.outlined.HealthAndSafety
 
-import com.example.repsgrams.ui.theme.AppColors
-import com.example.repsgrams.ui.components.IconBadge
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.MonoChip
+import com.example.repsgrams.ui.components.MonoLabel
+import com.example.repsgrams.ui.components.shimmer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Modifier
@@ -48,8 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.datastore.UnitSystem
-import com.example.repsgrams.ui.components.IosButton
-import com.example.repsgrams.ui.components.IosCard
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -119,6 +123,20 @@ fun SettingsRoute(
             onNavigateToExerciseLibrary = onNavigateToExerciseLibrary,
             onNavigateToSupplements = onNavigateToSupplements,
         )
+    } else {
+        Scaffold(
+            contentWindowInsets = WindowInsets.statusBars,
+            containerColor = MaterialTheme.colorScheme.background,
+        ) { padding ->
+            Column(
+                modifier = Modifier.padding(padding).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(24.dp)).shimmer())
+                Box(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(24.dp)).shimmer())
+                Box(Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(24.dp)).shimmer())
+            }
+        }
     }
 }
 
@@ -146,20 +164,8 @@ fun SettingsScreen(
     onNavigateToExerciseLibrary: () -> Unit,
     onNavigateToSupplements: () -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
+        contentWindowInsets = WindowInsets.statusBars,
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyColumn(
@@ -169,23 +175,20 @@ fun SettingsScreen(
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("DATA & TEMPLATES", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("DATA & TEMPLATES", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToTemplates() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                IconBadge(icon = Icons.Outlined.EventNote, tint = MaterialTheme.colorScheme.primary)
                                 Text("Edit Workout Programs", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToExercises() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                IconBadge(icon = Icons.Outlined.FitnessCenter, tint = MaterialTheme.colorScheme.primary)
                                 Text("Exercise Dictionary", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
-                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             Row(modifier = Modifier.fillMaxWidth().clickable { onNavigateToExerciseLibrary() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                IconBadge(icon = Icons.Outlined.FitnessCenter, tint = AppColors.workout)
                                 Text("Exercise Library", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
@@ -196,8 +199,8 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("GENERAL", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("GENERAL", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -216,17 +219,17 @@ fun SettingsScreen(
                             Column {
                                 Text("Theme", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    IosButton(text = "System", onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.SYSTEM) }, isSecondary = settings.themeMode != com.example.repsgrams.data.datastore.ThemeMode.SYSTEM, modifier = Modifier.weight(1f))
-                                    IosButton(text = "Light", onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.LIGHT) }, isSecondary = settings.themeMode != com.example.repsgrams.data.datastore.ThemeMode.LIGHT, modifier = Modifier.weight(1f))
-                                    IosButton(text = "Dark", onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.DARK) }, isSecondary = settings.themeMode != com.example.repsgrams.data.datastore.ThemeMode.DARK, modifier = Modifier.weight(1f))
+                                    MonoChip(text = "System", selected = settings.themeMode == com.example.repsgrams.data.datastore.ThemeMode.SYSTEM, onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.SYSTEM) }, modifier = Modifier.weight(1f))
+                                    MonoChip(text = "Light", selected = settings.themeMode == com.example.repsgrams.data.datastore.ThemeMode.LIGHT, onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.LIGHT) }, modifier = Modifier.weight(1f))
+                                    MonoChip(text = "Dark", selected = settings.themeMode == com.example.repsgrams.data.datastore.ThemeMode.DARK, onClick = { onThemeMode(com.example.repsgrams.data.datastore.ThemeMode.DARK) }, modifier = Modifier.weight(1f))
                                 }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Column {
                                 Text("Unit System", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    IosButton(text = "Metric (kg)", onClick = { onUnitSystem(UnitSystem.KG) }, isSecondary = settings.unitSystem != UnitSystem.KG, modifier = Modifier.weight(1f))
-                                    IosButton(text = "Imperial (lb)", onClick = { onUnitSystem(UnitSystem.LB) }, isSecondary = settings.unitSystem != UnitSystem.LB, modifier = Modifier.weight(1f))
+                                    MonoChip(text = "Metric (kg)", selected = settings.unitSystem == UnitSystem.KG, onClick = { onUnitSystem(UnitSystem.KG) }, modifier = Modifier.weight(1f))
+                                    MonoChip(text = "Imperial (lb)", selected = settings.unitSystem == UnitSystem.LB, onClick = { onUnitSystem(UnitSystem.LB) }, modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -236,8 +239,8 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("REST TIMER", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("REST TIMER", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column {
 
                             Row(
@@ -248,7 +251,6 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    IconBadge(Icons.Outlined.Timer, AppColors.workout)
                                     Column {
                                         Text("Default Rest Time", style = MaterialTheme.typography.bodyLarge)
                                         Text("${settings.defaultRestSeconds} seconds", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -259,28 +261,24 @@ fun SettingsScreen(
                                     IconButton(onClick = { onDefaultRestSeconds(settings.defaultRestSeconds + 15) }) { Text("+") }
                                 }
                             }
-                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             SettingToggle(
                                 "Sound",
                                 "Play a sound when rest ends",
-                                Icons.Outlined.VolumeUp,
-                                AppColors.workout,
                                 settings.restTimerSound != "off",
                                 true,
                                 { enabled -> onRestTimerSound(if (enabled) "default" else "off") },
                             )
-                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             SettingToggle(
                                 "Vibrate on Finish",
                                 "Vibrate device when rest period ends",
-                                Icons.Outlined.Vibration,
-                                AppColors.workout,
                                 settings.restTimerVibrationEnabled,
                                 true,
                                 onRestTimerVibrationEnabled,
                             )
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                                 ExactAlarmRow()
                             }
                         }
@@ -290,14 +288,13 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("SUPPLEMENTS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("SUPPLEMENTS", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { onNavigateToSupplements() }.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            IconBadge(icon = Icons.Outlined.Science, tint = AppColors.creatineTeal)
                             Text("Manage Supplements", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         }
@@ -307,19 +304,17 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("NOTIFICATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("NOTIFICATIONS", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             SettingToggle(
                                 "Master Reminders",
                                 "Allow workout and supplement notifications",
-                                Icons.Outlined.NotificationsActive,
-                                MaterialTheme.colorScheme.primary,
                                 settings.remindersEnabled,
                                 true,
                                 onMasterChanged,
                             )
-                            HorizontalDivider(modifier = Modifier.padding(start = 61.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             SettingToggle(
                                 "Workout Day",
                                 if (settings.remindersEnabled) {
@@ -327,8 +322,6 @@ fun SettingsScreen(
                                 } else {
                                     "Turn on Master Reminders to enable"
                                 },
-                                Icons.Outlined.FitnessCenter,
-                                AppColors.workout,
                                 settings.workoutReminderEnabled,
                                 settings.remindersEnabled,
                                 onWorkoutEnabled,
@@ -338,7 +331,7 @@ fun SettingsScreen(
                                     TimeButton("Reminder time", settings.workoutReminderTime, onWorkoutTime)
                                 }
                             }
-                            HorizontalDivider(modifier = Modifier.padding(start = 61.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             SettingToggle(
                                 "Due Supplements",
                                 if (settings.remindersEnabled) {
@@ -346,8 +339,6 @@ fun SettingsScreen(
                                 } else {
                                     "Turn on Master Reminders to enable"
                                 },
-                                Icons.Outlined.Science,
-                                AppColors.creatineTeal,
                                 settings.creatineReminderEnabled,
                                 settings.remindersEnabled,
                                 onCreatineEnabled,
@@ -364,11 +355,10 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("DATA & BACKUP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("DATA & BACKUP", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             Row(modifier = Modifier.fillMaxWidth().clickable { onExportClick() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                IconBadge(icon = Icons.Outlined.ImportExport, tint = AppColors.progressPurple)
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Export Data (Backup)", style = MaterialTheme.typography.bodyLarge)
                                     Text(
@@ -381,7 +371,6 @@ fun SettingsScreen(
                             }
                             HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             Row(modifier = Modifier.fillMaxWidth().clickable { onImportClick() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                IconBadge(icon = Icons.Outlined.ImportExport, tint = AppColors.progressPurple)
                                 Text("Import Data", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
@@ -392,14 +381,12 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("HEALTH & INTEGRATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("HEALTH & INTEGRATIONS", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column {
                             SettingToggle(
                                 "Health Connect",
                                 "Sync finished workouts and bodyweight",
-                                Icons.Outlined.HealthAndSafety,
-                                AppColors.workout,
                                 checked = settings.healthConnectEnabled,
                                 enabled = true,
                                 onChecked = { checked ->
@@ -413,8 +400,8 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("MEASUREMENTS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-                    IosCard {
+                    MonoLabel("MEASUREMENTS", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Tracked Body Measurements", style = MaterialTheme.typography.bodyLarge)
                             Text("Select the measurements you want to track in Progress", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -426,17 +413,13 @@ fun SettingsScreen(
                             ) {
                                 options.forEach { option ->
                                     val isSelected = settings.trackedMeasurements.contains(option)
-                                    FilterChip(
+                                    MonoChip(
+                                        text = option.replaceFirstChar { it.uppercase() },
                                         selected = isSelected,
                                         onClick = {
                                             val newSet = if (isSelected) settings.trackedMeasurements - option else settings.trackedMeasurements + option
                                             onTrackedMeasurements(newSet)
                                         },
-                                        label = { Text(option.replaceFirstChar { it.uppercase() }) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = AppColors.progressPurple,
-                                            selectedLabelColor = Color.White
-                                        )
                                     )
                                 }
                             }
@@ -447,18 +430,21 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "OPEN SOURCE CREDITS",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp),
-                    )
-                    IosCard {
+                    MonoLabel("OPEN SOURCE CREDITS", modifier = Modifier.padding(start = 16.dp))
+                    BoardTile(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Exercise photography", style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 "Selected images from yuhonas/free-exercise-db, released into the public domain under the Unlicense. Images are bundled locally and are never fetched while using the app.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text("Type", style = MaterialTheme.typography.bodyLarge)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Doto, Space Grotesk, and Space Mono are bundled under the SIL Open Font License.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -501,7 +487,6 @@ private fun ExactAlarmRow() {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        IconBadge(icon = Icons.Outlined.Timer, tint = AppColors.workout)
         Column(modifier = Modifier.weight(1f)) {
             Text("Exact rest alarm", style = MaterialTheme.typography.bodyLarge)
             Text(
@@ -526,8 +511,6 @@ private fun ExactAlarmRow() {
 private fun SettingToggle(
     title: String,
     description: String,
-    icon: ImageVector,
-    iconTint: Color,
     checked: Boolean,
     enabled: Boolean,
     onChecked: (Boolean) -> Unit,
@@ -545,7 +528,6 @@ private fun SettingToggle(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        IconBadge(icon = icon, tint = iconTint.copy(alpha = if (enabled) 1f else 0.45f))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
@@ -562,13 +544,6 @@ private fun SettingToggle(
             checked = checked,
             onCheckedChange = null,
             enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                uncheckedBorderColor = Color.Transparent
-            )
         )
     }
 }

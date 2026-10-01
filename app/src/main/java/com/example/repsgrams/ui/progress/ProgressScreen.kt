@@ -12,8 +12,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Star
-import com.example.repsgrams.ui.theme.AppColors
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import com.example.repsgrams.ui.components.BoardDialog
+import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.InkPill
+import com.example.repsgrams.ui.components.OutlinePill
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
@@ -33,8 +37,6 @@ import java.util.Locale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.db.ExerciseSetHistoryRow
 import com.example.repsgrams.data.db.RepType
-import com.example.repsgrams.ui.components.IosButton
-import com.example.repsgrams.ui.components.IosCard
 
 @Composable
 fun ProgressRoute(viewModel: ProgressViewModel) {
@@ -59,20 +61,8 @@ fun ProgressScreen(
     onRestock: (Long, Int) -> Unit,
     onSupplementSelected: (Long) -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text("Progress & Streaks", fontWeight = FontWeight.Bold) },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
+        contentWindowInsets = WindowInsets.statusBars,
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyColumn(
@@ -81,19 +71,19 @@ fun ProgressScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                IosCard {
+                BoardTile(modifier = Modifier.fillMaxWidth()) {
                     Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Current Streak", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Outlined.LocalFireDepartment, contentDescription = null, tint = AppColors.streakAmber, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Outlined.LocalFireDepartment, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
                                 Text("${state.currentStreak}", style = MaterialTheme.typography.titleLarge)
                             }
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Best Streak", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Outlined.Star, contentDescription = null, tint = AppColors.streakAmber, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Outlined.Star, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
                                 Text("${state.bestStreak}", style = MaterialTheme.typography.titleLarge)
                             }
                         }
@@ -121,14 +111,14 @@ private fun SupplementAdherenceSection(state: ProgressUiState, onSelected: (Long
     val taken = state.supplementAdherence.count { it.second }
     val percentage = if (state.supplementAdherence.isEmpty()) 0 else taken * 100 / state.supplementAdherence.size
     var expanded by remember { mutableStateOf(false) }
-    IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Supplement adherence", style = MaterialTheme.typography.titleMedium)
                     Text("$percentage% over the last 30 days", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("$taken / ${state.supplementAdherence.size}", fontWeight = FontWeight.SemiBold, color = AppColors.creatineTeal)
+                Text("$taken / ${state.supplementAdherence.size}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             }
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                 OutlinedTextField(
@@ -140,7 +130,7 @@ private fun SupplementAdherenceSection(state: ProgressUiState, onSelected: (Long
                     active.forEach { item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { onSelected(item.id); expanded = false }) }
                 }
             }
-            val adherenceColor = AppColors.creatineTeal
+            val adherenceColor = MaterialTheme.colorScheme.onSurface
             Canvas(modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 if (state.supplementAdherence.isEmpty()) return@Canvas
                 val gap = size.width / state.supplementAdherence.size
@@ -163,7 +153,7 @@ private fun ExerciseChartSection(
     onExerciseSelected: (Long) -> Unit,
     onWeightViewToggled: (Boolean) -> Unit
 ) {
-    IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Exercise Progress", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
@@ -196,13 +186,6 @@ private fun ExerciseChartSection(
                     Switch(
                         checked = state.isWeightView,
                         onCheckedChange = onWeightViewToggled,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                            uncheckedBorderColor = Color.Transparent
-                        )
                     )
                 }
             }
@@ -224,7 +207,7 @@ private fun ExerciseChartSection(
                     )
                 }
             } else {
-                LineChart(points, modifier = Modifier.fillMaxWidth().height(150.dp), lineColor = AppColors.workout)
+                LineChart(points, modifier = Modifier.fillMaxWidth().height(150.dp), lineColor = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -235,7 +218,7 @@ private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
     var bwInput by remember(state.unitSystem, state.todayBodyweight) {
         mutableStateOf(state.todayBodyweight?.let(::formatBodyweight).orEmpty())
     }
-    IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Bodyweight", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
@@ -247,11 +230,11 @@ private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                IosButton(
+                InkPill(
                     text = "Log",
                     onClick = {
                         val typed = bwInput.trim()
-                        val parsed = parseBodyweight(typed) ?: return@IosButton
+                        val parsed = parseBodyweight(typed) ?: return@InkPill
                         val shown = state.todayBodyweight?.let { parseBodyweight(formatBodyweight(it)) }
                         if (parsed != shown) onLog(parsed)
                     },
@@ -260,7 +243,7 @@ private fun BodyweightSection(state: ProgressUiState, onLog: (Float) -> Unit) {
             }
             Spacer(modifier = Modifier.height(16.dp))
             if (state.bodyweightHistory.isNotEmpty()) {
-                LineChart(state.bodyweightHistory.map { it.second }, modifier = Modifier.fillMaxWidth().height(100.dp), lineColor = AppColors.progressPurple)
+                LineChart(state.bodyweightHistory.map { it.second }, modifier = Modifier.fillMaxWidth().height(100.dp), lineColor = MaterialTheme.colorScheme.onSurface)
             } else {
                 Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
                     LineChart(listOf(75f, 74.8f, 74.2f, 74.5f, 73.9f), modifier = Modifier.fillMaxSize().alpha(0.1f), lineColor = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -283,10 +266,16 @@ private fun SupplySection(state: ProgressUiState, onRestock: (Long, Int) -> Unit
 
     restockTarget?.let { inv ->
         val suppName = state.supplements.find { it.id == inv.supplementId }?.name ?: "Supplement"
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { restockTarget = null },
-            title = { Text("Restock $suppName") },
-            text = {
+        BoardDialog(
+            title = "Restock $suppName",
+            onDismiss = { restockTarget = null },
+            confirmText = "Restock",
+            onConfirm = {
+                restockInput.toIntOrNull()?.let { onRestock(inv.supplementId, it) }
+                restockTarget = null
+                restockInput = ""
+            },
+            content = {
                 OutlinedTextField(
                     value = restockInput,
                     onValueChange = { if (it.all(Char::isDigit)) restockInput = it },
@@ -294,20 +283,10 @@ private fun SupplySection(state: ProgressUiState, onRestock: (Long, Int) -> Unit
                     singleLine = true,
                 )
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    restockInput.toIntOrNull()?.let { onRestock(inv.supplementId, it) }
-                    restockTarget = null
-                    restockInput = ""
-                }) { Text("Restock") }
-            },
-            dismissButton = {
-                TextButton(onClick = { restockTarget = null }) { Text("Cancel") }
-            },
         )
     }
 
-    IosCard {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Supply Remaining", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
@@ -333,21 +312,20 @@ private fun SupplySection(state: ProgressUiState, onRestock: (Long, Int) -> Unit
                             Text(
                                 "${inv.servingsRemaining.toInt()} / ${inv.totalServings} servings",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (isLow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Spacer(Modifier.height(4.dp))
                         LinearProgressIndicator(
                             progress = { fraction },
                             modifier = Modifier.fillMaxWidth().height(6.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(3.dp)),
-                            color = if (isLow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         )
                     }
-                    IosButton(
+                    OutlinePill(
                         text = "Restock",
                         onClick = { restockTarget = inv; restockInput = "" },
-                        isSecondary = true,
                         modifier = Modifier.width(80.dp),
                     )
                 }
@@ -428,26 +406,7 @@ fun LineChart(
                 cubicTo(controlX, start.y, controlX, end.y, end.x, end.y)
             }
         }
-        val areaPath = Path().apply {
-            moveTo(points.first().x, size.height - verticalPadding)
-            lineTo(points.first().x, points.first().y)
-            points.zipWithNext().forEach { (start, end) ->
-                val controlX = (start.x + end.x) / 2f
-                cubicTo(controlX, start.y, controlX, end.y, end.x, end.y)
-            }
-            lineTo(points.last().x, size.height - verticalPadding)
-            close()
-        }
-
         clipRect(right = size.width * drawProgress.value) {
-            drawPath(
-                path = areaPath,
-                brush = Brush.verticalGradient(
-                    colors = listOf(lineColor.copy(alpha = 0.25f), Color.Transparent),
-                    startY = verticalPadding,
-                    endY = size.height - verticalPadding,
-                ),
-            )
             drawPath(
                 path = linePath,
                 color = lineColor,

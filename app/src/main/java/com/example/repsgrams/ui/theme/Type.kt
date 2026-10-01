@@ -1,68 +1,98 @@
 package com.example.repsgrams.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.example.repsgrams.R
 
-val provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = com.example.repsgrams.R.array.com_google_android_gms_fonts_certs
+@OptIn(ExperimentalTextApi::class)
+private val SpaceGrotesk = FontFamily(
+    Font(
+        R.font.space_grotesk,
+        weight = FontWeight.Normal,
+        variationSettings = FontVariation.Settings(FontVariation.Setting("wght", 400f)),
+    ),
+    Font(
+        R.font.space_grotesk,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(FontVariation.Setting("wght", 500f)),
+    ),
 )
 
-val fontName = GoogleFont("Inter")
+val SpaceMono = FontFamily(
+    Font(R.font.space_mono, weight = FontWeight.Normal),
+)
 
-val InterFontFamily = FontFamily(
-    Font(googleFont = fontName, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = fontName, fontProvider = provider, weight = FontWeight.SemiBold),
-    Font(googleFont = fontName, fontProvider = provider, weight = FontWeight.Bold)
+@OptIn(ExperimentalTextApi::class)
+private val Doto = FontFamily(
+    Font(
+        R.font.doto,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(
+            FontVariation.Setting("wght", 500f),
+            FontVariation.Setting("ROND", 100f),
+        ),
+    ),
+)
+
+/** Numerals only, 28sp or larger. Not for sentences. */
+val DisplayNumeral = TextStyle(
+    fontFamily = Doto,
+    fontWeight = FontWeight.Medium,
+    fontSize = 48.sp,
+    lineHeight = 52.sp,
+)
+
+val MonoLabelStyle = TextStyle(
+    fontFamily = SpaceMono,
+    fontWeight = FontWeight.Normal,
+    fontSize = 11.sp,
+    lineHeight = 14.sp,
+    letterSpacing = 0.08.em,
 )
 
 val Typography = Typography(
-    // Large Title
     headlineLarge = TextStyle(
-        fontFamily = InterFontFamily,
-        fontWeight = FontWeight.Bold,
+        fontFamily = SpaceGrotesk,
+        fontWeight = FontWeight.Medium,
         fontSize = 34.sp,
-        lineHeight = 44.sp,
+        lineHeight = 40.sp,
     ),
-    // Title
     titleLarge = TextStyle(
-        fontFamily = InterFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontFamily = SpaceGrotesk,
+        fontWeight = FontWeight.Medium,
         fontSize = 22.sp,
         lineHeight = 28.sp,
     ),
-    // Headline
     titleMedium = TextStyle(
-        fontFamily = InterFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontFamily = SpaceGrotesk,
+        fontWeight = FontWeight.Medium,
         fontSize = 17.sp,
         lineHeight = 24.sp,
     ),
-    // Body
     bodyLarge = TextStyle(
-        fontFamily = InterFontFamily,
+        fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.Normal,
         fontSize = 17.sp,
         lineHeight = 24.sp,
     ),
-    // Subhead
     bodyMedium = TextStyle(
-        fontFamily = InterFontFamily,
+        fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 21.sp,
     ),
-    // Footnote
     bodySmall = TextStyle(
-        fontFamily = InterFontFamily,
+        fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
-    )
+    ),
+    labelSmall = MonoLabelStyle,
 )
