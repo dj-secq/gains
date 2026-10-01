@@ -16,7 +16,8 @@
 .externalNativeBuild
 .cxx
 local.properties
-.agents/
+.agents/*
+!.agents/skills/
 .gemini/
 
 # Local signing and service configuration
@@ -29,4 +30,3 @@ google-services.json
 *.apk
 *.aab
 *.log
-guide/
