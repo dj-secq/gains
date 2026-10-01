@@ -1,5 +1,6 @@
 package com.example.repsgrams.domain.calendar
 
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
@@ -46,18 +47,27 @@ object CalendarCalculator {
         sessions: List<WorkoutSessionEntity>,
         templates: List<WorkoutTemplateEntity>,
         prDates: Set<LocalDate> = emptySet(),
+        scheduleMode: ScheduleMode = ScheduleMode.ROTATION,
+        engineTemplates: List<WorkoutTemplateEntity> = templates,
     ): List<CalendarDay> {
         val dates = datesForMonth(month)
         val sessionsByDate = sessions.groupBy { it.date }
-        val live = ScheduleEngine.replay(today, sessions, templates, includeDay = true)
+        val live = ScheduleEngine.replay(
+            today,
+            sessions,
+            engineTemplates,
+            includeDay = true,
+            scheduleMode = scheduleMode,
+        )
         val todaySessions = sessionsByDate[today].orEmpty()
         val projected = ScheduleEngine.projectAfterToday(
             today = today,
             live = live,
-            templates = templates,
+            templates = engineTemplates,
             loggedWorkoutToday = completedWorkout(todaySessions, templates) != null,
             loggedRestToday = todaySessions.any(::isRestMarker),
             horizon = dates.last(),
+            scheduleMode = scheduleMode,
         )
         return dates.map { date ->
             dayFor(
@@ -67,6 +77,8 @@ object CalendarCalculator {
                 daySessions = sessionsByDate[date].orEmpty(),
                 sessions = sessions,
                 templates = templates,
+                engineTemplates = engineTemplates,
+                scheduleMode = scheduleMode,
                 live = live,
                 projected = projected,
                 prDates = prDates,
@@ -80,7 +92,17 @@ object CalendarCalculator {
         sessions: List<WorkoutSessionEntity>,
         templates: List<WorkoutTemplateEntity>,
         prDates: Set<LocalDate> = emptySet(),
-    ): CalendarDay = buildMonth(YearMonth.from(date), today, sessions, templates, prDates).first { it.date == date }
+        scheduleMode: ScheduleMode = ScheduleMode.ROTATION,
+        engineTemplates: List<WorkoutTemplateEntity> = templates,
+    ): CalendarDay = buildMonth(
+        YearMonth.from(date),
+        today,
+        sessions,
+        templates,
+        prDates,
+        scheduleMode,
+        engineTemplates,
+    ).first { it.date == date }
 
     private fun dayFor(
         date: LocalDate,
@@ -89,6 +111,8 @@ object CalendarCalculator {
         daySessions: List<WorkoutSessionEntity>,
         sessions: List<WorkoutSessionEntity>,
         templates: List<WorkoutTemplateEntity>,
+        engineTemplates: List<WorkoutTemplateEntity>,
+        scheduleMode: ScheduleMode,
         live: ScheduleSuggestion,
         projected: Map<LocalDate, WorkoutTemplateEntity>,
         prDates: Set<LocalDate>,
@@ -96,8 +120,9 @@ object CalendarCalculator {
         val workout = completedWorkout(daySessions, templates)
         val (status, template) = when {
             workout != null -> CalendarDayStatus.COMPLETE to templates.find { it.id == workout.templateId }
+            freestyleSession(daySessions) != null -> CalendarDayStatus.COMPLETE to null
             daySessions.any(::isRestMarker) -> CalendarDayStatus.COMPLETE to null
-            date.isBefore(today) -> missedOrEmpty(date, sessions, templates)
+            date.isBefore(today) -> missedOrEmpty(date, sessions, engineTemplates, scheduleMode)
             date == today -> CalendarDayStatus.PENDING to emptyTodayTemplate(live)
             else -> projected[date]?.let { CalendarDayStatus.UPCOMING to it }
                 ?: (CalendarDayStatus.EMPTY to null)
@@ -118,8 +143,9 @@ object CalendarCalculator {
         date: LocalDate,
         sessions: List<WorkoutSessionEntity>,
         templates: List<WorkoutTemplateEntity>,
+        scheduleMode: ScheduleMode,
     ): Pair<CalendarDayStatus, WorkoutTemplateEntity?> {
-        val morning = ScheduleEngine.replay(date, sessions, templates)
+        val morning = ScheduleEngine.replay(date, sessions, templates, scheduleMode = scheduleMode)
         // Only the morning that would have called ON_TIME is missed. A later overdue
         // morning still points at that earlier due date, so it stays empty.
         return if (morning.status == SuggestionStatus.ON_TIME && morning.dueDate == date) {
@@ -159,4 +185,12 @@ object CalendarCalculator {
 
     private fun isRestMarker(session: WorkoutSessionEntity): Boolean =
         session.completed && session.sessionKind == SessionKind.REST
+
+    private fun freestyleSession(daySessions: List<WorkoutSessionEntity>): WorkoutSessionEntity? =
+        daySessions
+            .filter { it.completed && it.sessionKind == SessionKind.FREESTYLE }
+            .maxWithOrNull(
+                compareBy<WorkoutSessionEntity> { it.endTime?.toEpochMilli() ?: Long.MIN_VALUE }
+                    .thenBy { it.id },
+            )
 }

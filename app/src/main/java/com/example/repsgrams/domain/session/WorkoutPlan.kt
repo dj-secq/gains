@@ -41,6 +41,8 @@ data class WorkoutExercise(
     val plannedName: String = "",
     val progressionIncrementKg: Float? = null,
     val equipment: Equipment = Equipment.OTHER,
+    /** Null is no rest before the next exercise in this block. The block rest still separates rounds. */
+    val restSecondsAfter: Int? = null,
 )
 
 data class SessionCursor(val blockIndex: Int, val exerciseIndex: Int, val roundNumber: Int)
@@ -59,7 +61,10 @@ object SessionNavigator {
     ): SessionAdvance {
         val block = plan.blocks[cursor.blockIndex]
         if (cursor.exerciseIndex < block.exercises.lastIndex) {
-            return SessionAdvance.Continue(cursor.copy(exerciseIndex = cursor.exerciseIndex + 1))
+            val next = cursor.copy(exerciseIndex = cursor.exerciseIndex + 1)
+            val restSeconds = block.exercises[cursor.exerciseIndex].restSecondsAfter ?: 0
+            return if (restSeconds > 0) SessionAdvance.Rest(next, restSeconds)
+            else SessionAdvance.Continue(next)
         }
         val cap = if (block.kind == BlockKind.WARM_UP) block.targetRoundsMax else roundCap
         if (block.kind != BlockKind.WARM_UP && cursor.roundNumber < cap) {

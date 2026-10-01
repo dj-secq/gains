@@ -36,8 +36,20 @@ interface ProgramDao {
     @Query("SELECT * FROM programs WHERE active = 1 ORDER BY id LIMIT 1")
     suspend fun getActive(): ProgramEntity?
 
+    @Query("SELECT * FROM programs WHERE id = :id")
+    suspend fun getById(id: Long): ProgramEntity?
+
+    @Query("SELECT * FROM programs ORDER BY id")
+    fun observeAll(): Flow<List<ProgramEntity>>
+
+    @Query("SELECT * FROM programs ORDER BY id")
+    suspend fun getAll(): List<ProgramEntity>
+
     @Insert
     suspend fun insert(program: ProgramEntity): Long
+
+    @Update
+    suspend fun update(program: ProgramEntity)
 }
 
 @Dao

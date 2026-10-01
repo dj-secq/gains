@@ -233,6 +233,12 @@ fun restRowLabel(status: SuggestionStatus): String =
 fun restDaysCaption(restDaysAfter: Int): String =
     if (restDaysAfter == 1) "1 rest day" else "$restDaysAfter rest days"
 
+/** Monday = 1 through Sunday = 7. A weekly template with no day says so. */
+fun weekdayCaption(weekday: Int?): String {
+    val day = weekday?.takeIf { it in 1..7 }?.let { DayOfWeek.of(it) } ?: return "No weekday"
+    return day.getDisplayName(TextStyle.FULL, Locale.US)
+}
+
 fun isSupplementScrollTarget(target: String?): Boolean =
     target == "supplements" || target == "creatine" || target == "whey"
 

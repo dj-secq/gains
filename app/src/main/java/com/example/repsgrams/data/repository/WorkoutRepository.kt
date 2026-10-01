@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.example.repsgrams.data.db.AppDatabase
 import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.data.db.ExerciseEntity
+import com.example.repsgrams.data.db.ProgramEntity
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.SessionRecordRow
 import com.example.repsgrams.data.db.SetLogEntity
@@ -21,6 +23,8 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
+
+class WeekdayAlreadyUsed : IllegalStateException("That weekday is already used.")
 
 internal fun isSameLoggedSet(
     row: SetLogEntity,
@@ -41,21 +45,52 @@ class WorkoutRepository(
     fun observeSessionsForDate(date: LocalDate): Flow<List<WorkoutSessionEntity>> =
         database.workoutSessionDao().observeForDate(date)
 
-    suspend fun startSession(dayLabel: String): Long {
+    suspend fun startSession(templateId: Long): Long {
         databaseReady.await()
         val id = database.withTransaction {
             database.workoutSessionDao().getActive()?.id ?: run {
-                val template = requireNotNull(database.workoutTemplateDao().getByDayLabel(dayLabel)) {
-                    "Workout $dayLabel is not available"
+                requireNotNull(database.workoutTemplateDao().getById(templateId)) {
+                    "Workout is not available"
                 }
                 database.workoutSessionDao().insert(
                     WorkoutSessionEntity(
-                        templateId = template.id,
+                        templateId = templateId,
                         date = LocalDate.now(clock),
                         startTime = Instant.now(clock),
                     ),
                 )
             }
+        }
+        onPlanChanged()
+        return id
+    }
+
+    /** Day-label lookup kept for instrumented tests. Product callers pass a template id. */
+    suspend fun startSession(dayLabel: String): Long {
+        databaseReady.await()
+        database.workoutSessionDao().getActive()?.let { active ->
+            onPlanChanged()
+            return active.id
+        }
+        val template = requireNotNull(database.workoutTemplateDao().getByDayLabel(dayLabel)) {
+            "Workout $dayLabel is not available"
+        }
+        return startSession(template.id)
+    }
+
+    /** Empty workout. An in-progress session is resumed instead of replaced. */
+    suspend fun startFreestyle(): Long {
+        databaseReady.await()
+        val id = database.withTransaction {
+            database.workoutSessionDao().getActive()?.id ?: database.workoutSessionDao().insert(
+                WorkoutSessionEntity(
+                    templateId = null,
+                    date = LocalDate.now(clock),
+                    startTime = Instant.now(clock),
+                    completed = false,
+                    sessionKind = SessionKind.FREESTYLE,
+                ),
+            )
         }
         onPlanChanged()
         return id
@@ -121,6 +156,7 @@ class WorkoutRepository(
                         plannedName = exercise.name,
                         progressionIncrementKg = link.progressionIncrementKg,
                         equipment = exercise.equipment,
+                        restSecondsAfter = link.restSecondsAfter,
                     )
                 },
             )
@@ -202,6 +238,7 @@ class WorkoutRepository(
         val prManager = PRManager(database)
         val recorded = mutableListOf<com.example.repsgrams.data.db.PersonalRecordEntity>()
         for (set in database.setLogDao().getForSession(sessionId)) {
+            if (set.setType == SetType.WARMUP) continue
             if (set.exerciseId !in eligibleExerciseIds) continue
             val reps = set.reps ?: continue
             val weightKg = set.weightKg ?: continue
@@ -232,6 +269,43 @@ class WorkoutRepository(
     // Phase 8 Editor CRUD operations
     fun observeAllTemplates(): Flow<List<WorkoutTemplateEntity>> = database.workoutTemplateDao().observeAll()
 
+    fun observePrograms(): Flow<List<ProgramEntity>> = database.programDao().observeAll()
+
+    suspend fun insertProgram(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        database.programDao().insert(
+            ProgramEntity(name = trimmed, active = false, scheduleMode = ScheduleMode.ROTATION),
+        )
+    }
+
+    suspend fun activateProgram(programId: Long) {
+        database.withTransaction {
+            val programs = database.programDao().getAll()
+            if (programs.none { it.id == programId }) return@withTransaction
+            for (program in programs) {
+                val active = program.id == programId
+                if (program.active != active) {
+                    database.programDao().update(program.copy(active = active))
+                }
+            }
+        }
+    }
+
+    suspend fun setScheduleMode(programId: Long, mode: ScheduleMode) {
+        database.withTransaction {
+            val program = database.programDao().getById(programId) ?: return@withTransaction
+            if (program.scheduleMode != mode) {
+                database.programDao().update(program.copy(scheduleMode = mode))
+            }
+            if (mode == ScheduleMode.ROTATION) {
+                database.workoutTemplateDao().getAll()
+                    .filter { it.programId == programId && it.weekday != null }
+                    .forEach { database.workoutTemplateDao().update(it.copy(weekday = null)) }
+            }
+        }
+    }
+
     fun observeBlocksForTemplate(templateId: Long): Flow<List<TemplateBlockEntity>> =
         database.templateBlockDao().observeForTemplate(templateId)
 
@@ -245,11 +319,26 @@ class WorkoutRepository(
     suspend fun insertTemplate(template: WorkoutTemplateEntity) {
         val programId = template.programId.takeIf { it != 0L }
             ?: checkNotNull(database.programDao().getActive()) { "No active program" }.id
+        if (template.weekday != null && weekdayTaken(programId, template.weekday, exceptId = null)) {
+            throw WeekdayAlreadyUsed()
+        }
         val nextOrder = (database.workoutTemplateDao().getAll().maxOfOrNull { it.orderIndex } ?: -1) + 1
         database.workoutTemplateDao().insert(
             template.copy(orderIndex = nextOrder, programId = programId),
         )
     }
+
+    suspend fun assignWeekday(templateId: Long, weekday: Int) {
+        val template = database.workoutTemplateDao().getById(templateId) ?: return
+        if (template.weekday == weekday) return
+        if (weekdayTaken(template.programId, weekday, exceptId = template.id)) throw WeekdayAlreadyUsed()
+        database.workoutTemplateDao().update(template.copy(weekday = weekday))
+    }
+
+    private suspend fun weekdayTaken(programId: Long, weekday: Int, exceptId: Long?): Boolean =
+        database.workoutTemplateDao().getAll().any { other ->
+            other.id != exceptId && other.programId == programId && other.weekday == weekday
+        }
 
     suspend fun updateTemplate(template: WorkoutTemplateEntity) {
         database.workoutTemplateDao().update(template)
@@ -351,7 +440,7 @@ class WorkoutRepository(
             val source = requireNotNull(database.workoutTemplateDao().getById(sourceId))
             val nextOrder = (database.workoutTemplateDao().getAll().maxOfOrNull { it.orderIndex } ?: -1) + 1
             val newId = database.workoutTemplateDao().insert(
-                source.copy(id = 0, dayLabel = dayLabel.trim(), orderIndex = nextOrder),
+                source.copy(id = 0, dayLabel = dayLabel.trim(), orderIndex = nextOrder, weekday = null),
             )
             for (block in database.templateBlockDao().getForTemplate(sourceId)) {
                 val newBlockId = database.templateBlockDao().insert(block.copy(id = 0, templateId = newId))

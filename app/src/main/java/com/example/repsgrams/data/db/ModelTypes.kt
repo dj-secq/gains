@@ -4,8 +4,8 @@ enum class RepType { REPS, SECONDS }
 
 enum class BlockKind { WARM_UP, SUPERSET, STANDARD }
 
-/** A finished training day, or an explicit rest. Freestyle is a later schema. */
-enum class SessionKind { WORKOUT, REST }
+/** A finished training day, an explicit rest, or an empty workout with no template. */
+enum class SessionKind { WORKOUT, REST, FREESTYLE }
 
 /** Rotation keeps the A/B gap. Weekly names a weekday on each template. */
 enum class ScheduleMode { ROTATION, WEEKLY }

@@ -197,6 +197,9 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onAdjustRpe = viewModel::adjustRpe,
         onSubstitute = viewModel::substituteThisSession,
         onReplace = viewModel::replaceInProgram,
+        onAddWarmup = viewModel::addWarmupRow,
+        onLogWarmup = viewModel::logWarmup,
+        onAddExercise = viewModel::addFreestyleExercise,
         onToggleSupplement = viewModel::toggleSummarySupplement,
         onDone = viewModel::saveSummary,
         onBack = ::leave,
@@ -226,6 +229,9 @@ fun WorkoutSessionScreen(
     onAdjustRpe: (Float) -> Unit,
     onSubstitute: (Long) -> Unit,
     onReplace: (Long) -> Unit,
+    onAddWarmup: () -> Unit,
+    onLogWarmup: () -> Unit,
+    onAddExercise: (Long) -> Unit,
     onToggleSupplement: (Long) -> Unit,
     onDone: () -> Unit,
     onNotesChanged: (String) -> Unit,
@@ -261,6 +267,14 @@ fun WorkoutSessionScreen(
                 ) {
                     Text(state.message, color = MaterialTheme.colorScheme.onSurface)
                 }
+                is WorkoutSessionUiState.FreestyleEmpty -> FreestyleEmptySession(
+                    state = state,
+                    onAddExercise = onAddExercise,
+                    onFinish = onFinish,
+                    onCancelWorkout = onCancelWorkout,
+                    onNotesChanged = onNotesChanged,
+                    onBack = onBack,
+                )
                 is WorkoutSessionUiState.Active -> ActiveSession(
                     state = state,
                     onAim = onAim,
@@ -282,6 +296,9 @@ fun WorkoutSessionScreen(
                     onAdjustRpe = onAdjustRpe,
                     onSubstitute = onSubstitute,
                     onReplace = onReplace,
+                    onAddWarmup = onAddWarmup,
+                    onLogWarmup = onLogWarmup,
+                    onAddExercise = onAddExercise,
                     onNotesChanged = onNotesChanged,
                     onBack = onBack,
                 )
@@ -317,6 +334,9 @@ private fun ActiveSession(
     onAdjustRpe: (Float) -> Unit,
     onSubstitute: (Long) -> Unit,
     onReplace: (Long) -> Unit,
+    onAddWarmup: () -> Unit,
+    onLogWarmup: () -> Unit,
+    onAddExercise: (Long) -> Unit,
     onNotesChanged: (String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -325,6 +345,7 @@ private fun ActiveSession(
     var showPlates by remember { mutableStateOf(false) }
     var exerciseMenu by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf<Boolean?>(null) }
+    var addingExercise by remember { mutableStateOf(false) }
     var pendingReplace by remember { mutableStateOf<CatalogExercise?>(null) }
     val resting = state.restRemainingSeconds != null
     val seconds = state.exercise.repType == RepType.SECONDS
@@ -378,6 +399,24 @@ private fun ActiveSession(
                                 picker = true
                             },
                         )
+                        if (state.showAddWarmup) {
+                            DropdownMenuItem(
+                                text = { Text("Add warm-up") },
+                                onClick = {
+                                    exerciseMenu = false
+                                    onAddWarmup()
+                                },
+                            )
+                        }
+                        if (state.showAddExercise) {
+                            DropdownMenuItem(
+                                text = { Text("Add exercise") },
+                                onClick = {
+                                    exerciseMenu = false
+                                    addingExercise = true
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -420,6 +459,7 @@ private fun ActiveSession(
                 onAim = onAim,
                 onCopyPrevious = onCopyPrevious,
                 onLog = onLog,
+                onLogWarmup = onLogWarmup,
                 onStopHold = onStopHold,
             )
             if (state.rpeEnabled && !resting) {
@@ -499,6 +539,16 @@ private fun ActiveSession(
             },
         )
     }
+    if (addingExercise) {
+        ExerciseCatalogDialog(
+            catalog = state.catalog,
+            onPick = {
+                addingExercise = false
+                onAddExercise(it)
+            },
+            onDismiss = { addingExercise = false },
+        )
+    }
     if (picker != null) {
         val replace = picker == true
         BoardDialog(
@@ -552,6 +602,100 @@ private fun ActiveSession(
             },
         )
     }
+}
+
+@Composable
+private fun FreestyleEmptySession(
+    state: WorkoutSessionUiState.FreestyleEmpty,
+    onAddExercise: (Long) -> Unit,
+    onFinish: () -> Unit,
+    onCancelWorkout: () -> Unit,
+    onNotesChanged: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var adding by remember { mutableStateOf(false) }
+    var showFinish by remember { mutableStateOf(false) }
+    var showNote by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        SessionBar(
+            elapsedSeconds = state.elapsedSeconds,
+            durationPassed = false,
+            onBack = onBack,
+            onFinish = { showFinish = true },
+            onDiscard = onCancelWorkout,
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Empty workout", style = MaterialTheme.typography.headlineLarge)
+            TextAction(text = "Add exercise", onClick = { adding = true })
+            TextAction(text = "Note", onClick = { showNote = true })
+        }
+    }
+    if (adding) {
+        ExerciseCatalogDialog(
+            catalog = state.catalog,
+            onPick = {
+                adding = false
+                onAddExercise(it)
+            },
+            onDismiss = { adding = false },
+        )
+    }
+    if (showFinish) {
+        BoardDialog(
+            title = "End workout?",
+            message = "Logged sets are kept.",
+            confirmText = "End",
+            dismissText = "Keep going",
+            onConfirm = {
+                showFinish = false
+                onFinish()
+            },
+            onDismiss = { showFinish = false },
+        )
+    }
+    if (showNote) {
+        BoardDialog(
+            title = "Note",
+            confirmText = "Done",
+            dismissText = "Close",
+            onConfirm = { showNote = false },
+            onDismiss = { showNote = false },
+            content = {
+                OutlinedTextField(
+                    value = state.notesInput,
+                    onValueChange = onNotesChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Session note") },
+                    minLines = 3,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun ExerciseCatalogDialog(
+    catalog: List<CatalogExercise>,
+    onPick: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BoardDialog(
+        title = "Exercise",
+        confirmText = "Close",
+        dismissText = "Cancel",
+        onConfirm = onDismiss,
+        onDismiss = onDismiss,
+        content = {
+            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                catalog.forEach { item ->
+                    TextAction(text = item.name, onClick = { onPick(item.id) })
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -695,6 +839,7 @@ private fun SetTable(
     onAim: (KeypadField) -> Unit,
     onCopyPrevious: () -> Unit,
     onLog: () -> Unit,
+    onLogWarmup: () -> Unit,
     onStopHold: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -754,7 +899,10 @@ private fun SetTable(
                 SetCompleteCircle(
                     complete = row.complete,
                     onClick = {
-                        if (row.active && !resting && !saving) {
+                        if (row.warmup && !row.complete && !resting && !saving) {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLogWarmup()
+                        } else if (row.active && !resting && !saving) {
                             if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             if (holding) onStopHold() else onLog()
                         }

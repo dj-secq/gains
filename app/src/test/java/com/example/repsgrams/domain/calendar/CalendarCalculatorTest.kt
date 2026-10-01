@@ -1,5 +1,6 @@
 package com.example.repsgrams.domain.calendar
 
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
@@ -161,6 +162,47 @@ class CalendarCalculatorTest {
         assertEquals(workoutB.id, days.getValue(today).template?.id)
         assertEquals(CalendarDayStatus.UPCOMING, days.getValue(LocalDate.of(2026, 9, 14)).status)
         assertEquals(workoutA.id, days.getValue(LocalDate.of(2026, 9, 14)).template?.id)
+    }
+
+    @Test
+    fun `a completed empty workout is trained`() {
+        val today = LocalDate.of(2026, 9, 12)
+        val date = LocalDate.of(2026, 9, 11)
+        val freestyle = WorkoutSessionEntity(
+            templateId = null,
+            date = date,
+            completed = true,
+            sessionKind = SessionKind.FREESTYLE,
+        )
+        val days = days(today, listOf(freestyle))
+        assertEquals(CalendarDayStatus.COMPLETE, days.getValue(date).status)
+        assertNull(days.getValue(date).template)
+    }
+
+    @Test
+    fun `weekly mode marks the weekday and does not shift a miss`() {
+        val monday = LocalDate.of(2026, 9, 7)
+        val wednesday = LocalDate.of(2026, 9, 9)
+        val friday = LocalDate.of(2026, 9, 11)
+        val push = workoutA.copy(weekday = 1, restDaysAfter = 0)
+        val pull = workoutB.copy(weekday = 3, restDaysAfter = 6)
+        val days = CalendarCalculator.buildMonth(
+            month,
+            friday,
+            emptyList(),
+            listOf(pull, push),
+            scheduleMode = ScheduleMode.WEEKLY,
+        ).associateBy { it.date }
+
+        assertEquals(CalendarDayStatus.MISSED, days.getValue(monday).status)
+        assertEquals(push.id, days.getValue(monday).template?.id)
+        assertEquals(CalendarDayStatus.EMPTY, days.getValue(LocalDate.of(2026, 9, 8)).status)
+        assertEquals(CalendarDayStatus.MISSED, days.getValue(wednesday).status)
+        assertEquals(pull.id, days.getValue(wednesday).template?.id)
+        assertEquals(CalendarDayStatus.PENDING, days.getValue(friday).status)
+        assertNull(days.getValue(friday).template)
+        assertEquals(CalendarDayStatus.UPCOMING, days.getValue(LocalDate.of(2026, 9, 14)).status)
+        assertEquals(push.id, days.getValue(LocalDate.of(2026, 9, 14)).template?.id)
     }
 
     @Test

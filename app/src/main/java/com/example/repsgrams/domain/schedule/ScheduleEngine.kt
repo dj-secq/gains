@@ -1,5 +1,7 @@
 package com.example.repsgrams.domain.schedule
 
+import com.example.repsgrams.data.db.ProgramEntity
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
@@ -28,7 +30,9 @@ object ScheduleEngine {
         lastTemplate: WorkoutTemplateEntity?,
         allTemplates: List<WorkoutTemplateEntity>,
         restsSinceWorkout: List<WorkoutSessionEntity> = emptyList(),
+        scheduleMode: ScheduleMode = ScheduleMode.ROTATION,
     ): ScheduleSuggestion {
+        if (scheduleMode == ScheduleMode.WEEKLY) return computeWeekly(today, allTemplates)
         if (allTemplates.isEmpty()) {
             return ScheduleSuggestion(null, SuggestionStatus.NO_HISTORY, null)
         }
@@ -92,19 +96,47 @@ object ScheduleEngine {
     }
 
     /**
+     * Today's weekday template, or a rest day when none is assigned.
+     * Missed weekdays are not shifted, and [WorkoutTemplateEntity.restDaysAfter] is ignored.
+     * Two templates on the same weekday resolve to the lowest id.
+     */
+    fun computeWeekly(
+        today: LocalDate,
+        templates: List<WorkoutTemplateEntity>,
+    ): ScheduleSuggestion {
+        if (templates.isEmpty()) {
+            return ScheduleSuggestion(null, SuggestionStatus.NO_HISTORY, null)
+        }
+        val winner = templates
+            .filter { it.weekday == today.dayOfWeek.value }
+            .minByOrNull { it.id }
+        return if (winner == null) {
+            ScheduleSuggestion(null, SuggestionStatus.REST_DAY, dueDate = today)
+        } else {
+            ScheduleSuggestion(winner, SuggestionStatus.ON_TIME, dueDate = today)
+        }
+    }
+
+    /**
      * Suggestion as of [day]. Sessions on [day] are excluded unless [includeDay] is set,
      * so a later overdue morning keeps the original due date instead of becoming a new one.
      * A row whose template was deleted is skipped; treating it as the last workout would
      * erase older history into [SuggestionStatus.NO_HISTORY]. A completed [SessionKind.REST]
-     * row is not a workout and does not advance the rotation. Rests on or after the workout
+     * row is not a workout and does not advance the rotation. A freestyle session has no
+     * template, so it is not the last workout either. Rests on or after the workout
      * date, and visible on [day], restart the gap when they land on or after the due date.
+     * [ScheduleMode.WEEKLY] dispatches to [computeWeekly] and does not read history.
      */
     fun replay(
         day: LocalDate,
         sessions: List<WorkoutSessionEntity>,
         templates: List<WorkoutTemplateEntity>,
         includeDay: Boolean = false,
+        scheduleMode: ScheduleMode = ScheduleMode.ROTATION,
     ): ScheduleSuggestion {
+        if (scheduleMode == ScheduleMode.WEEKLY) {
+            return computeSuggestion(day, null, null, templates, scheduleMode = scheduleMode)
+        }
         val templatesById = templates.associateBy { it.id }
         val visible: (WorkoutSessionEntity) -> Boolean = { session ->
             if (includeDay) !session.date.isAfter(day) else session.date.isBefore(day)
@@ -144,11 +176,30 @@ object ScheduleEngine {
         loggedWorkoutToday: Boolean,
         loggedRestToday: Boolean,
         horizon: LocalDate,
+        scheduleMode: ScheduleMode = ScheduleMode.ROTATION,
     ): Map<LocalDate, WorkoutTemplateEntity> {
+        if (scheduleMode == ScheduleMode.WEEKLY) return projectWeekly(today, templates, horizon)
         val sorted = rotationOrder(templates)
         if (sorted.isEmpty()) return emptyMap()
         val anchor = projectionAnchor(today, live, sorted, loggedWorkoutToday, loggedRestToday) ?: return emptyMap()
         return walkProjection(anchor, sorted, today, horizon)
+    }
+
+    /** Each later date keeps that weekday's template. A day with none is left off the map. */
+    private fun projectWeekly(
+        today: LocalDate,
+        templates: List<WorkoutTemplateEntity>,
+        horizon: LocalDate,
+    ): Map<LocalDate, WorkoutTemplateEntity> {
+        if (templates.isEmpty() || !horizon.isAfter(today)) return emptyMap()
+        val projected = LinkedHashMap<LocalDate, WorkoutTemplateEntity>()
+        var date = today.plusDays(1)
+        while (!date.isAfter(horizon)) {
+            templates.filter { it.weekday == date.dayOfWeek.value }.minByOrNull { it.id }
+                ?.let { projected[date] = it }
+            date = date.plusDays(1)
+        }
+        return projected
     }
 
     private fun projectionAnchor(
@@ -210,4 +261,22 @@ object ScheduleEngine {
         compareByDescending<WorkoutSessionEntity> { it.date }
             .thenByDescending { it.endTime?.toEpochMilli() ?: Long.MIN_VALUE }
             .thenByDescending { it.id }
+}
+
+/** Templates the engine may suggest. History outside this program stays on the calendar. */
+data class ActiveProgramScope(
+    val mode: ScheduleMode,
+    val templates: List<WorkoutTemplateEntity>,
+)
+
+fun scopeToActiveProgram(
+    programs: List<ProgramEntity>,
+    templates: List<WorkoutTemplateEntity>,
+): ActiveProgramScope {
+    val active = programs.filter { it.active }.minByOrNull { it.id }
+        ?: return ActiveProgramScope(ScheduleMode.ROTATION, templates)
+    return ActiveProgramScope(
+        mode = active.scheduleMode,
+        templates = templates.filter { it.programId == active.id },
+    )
 }

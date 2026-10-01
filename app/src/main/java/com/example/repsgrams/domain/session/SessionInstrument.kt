@@ -36,6 +36,8 @@ data class SetRowModel(
     val active: Boolean,
     val copyable: Boolean,
     val rpeText: String? = null,
+    /** One session warm-up row. Logging it does not advance the block. */
+    val warmup: Boolean = false,
 )
 
 data class RecordLine(val exerciseName: String, val detail: String)

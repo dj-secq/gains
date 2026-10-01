@@ -115,7 +115,7 @@ fun CalendarScreen(
     onThisMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onDismissDay: () -> Unit,
-    onStart: (String) -> Unit,
+    onStart: (Long) -> Unit,
     onResume: (Long) -> Unit,
 ) {
     Scaffold(
@@ -290,7 +290,7 @@ private fun DayDetail(
     detail: CalendarDayDetail,
     today: LocalDate,
     activeSessionId: Long?,
-    onStart: (String) -> Unit,
+    onStart: (Long) -> Unit,
     onResume: (Long) -> Unit,
 ) {
     val action = calendarSheetAction(
@@ -353,7 +353,7 @@ private fun DayDetail(
                 text = if (action == CalendarSheetAction.START) "START" else "RESUME",
                 onClick = {
                     when (action) {
-                        CalendarSheetAction.START -> detail.template?.dayLabel?.let(onStart)
+                        CalendarSheetAction.START -> detail.template?.id?.let(onStart)
                         CalendarSheetAction.RESUME -> activeSessionId?.let(onResume)
                     }
                 },

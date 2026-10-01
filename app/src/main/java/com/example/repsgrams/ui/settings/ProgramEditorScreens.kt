@@ -26,9 +26,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.db.RepType
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.TemplateBlockEntity
 import com.example.repsgrams.data.db.TemplateBlockExerciseEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
+import com.example.repsgrams.domain.today.restDaysCaption
+import com.example.repsgrams.domain.today.weekdayCaption
+import com.example.repsgrams.ui.components.MonoLabel
+import java.time.DayOfWeek
+import java.time.format.TextStyle
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +45,11 @@ fun TemplateListRoute(
     onBack: () -> Unit
 ) {
     val templates by viewModel.templates.collectAsStateWithLifecycle()
+    val programs by viewModel.programs.collectAsStateWithLifecycle()
+    val activeProgram = programs.filter { it.active }.minByOrNull { it.id }
+    val weekly = activeProgram?.scheduleMode == ScheduleMode.WEEKLY
     var showDialog by remember { mutableStateOf(false) }
+    var showProgram by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<WorkoutTemplateEntity?>(null) }
     var pendingDuplicate by remember { mutableStateOf<WorkoutTemplateEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -60,6 +71,38 @@ fun TemplateListRoute(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item {
+                Text("Programs", style = MaterialTheme.typography.titleMedium)
+                programs.forEach { program ->
+                    BoardTile(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        onClick = { viewModel.activateProgram(program.id) },
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(program.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                            if (program.active) MonoLabel("Active")
+                        }
+                    }
+                }
+                TextAction("Add program", onClick = { showProgram = true })
+                if (activeProgram != null) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MonoChip(
+                            text = "Rotation",
+                            selected = activeProgram.scheduleMode == ScheduleMode.ROTATION,
+                            onClick = { viewModel.setScheduleMode(activeProgram.id, ScheduleMode.ROTATION) },
+                        )
+                        MonoChip(
+                            text = "Weekly",
+                            selected = activeProgram.scheduleMode == ScheduleMode.WEEKLY,
+                            onClick = { viewModel.setScheduleMode(activeProgram.id, ScheduleMode.WEEKLY) },
+                        )
+                    }
+                }
+            }
             items(templates) { template ->
                 val idx = templates.indexOf(template)
                 BoardTile(
@@ -69,6 +112,10 @@ fun TemplateListRoute(
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text(template.name, style = MaterialTheme.typography.titleMedium)
                         Text("Day: ${template.dayLabel}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (weekly) weekdayCaption(template.weekday) else restDaysCaption(template.restDaysAfter),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (idx > 0) {
                                 TextAction("Up", onClick = { viewModel.swapTemplates(template.id, templates[idx - 1].id) })
@@ -124,13 +171,20 @@ fun TemplateListRoute(
         var category by remember { mutableStateOf("Custom") }
         var customCategory by remember { mutableStateOf("") }
         var restDays by remember { mutableIntStateOf(1) }
+        var weekday by remember { mutableStateOf<Int?>(null) }
         BoardDialog(
             title = "New Template",
             onDismiss = { showDialog = false },
             confirmText = "Save",
-            confirmEnabled = name.isNotBlank() && day.isNotBlank(),
+            confirmEnabled = name.isNotBlank() && day.isNotBlank() && (!weekly || weekday != null),
             onConfirm = {
-                viewModel.addTemplate(name, day, customCategory.trim().takeIf { category == "Custom" && it.isNotEmpty() } ?: category, restDays)
+                viewModel.addTemplate(
+                    name,
+                    day,
+                    customCategory.trim().takeIf { category == "Custom" && it.isNotEmpty() } ?: category,
+                    restDays,
+                    weekday = if (weekly) weekday else null,
+                )
                 showDialog = false
             },
             content = {
@@ -145,11 +199,33 @@ fun TemplateListRoute(
                 if (category == "Custom") {
                     OutlinedTextField(value = customCategory, onValueChange = { customCategory = it }, label = { Text("Custom category (optional)") })
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Rest days after: $restDays", modifier = Modifier.weight(1f))
-                    IconButton(onClick = { restDays = (restDays - 1).coerceAtLeast(0) }) { Text("−") }
-                    IconButton(onClick = { restDays = (restDays + 1).coerceAtMost(7) }) { Text("+") }
+                if (weekly) {
+                    Text("Weekday", style = MaterialTheme.typography.labelLarge)
+                    WeekdayChips(selected = weekday, onSelect = { weekday = it })
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Rest days after: $restDays", modifier = Modifier.weight(1f))
+                        IconButton(onClick = { restDays = (restDays - 1).coerceAtLeast(0) }) { Text("−") }
+                        IconButton(onClick = { restDays = (restDays + 1).coerceAtMost(7) }) { Text("+") }
+                    }
                 }
+            },
+        )
+    }
+
+    if (showProgram) {
+        var name by remember { mutableStateOf("") }
+        BoardDialog(
+            title = "New program",
+            onDismiss = { showProgram = false },
+            confirmText = "Save",
+            confirmEnabled = name.isNotBlank(),
+            onConfirm = {
+                viewModel.addProgram(name)
+                showProgram = false
+            },
+            content = {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
             },
         )
     }
@@ -170,8 +246,12 @@ fun TemplateEditorRoute(
     var pendingDelete by remember { mutableStateOf<TemplateBlockEntity?>(null) }
 
     val template by remember(templateId) { viewModel.observeTemplate(templateId) }.collectAsStateWithLifecycle(null)
+    val programs by viewModel.programs.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(viewModel) { viewModel.messages.collect { snackbarHostState.showSnackbar(it) } }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Edit Template Blocks") },
@@ -231,11 +311,17 @@ fun TemplateEditorRoute(
                             singleLine = true,
                         )
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Rest Days After: ${t.restDaysAfter}")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(onClick = { if (t.restDaysAfter > 0) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter - 1) }) { Text("-") }
-                            IconButton(onClick = { if (t.restDaysAfter < 7) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter + 1) }) { Text("+") }
+                        val weeklyTemplate = programs.find { it.id == t.programId }?.scheduleMode == ScheduleMode.WEEKLY
+                        if (weeklyTemplate) {
+                            Text("Weekday", style = MaterialTheme.typography.labelLarge)
+                            WeekdayChips(selected = t.weekday, onSelect = { viewModel.assignWeekday(t.id, it) })
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Rest Days After: ${t.restDaysAfter}")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(onClick = { if (t.restDaysAfter > 0) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter - 1) }) { Text("-") }
+                                IconButton(onClick = { if (t.restDaysAfter < 7) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter + 1) }) { Text("+") }
+                            }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Duration: ${t.maxDurationMinutes} min", modifier = Modifier.weight(1f))
@@ -516,6 +602,19 @@ fun BlockEditorRoute(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun WeekdayChips(selected: Int?, onSelect: (Int) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DayOfWeek.entries.forEach { day ->
+            MonoChip(
+                text = day.getDisplayName(TextStyle.SHORT, Locale.US),
+                selected = selected == day.value,
+                onClick = { onSelect(day.value) },
+            )
+        }
     }
 }
 

@@ -10,6 +10,7 @@ import com.example.repsgrams.domain.calendar.CalendarCalculator
 import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.domain.calendar.CalendarDayStatus
 import com.example.repsgrams.domain.schedule.SuggestionStatus
+import com.example.repsgrams.domain.schedule.scopeToActiveProgram
 import java.time.Clock
 import java.time.LocalDate
 import java.time.YearMonth
@@ -53,8 +54,10 @@ class CalendarRepository(
             database.workoutSessionDao().observeOnOrBefore(dates.last()),
             database.workoutTemplateDao().observeAll(),
             database.personalRecordDao().observeNonEstimateInRange(dates.first(), dates.last()),
-        ) { sessions, templates, records ->
+            database.programDao().observeAll(),
+        ) { sessions, templates, records, programs ->
             val today = LocalDate.now(clock)
+            val scope = scopeToActiveProgram(programs, templates)
             CalendarMonth(
                 month,
                 CalendarCalculator.buildMonth(
@@ -63,6 +66,8 @@ class CalendarRepository(
                     sessions = sessions,
                     templates = templates,
                     prDates = records.map { it.achievedDate }.toSet(),
+                    scheduleMode = scope.mode,
+                    engineTemplates = scope.templates,
                 ),
             )
         }
@@ -75,8 +80,12 @@ class CalendarRepository(
         val sessionsForDate = database.workoutSessionDao().getForDate(date)
         val allSets = database.setLogDao().getForDate(date).groupBy { it.sessionId }
         val sessions = sessionsForDate.map { session ->
-            val name = session.templateId?.let { database.workoutTemplateDao().getById(it)?.name }
-                ?: if (session.sessionKind == SessionKind.REST) "Rest" else "Deleted workout"
+            val name = when (session.sessionKind) {
+                SessionKind.REST -> "Rest"
+                SessionKind.FREESTYLE -> "Empty workout"
+                SessionKind.WORKOUT -> session.templateId?.let { database.workoutTemplateDao().getById(it)?.name }
+                    ?: "Deleted workout"
+            }
             val notes = session.notes?.takeUnless { it.isBlank() || it == "Rest day" }
             CalendarSessionDetail(
                 session.id, name, session.completed, session.durationSeconds, allSets[session.id].orEmpty(), notes,
@@ -84,9 +93,17 @@ class CalendarRepository(
         }
 
         val templates = database.workoutTemplateDao().getAll()
+        val scope = scopeToActiveProgram(database.programDao().getAll(), templates)
         val historyEnd = if (date.isAfter(today)) date else today
         val history = database.workoutSessionDao().getOnOrBefore(historyEnd)
-        val day = CalendarCalculator.cellFor(date, today, history, templates)
+        val day = CalendarCalculator.cellFor(
+            date,
+            today,
+            history,
+            templates,
+            scheduleMode = scope.mode,
+            engineTemplates = scope.templates,
+        )
 
         return CalendarDayDetail(
             date = date,

@@ -32,6 +32,10 @@ data class SessionProgress(
     val substitutes: String = "",
     /** `exerciseId=sessionId` bumps already consumed in this session. */
     val appliedProgression: String = "",
+    /** Exercise ids that show one warm-up row for this session. */
+    val warmupExercises: String = "",
+    /** Exercise ids appended to an empty workout, in order. */
+    val freestyleExercises: String = "",
 )
 
 class SessionProgressStore(private val context: Context) {
@@ -48,6 +52,8 @@ class SessionProgressStore(private val context: Context) {
         val extraRounds = intPreferencesKey("extra_rounds")
         val substitutes = stringPreferencesKey("substitutes")
         val appliedProgression = stringPreferencesKey("applied_progression")
+        val warmupExercises = stringPreferencesKey("warmup_exercises")
+        val freestyleExercises = stringPreferencesKey("freestyle_exercises")
     }
 
     val progress: Flow<SessionProgress?> = context.sessionProgressDataStore.data.map { values ->
@@ -65,6 +71,8 @@ class SessionProgressStore(private val context: Context) {
             extraRounds = values[Keys.extraRounds] ?: 0,
             substitutes = values[Keys.substitutes] ?: "",
             appliedProgression = values[Keys.appliedProgression] ?: "",
+            warmupExercises = values[Keys.warmupExercises] ?: "",
+            freestyleExercises = values[Keys.freestyleExercises] ?: "",
         )
     }
 
@@ -80,6 +88,8 @@ class SessionProgressStore(private val context: Context) {
             values[Keys.extraRounds] = progress.extraRounds
             values[Keys.substitutes] = progress.substitutes
             values[Keys.appliedProgression] = progress.appliedProgression
+            values[Keys.warmupExercises] = progress.warmupExercises
+            values[Keys.freestyleExercises] = progress.freestyleExercises
             val end = progress.restEndEpochMillis
             if (end != null) {
                 values[Keys.restEnd] = end

@@ -80,9 +80,8 @@ class CalendarViewModel(
         _loadingDay.value = false
     }
 
-    fun startSuggested(dayLabel: String) {
-        if (dayLabel.isBlank()) return
-        viewModelScope.launch { _openSession.emit(workoutRepository.startSession(dayLabel)) }
+    fun startSuggested(templateId: Long) {
+        viewModelScope.launch { _openSession.emit(workoutRepository.startSession(templateId)) }
     }
 
     fun resume(sessionId: Long) {

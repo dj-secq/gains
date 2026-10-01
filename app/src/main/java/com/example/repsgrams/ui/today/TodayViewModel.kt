@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.SessionProgress
 import com.example.repsgrams.data.datastore.SessionProgressStore
+import com.example.repsgrams.data.db.ScheduleMode
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.SupplementEntity
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
@@ -19,6 +21,7 @@ import com.example.repsgrams.domain.calendar.CalendarCalculator
 import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.domain.progress.ProgressStatsCalculator
 import com.example.repsgrams.domain.schedule.ScheduleSuggestion
+import com.example.repsgrams.domain.schedule.scopeToActiveProgram
 import com.example.repsgrams.domain.session.WorkoutExercise
 import com.example.repsgrams.domain.today.TodayExerciseLine
 import com.example.repsgrams.domain.today.TodayHero
@@ -56,6 +59,7 @@ private data class TodayPlan(
     val activeSession: WorkoutSessionEntity?,
     val templates: List<WorkoutTemplateEntity>,
     val completedToday: WorkoutTemplateEntity?,
+    val weekly: Boolean,
 )
 
 private data class TodaySnapshot(
@@ -80,6 +84,7 @@ sealed interface TodayUiState {
         val suggestion: ScheduleSuggestion,
         val currentStreak: Int,
         val supply: TodaySupply?,
+        val weekly: Boolean = false,
     ) : TodayUiState
 
     data class Error(val message: String) : TodayUiState
@@ -117,18 +122,28 @@ class TodayViewModel(
             }
         },
         workoutRepository.observeActiveSession(),
-        workoutRepository.observeAllTemplates(),
+        combine(
+            workoutRepository.observeAllTemplates(),
+            workoutRepository.observePrograms(),
+        ) { templates, programs -> templates to programs },
         workoutRepository.observeSessionsForDate(today),
-    ) { suggestion, todaySupps, activeSession, templates, sessionsToday ->
+    ) { suggestion, todaySupps, activeSession, programTemplates, sessionsToday ->
+        val (templates, programs) = programTemplates
         val ordered = templates.sortedWith(compareBy({ it.orderIndex }, { it.dayLabel }))
+        val scope = scopeToActiveProgram(programs, ordered)
+        val activeTemplates = scope.templates.sortedWith(compareBy({ it.orderIndex }, { it.dayLabel }))
         val logged = CalendarCalculator.completedWorkoutOn(sessionsToday, ordered)
         val completed = ordered.find { it.id == logged?.templateId }
+        val trained = completed != null || sessionsToday.any {
+            it.completed && it.sessionKind == SessionKind.FREESTYLE
+        }
         TodayPlan(
             suggestion = suggestion,
-            supplements = dueToday(todaySupps, completed != null),
+            supplements = dueToday(todaySupps, trained),
             activeSession = activeSession,
-            templates = ordered,
+            templates = activeTemplates,
             completedToday = completed,
+            weekly = scope.mode == ScheduleMode.WEEKLY,
         )
     }
 
@@ -173,7 +188,8 @@ class TodayViewModel(
                 completedToday = plan.completedToday,
                 suggestion = plan.suggestion,
                 hasTemplates = plan.templates.isNotEmpty(),
-                activeTemplateName = plan.templates.find { it.id == plan.activeSession?.templateId }?.name,
+                activeTemplateName = plan.templates.find { it.id == plan.activeSession?.templateId }?.name
+                    ?: if (plan.activeSession?.sessionKind == SessionKind.FREESTYLE) "Empty workout" else null,
             ),
             activeSessionId = plan.activeSession?.id,
             sessionStartedAt = plan.activeSession?.startTime,
@@ -184,6 +200,7 @@ class TodayViewModel(
             suggestion = plan.suggestion,
             currentStreak = snapshot.streak,
             supply = snapshot.supply,
+            weekly = plan.weekly,
         ) as TodayUiState
     }.flowOn(Dispatchers.Default).catch {
         emit(TodayUiState.Error("Couldn't load today's plan."))
@@ -211,9 +228,12 @@ class TodayViewModel(
         viewModelScope.launch { supplementRepository.setSupplementTaken(today, supplement, taken, amount) }
     }
 
-    fun startWorkout(dayLabel: String) {
-        if (dayLabel.isBlank()) return
-        viewModelScope.launch { _openSession.emit(workoutRepository.startSession(dayLabel)) }
+    fun startWorkout(templateId: Long) {
+        viewModelScope.launch { _openSession.emit(workoutRepository.startSession(templateId)) }
+    }
+
+    fun startEmptyWorkout() {
+        viewModelScope.launch { _openSession.emit(workoutRepository.startFreestyle()) }
     }
 
     fun resumeWorkout(sessionId: Long) {

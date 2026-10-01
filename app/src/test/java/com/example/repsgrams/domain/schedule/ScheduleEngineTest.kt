@@ -1,5 +1,6 @@
 package com.example.repsgrams.domain.schedule
 
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
@@ -333,6 +334,73 @@ class ScheduleEngineTest {
             horizon = lastDate.plusDays(6),
         )
         assertEquals(labelB.id, projected[lastDate.plusDays(2)]?.id)
+    }
+
+    @Test
+    fun `weekly mode uses the weekday and does not shift a missed day`() {
+        val monday = LocalDate.of(2026, 9, 7)
+        val push = workoutA.copy(weekday = 1, restDaysAfter = 9)
+        val pull = workoutB.copy(id = 5, weekday = 3, restDaysAfter = 9)
+        val laterPush = workoutA.copy(id = 9, name = "Later push", weekday = 1)
+        val weekly = listOf(laterPush, pull, push)
+
+        val onMonday = ScheduleEngine.computeWeekly(monday, weekly)
+        val onTuesday = ScheduleEngine.computeSuggestion(
+            monday.plusDays(1),
+            null,
+            null,
+            weekly,
+            scheduleMode = ScheduleMode.WEEKLY,
+        )
+        val onWednesday = ScheduleEngine.replay(
+            monday.plusDays(2),
+            emptyList(),
+            weekly,
+            scheduleMode = ScheduleMode.WEEKLY,
+        )
+
+        assertEquals(SuggestionStatus.ON_TIME, onMonday.status)
+        assertEquals(push.id, onMonday.suggestedTemplate?.id)
+        assertEquals(SuggestionStatus.REST_DAY, onTuesday.status)
+        assertNull(onTuesday.suggestedTemplate)
+        assertEquals(pull.id, onWednesday.suggestedTemplate?.id)
+        assertEquals(monday.plusDays(2), onWednesday.dueDate)
+    }
+
+    @Test
+    fun `weekly projection follows weekdays instead of rest days`() {
+        val sunday = LocalDate.of(2026, 9, 6)
+        val push = workoutA.copy(weekday = 1, restDaysAfter = 0)
+        val pull = workoutB.copy(weekday = 3, restDaysAfter = 6)
+        val live = ScheduleEngine.computeWeekly(sunday, listOf(pull, push))
+        val projected = ScheduleEngine.projectAfterToday(
+            today = sunday,
+            live = live,
+            templates = listOf(pull, push),
+            loggedWorkoutToday = false,
+            loggedRestToday = false,
+            horizon = sunday.plusDays(8),
+            scheduleMode = ScheduleMode.WEEKLY,
+        )
+
+        assertEquals(push.id, projected[LocalDate.of(2026, 9, 7)]?.id)
+        assertFalse(projected.containsKey(LocalDate.of(2026, 9, 8)))
+        assertEquals(pull.id, projected[LocalDate.of(2026, 9, 9)]?.id)
+        assertEquals(push.id, projected[LocalDate.of(2026, 9, 14)]?.id)
+    }
+
+    @Test
+    fun `freestyle does not advance the rotation`() {
+        val freestyle = WorkoutSessionEntity(
+            templateId = null,
+            date = lastDate,
+            completed = true,
+            sessionKind = SessionKind.FREESTYLE,
+        )
+        val result = ScheduleEngine.replay(lastDate.plusDays(2), listOf(freestyle), templates)
+
+        assertEquals(SuggestionStatus.NO_HISTORY, result.status)
+        assertEquals(workoutA.id, result.suggestedTemplate?.id)
     }
 
     private fun project(

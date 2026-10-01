@@ -134,6 +134,40 @@ class SessionNavigatorTest {
         assertEquals(SessionCursor(2, 0, 1), (capped as SessionAdvance.Rest).cursorAfterRest)
     }
 
+    @Test
+    fun `non-null rest between partners rests and null still continues`() {
+        val plan = WorkoutPlan(
+            templateId = 1,
+            name = "Test",
+            dayLabel = "A",
+            maxDurationMinutes = 60,
+            category = "Custom",
+            blocks = listOf(
+                WorkoutBlock(
+                    id = 1,
+                    label = "Superset",
+                    kind = BlockKind.SUPERSET,
+                    targetRoundsMin = 1,
+                    targetRoundsMax = 1,
+                    restSecondsBetweenRounds = 90,
+                    restSecondsAfterBlock = 0,
+                    isOptional = false,
+                    exercises = listOf(
+                        WorkoutExercise(1, "Pull", null, null, false, 8, 12, RepType.REPS, false, restSecondsAfter = 45),
+                        WorkoutExercise(2, "Push", null, null, false, 8, 12, RepType.REPS, false),
+                        WorkoutExercise(3, "Curl", null, null, false, 8, 12, RepType.REPS, false),
+                    ),
+                ),
+            ),
+        )
+
+        val between = SessionNavigator.afterExercise(plan, SessionCursor(0, 0, 1))
+        val afterNull = SessionNavigator.afterExercise(plan, SessionCursor(0, 1, 1))
+
+        assertEquals(SessionAdvance.Rest(SessionCursor(0, 1, 1), 45), between)
+        assertEquals(SessionAdvance.Continue(SessionCursor(0, 2, 1)), afterNull)
+    }
+
     private fun planWithWarmUpAndSuperset() = WorkoutPlan(
         templateId = 1,
         name = "Test",

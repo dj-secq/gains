@@ -5,13 +5,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.repsgrams.data.db.ExerciseEntity
+import com.example.repsgrams.data.db.ProgramEntity
 import com.example.repsgrams.data.db.RepType
+import com.example.repsgrams.data.db.ScheduleMode
 import com.example.repsgrams.data.db.TemplateBlockEntity
 import com.example.repsgrams.data.db.TemplateBlockExerciseEntity
 import com.example.repsgrams.data.db.WorkoutTemplateEntity
+import com.example.repsgrams.data.repository.WeekdayAlreadyUsed
 import com.example.repsgrams.data.repository.WorkoutRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,9 +40,18 @@ class ProgramEditorViewModel(
     val workingRestSeconds: StateFlow<Int> = cycleSettingsRepository.settings.map { it.defaultWorkingRestSeconds }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), 180
     )
-    val templates: StateFlow<List<WorkoutTemplateEntity>> = repository.observeAllTemplates().stateIn(
+    val programs: StateFlow<List<ProgramEntity>> = repository.observePrograms().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
     )
+
+    val templates: StateFlow<List<WorkoutTemplateEntity>> = combine(
+        repository.observeAllTemplates(),
+        programs,
+    ) { all, programList ->
+        val active = programList.filter { it.active }.minByOrNull { it.id }
+        val scoped = if (active == null) all else all.filter { it.programId == active.id }
+        scoped.sortedWith(compareBy({ it.orderIndex }, { it.dayLabel }))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val allExercises: StateFlow<List<ExerciseEntity>> = repository.observeAllExercises().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
@@ -57,7 +70,13 @@ class ProgramEditorViewModel(
             viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
         )
 
-    fun addTemplate(name: String, dayLabel: String, category: String, restDaysAfter: Int) {
+    fun addTemplate(
+        name: String,
+        dayLabel: String,
+        category: String,
+        restDaysAfter: Int,
+        weekday: Int? = null,
+    ) {
         viewModelScope.launch {
             if (name.isBlank() || dayLabel.isBlank()) {
                 _messages.emit("Name and day label are required")
@@ -71,9 +90,32 @@ class ProgramEditorViewModel(
                         maxDurationMinutes = 60,
                         category = category,
                         restDaysAfter = restDaysAfter.coerceIn(0, 7),
+                        weekday = weekday,
                     )
                 )
             }
+        }
+    }
+
+    fun assignWeekday(templateId: Long, weekday: Int) {
+        viewModelScope.launch { runDayLabelEdit { repository.assignWeekday(templateId, weekday) } }
+    }
+
+    fun activateProgram(programId: Long) {
+        viewModelScope.launch { repository.activateProgram(programId) }
+    }
+
+    fun setScheduleMode(programId: Long, mode: ScheduleMode) {
+        viewModelScope.launch { repository.setScheduleMode(programId, mode) }
+    }
+
+    fun addProgram(name: String) {
+        viewModelScope.launch {
+            if (name.isBlank()) {
+                _messages.emit("Name and day label are required")
+                return@launch
+            }
+            repository.insertProgram(name)
         }
     }
 
@@ -183,6 +225,8 @@ class ProgramEditorViewModel(
     private suspend fun runDayLabelEdit(write: suspend () -> Unit) {
         try {
             write()
+        } catch (error: WeekdayAlreadyUsed) {
+            _messages.emit("That weekday is already used.")
         } catch (error: Exception) {
             if (!error.isDayLabelConflict()) throw error
             _messages.emit("That day label is already used.")

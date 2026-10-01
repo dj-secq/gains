@@ -20,6 +20,7 @@ import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.data.db.Equipment
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.RepType
+import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.SetLogEntity
 import com.example.repsgrams.data.db.SetType
 import com.example.repsgrams.data.db.WorkoutSessionEntity
@@ -31,6 +32,8 @@ import com.example.repsgrams.domain.session.RecordLine
 import com.example.repsgrams.domain.session.SessionAdvance
 import com.example.repsgrams.domain.session.SessionCursor
 import com.example.repsgrams.domain.session.SessionNavigator
+import com.example.repsgrams.domain.session.SetRowModel
+import com.example.repsgrams.domain.session.WorkoutBlock
 import com.example.repsgrams.domain.session.WorkoutExercise
 import com.example.repsgrams.domain.session.WorkoutPlan
 import com.example.repsgrams.domain.session.applyLoadKey
@@ -102,6 +105,15 @@ sealed interface WorkoutSessionUiState {
         val endLines: List<String> = emptyList(),
         val plate: PlateView? = null,
         val catalog: List<CatalogExercise> = emptyList(),
+        val showAddWarmup: Boolean = false,
+        val showAddExercise: Boolean = false,
+    ) : WorkoutSessionUiState
+
+    /** Empty workout before the first exercise. The logging surface is not built yet. */
+    data class FreestyleEmpty(
+        val elapsedSeconds: Int,
+        val notesInput: String,
+        val catalog: List<CatalogExercise>,
     ) : WorkoutSessionUiState
 
     data class Summary(
@@ -188,13 +200,18 @@ class WorkoutSessionViewModel(
     private var keypadFresh = true
     private var sessionLogs: List<SetLogEntity> = emptyList()
     private var previousByRound: Map<Int, SetLogEntity?> = emptyMap()
+    private var warmupExerciseIds: Set<Long> = emptySet()
+    private var freestyleOrder: List<Long> = emptyList()
 
     init {
         viewModelScope.launch {
             cycleSettingsRepository.settings.collect { settings ->
                 _keepScreenOn.value = settings.keepScreenOn
                 applySettings(settings)
-                if (_uiState.value is WorkoutSessionUiState.Active) publishActive()
+                val shown = _uiState.value
+                if (shown is WorkoutSessionUiState.Active || shown is WorkoutSessionUiState.FreestyleEmpty) {
+                    publishActive()
+                }
             }
         }
         viewModelScope.launch {
@@ -217,7 +234,10 @@ class WorkoutSessionViewModel(
                 restAlertFired = saved.restAlertFired
                 restCaption = saved.restCaption
                 restToken = saved.restToken
-                if (changed && _uiState.value is WorkoutSessionUiState.Active) publishActive()
+                val shown = _uiState.value
+                if (changed && (shown is WorkoutSessionUiState.Active || shown is WorkoutSessionUiState.FreestyleEmpty)) {
+                    publishActive()
+                }
             }
         }
         viewModelScope.launch {
@@ -230,6 +250,10 @@ class WorkoutSessionViewModel(
 
     private suspend fun load() {
         session = requireNotNull(workoutRepository.getSession(sessionId)) { "Workout session not found" }
+        if (session.sessionKind == SessionKind.FREESTYLE) {
+            loadFreestyle()
+            return
+        }
         val templateId = requireNotNull(session.templateId) { "This workout template was deleted" }
         plan = workoutRepository.loadPlan(templateId)
         val settings = cycleSettingsRepository.settings.first()
@@ -250,6 +274,7 @@ class WorkoutSessionViewModel(
             substitutes = parseSubstitutes(saved.substitutes)
             appliedSessionByExercise.putAll(parseProgressionMap(saved.appliedProgression))
             consumedExercises.addAll(appliedSessionByExercise.keys)
+            warmupExerciseIds = parseIdList(saved.warmupExercises).toSet()
             if (saved.notes.isNotEmpty()) notesInput = saved.notes
             val cursorFits = saved.blockIndex in plan.blocks.indices &&
                 saved.exerciseIndex in plan.blocks[saved.blockIndex].exercises.indices
@@ -279,6 +304,131 @@ class WorkoutSessionViewModel(
         }
         ready = true
         publishActive()
+    }
+
+    private suspend fun loadFreestyle() {
+        val settings = cycleSettingsRepository.settings.first()
+        applySettings(settings)
+        progressionMaps = ProgressionMaps(settings.progressionQualified, settings.progressionSkipped)
+        catalog = workoutRepository.listExercises().map { CatalogExercise(it.id, it.name) }
+        _keepScreenOn.value = settings.keepScreenOn
+        val saved = progressStore.progress.first()?.takeIf { it.sessionId == sessionId }
+        sessionLogs = workoutRepository.getSessionSets(sessionId)
+        val storedIds = parseIdList(saved?.freestyleExercises.orEmpty())
+        freestyleOrder = if (storedIds.isNotEmpty()) storedIds else freestyleIdsFromLogs(sessionLogs)
+        warmupExerciseIds = parseIdList(saved?.warmupExercises.orEmpty()).toSet()
+        if (saved != null) {
+            substitutes = parseSubstitutes(saved.substitutes)
+            appliedSessionByExercise.putAll(parseProgressionMap(saved.appliedProgression))
+            consumedExercises.addAll(appliedSessionByExercise.keys)
+            if (saved.notes.isNotEmpty()) notesInput = saved.notes
+        }
+        plan = freestylePlan(freestyleOrder)
+        if (session.completed) {
+            showSummary()
+            return
+        }
+        if (freestyleOrder.isEmpty() || plan.blocks.isEmpty() || plan.blocks.all { it.exercises.isEmpty() }) {
+            ready = true
+            persistProgress()
+            publishActive()
+            return
+        }
+        if (saved != null) {
+            val cursorFits = saved.blockIndex in plan.blocks.indices &&
+                saved.exerciseIndex in plan.blocks[saved.blockIndex].exercises.indices
+            if (cursorFits) {
+                cursor = SessionCursor(saved.blockIndex, saved.exerciseIndex, saved.roundNumber)
+                restEndEpochMillis = saved.restEndEpochMillis
+                restCaption = saved.restCaption
+                restAlertFired = saved.restAlertFired
+                restToken = saved.restToken
+                extraRounds = saved.extraRounds.coerceIn(0, MAX_EXTRA_ROUNDS)
+            } else {
+                cursor = SessionCursor(0, 0, 1)
+                extraRounds = 0
+            }
+        }
+        loadInputDefaults()
+        if (restEndEpochMillis != null) {
+            if (restCaption.isBlank()) restCaption = restCaptionForCursor()
+            startRestTimerService(restEndEpochMillis!!, restCaption)
+        }
+        ready = true
+        persistProgress()
+        publishActive()
+    }
+
+    fun addWarmupRow() {
+        if (!ready || !::plan.isInitialized || plan.blocks.isEmpty()) return
+        val block = plan.blocks.getOrNull(cursor.blockIndex) ?: return
+        if (block.kind == BlockKind.WARM_UP) return
+        val id = currentExercise().id
+        if (id in warmupExerciseIds) return
+        warmupExerciseIds = warmupExerciseIds + id
+        viewModelScope.launch {
+            persistProgress()
+            publishActive()
+        }
+    }
+
+    fun logWarmup() {
+        if (isSaving || restEndEpochMillis != null || !ready || !::plan.isInitialized) return
+        if (plan.blocks.isEmpty()) return
+        val exercise = currentExercise()
+        if (exercise.id !in warmupExerciseIds) return
+        if (sessionLogs.any { it.exerciseId == exercise.id && it.setType == SetType.WARMUP }) return
+        val value = valueInput.toIntOrNull() ?: return
+        isSaving = true
+        publishActive()
+        val weightKg = weightInput.toFloatOrNull()
+            ?.let { if (unitSystem == UnitSystem.LB) poundsToKilograms(it) else it }
+            .takeIf { exercise.tracksWeight }
+        val rpe = rpeInput.takeIf { rpeEnabled }
+        viewModelScope.launch {
+            runCatching {
+                workoutRepository.logSet(
+                    sessionId = sessionId,
+                    exerciseId = exercise.id,
+                    roundNumber = 1,
+                    reps = value.takeIf { exercise.repType == RepType.REPS },
+                    durationSeconds = value.takeIf { exercise.repType == RepType.SECONDS },
+                    weightKg = weightKg,
+                    rpeTag = rpe?.let { formatWeight(it) },
+                    setType = SetType.WARMUP,
+                    rpe = rpe,
+                )
+                refreshSessionLogs()
+            }.onFailure {
+                _uiState.value = WorkoutSessionUiState.Error(it.message ?: "Couldn't save this set.")
+            }
+            isSaving = false
+            if (_uiState.value is WorkoutSessionUiState.Active) publishActive()
+        }
+    }
+
+    fun addFreestyleExercise(exerciseId: Long) {
+        if (!::session.isInitialized || session.sessionKind != SessionKind.FREESTYLE) return
+        if (exerciseId in freestyleOrder) return
+        freestyleOrder = freestyleOrder + exerciseId
+        viewModelScope.launch {
+            plan = freestylePlan(freestyleOrder)
+            val exercises = plan.blocks.firstOrNull()?.exercises.orEmpty()
+            if (exercises.none { it.id == exerciseId }) {
+                freestyleOrder = freestyleOrder.filter { it != exerciseId }
+                ready = true
+                publishActive()
+                return@launch
+            }
+            val index = exercises.indexOfFirst { it.id == exerciseId }
+            cursor = SessionCursor(0, index.coerceAtLeast(0), 1)
+            extraRounds = 0
+            restEndEpochMillis = null
+            loadInputDefaults()
+            ready = true
+            persistProgress()
+            publishActive()
+        }
     }
 
     fun updateValue(value: String) {
@@ -459,7 +609,7 @@ class WorkoutSessionViewModel(
     }
 
     fun logCurrent() {
-        if (isSaving || restEndEpochMillis != null) return
+        if (isSaving || restEndEpochMillis != null || !::plan.isInitialized || plan.blocks.isEmpty()) return
         val value = valueInput.toIntOrNull() ?: return
         val exercise = currentExercise()
         isSaving = true
@@ -574,6 +724,7 @@ class WorkoutSessionViewModel(
     }
 
     fun previousStep() {
+        if (!::plan.isInitialized || plan.blocks.isEmpty()) return
         if (cursor.blockIndex == 0 && cursor.exerciseIndex == 0 && cursor.roundNumber == 1) return
         holdStartEpochMillis = null
 
@@ -659,7 +810,15 @@ class WorkoutSessionViewModel(
                 startRestTimerService(restEndEpochMillis!!, restCaption)
                 publishActive()
             }
-            SessionAdvance.Finished -> finishAndSummarize()
+            SessionAdvance.Finished -> {
+                if (isFreestyle()) {
+                    refreshSessionLogs()
+                    persistProgress()
+                    publishActive()
+                } else {
+                    finishAndSummarize()
+                }
+            }
         }
     }
 
@@ -684,8 +843,9 @@ class WorkoutSessionViewModel(
         val records = workoutRepository.recordsForSession(sessionId).mapNotNull { row ->
             formatRecordLine(row.record.type, row.record.value, row.exerciseName, unitSystem)
         }
+        val workoutName = if (::plan.isInitialized && plan.name.isNotBlank()) plan.name else "Empty workout"
         _uiState.value = WorkoutSessionUiState.Summary(
-            workoutName = plan.name,
+            workoutName = workoutName,
             setCount = workoutRepository.setCount(sessionId),
             durationSeconds = session.durationSeconds ?: elapsedSeconds(),
             notes = session.notes?.takeIf { it.isNotBlank() }.orEmpty(),
@@ -778,6 +938,14 @@ class WorkoutSessionViewModel(
 
     private fun publishActive() {
         if (!::plan.isInitialized || session.completed) return
+        if (plan.blocks.isEmpty() || plan.blocks.all { it.exercises.isEmpty() }) {
+            _uiState.value = WorkoutSessionUiState.FreestyleEmpty(
+                elapsedSeconds = elapsedSeconds(),
+                notesInput = notesInput,
+                catalog = catalog,
+            )
+            return
+        }
         val block = plan.blocks[cursor.blockIndex]
         val exercise = currentExercise()
         val warmUp = block.kind == BlockKind.WARM_UP
@@ -796,6 +964,37 @@ class WorkoutSessionViewModel(
                     rpe = log.rpe,
                 )
             }
+        val warmupLogged = sessionLogs.find { log ->
+            log.exerciseId == exercise.id && log.setType == SetType.WARMUP
+        }?.let { log ->
+            LoggedSetView(
+                roundNumber = log.roundNumber,
+                reps = log.reps,
+                durationSeconds = log.durationSeconds,
+                weightDisplay = log.weightKg?.let { formatWeight(displayWeight(it)) },
+                rpe = log.rpe,
+            )
+        }
+        val workingRows = buildSetRows(
+            warmUp = warmUp,
+            roundCount = effectiveMax(block),
+            activeRound = cursor.roundNumber,
+            tracksWeight = exercise.tracksWeight,
+            seconds = seconds,
+            activeLoad = weightInput,
+            activeValue = valueInput,
+            holdingSeconds = if (holding) ((clock.millis() - holdStartEpochMillis!!) / 1000).toInt() else null,
+            logs = logs,
+            previousText = previousByRound.mapValues { (_, prior) -> previousLabel(prior, seconds) },
+            previousCopyable = previousByRound.mapValues { (_, prior) -> prior != null },
+            activeRpe = rpeInput?.let { formatWeight(it) },
+            loggedRpe = logs.mapNotNull { view -> view.rpe?.let { view.roundNumber to formatWeight(it) } }.toMap(),
+        )
+        val rows = if (!warmUp && exercise.id in warmupExerciseIds) {
+            listOf(warmupRow(warmupLogged, exercise.tracksWeight, seconds)) + workingRows
+        } else {
+            workingRows
+        }
         val rest = restEndEpochMillis?.let { restSecondsUntil(it, clock.millis()) }
         val plate = plateView(exercise)
         val line = if (warmUp) null else progressionLine(exercise, block, sessionLogs)
@@ -806,21 +1005,7 @@ class WorkoutSessionViewModel(
             blockLabel = block.label,
             exercise = exercise,
             pills = exercisePills(plan.blocks, cursor, extraRounds),
-            rows = buildSetRows(
-                warmUp = warmUp,
-                roundCount = effectiveMax(block),
-                activeRound = cursor.roundNumber,
-                tracksWeight = exercise.tracksWeight,
-                seconds = seconds,
-                activeLoad = weightInput,
-                activeValue = valueInput,
-                holdingSeconds = if (holding) ((clock.millis() - holdStartEpochMillis!!) / 1000).toInt() else null,
-                logs = logs,
-                previousText = previousByRound.mapValues { (_, prior) -> previousLabel(prior, seconds) },
-                previousCopyable = previousByRound.mapValues { (_, prior) -> prior != null },
-                activeRpe = rpeInput?.let { formatWeight(it) },
-                loggedRpe = logs.mapNotNull { view -> view.rpe?.let { view.roundNumber to formatWeight(it) } }.toMap(),
-            ),
+            rows = rows,
             keypadOpen = keypadOpen,
             keypadField = keypadField,
             restRemainingSeconds = rest?.remaining,
@@ -845,6 +1030,8 @@ class WorkoutSessionViewModel(
             endLines = endLines(),
             plate = plate,
             catalog = catalog,
+            showAddWarmup = !warmUp && exercise.id !in warmupExerciseIds,
+            showAddExercise = isFreestyle(),
         )
     }
 
@@ -932,6 +1119,69 @@ class WorkoutSessionViewModel(
     }
 
     private fun currentExercise() = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
+
+    private fun isFreestyle(): Boolean =
+        ::session.isInitialized && session.sessionKind == SessionKind.FREESTYLE
+
+    private suspend fun freestylePlan(ids: List<Long>): WorkoutPlan {
+        val exercises = ids.mapNotNull { id ->
+            val entity = workoutRepository.getExercise(id) ?: return@mapNotNull null
+            WorkoutExercise(
+                id = entity.id,
+                name = entity.name,
+                imageAssetName = entity.imageAssetName,
+                notes = entity.notes,
+                tracksWeight = entity.tracksWeight,
+                targetValueLow = 8,
+                targetValueHigh = 12,
+                repType = RepType.REPS,
+                perSide = false,
+                equipment = entity.equipment,
+            )
+        }
+        val block = if (exercises.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(
+                WorkoutBlock(
+                    id = 0,
+                    label = "Empty workout",
+                    kind = BlockKind.STANDARD,
+                    targetRoundsMin = 1,
+                    targetRoundsMax = 3,
+                    restSecondsBetweenRounds = null,
+                    restSecondsAfterBlock = null,
+                    isOptional = false,
+                    exercises = exercises,
+                ),
+            )
+        }
+        return WorkoutPlan(
+            templateId = 0,
+            name = "Empty workout",
+            dayLabel = "",
+            maxDurationMinutes = 0,
+            category = "Custom",
+            blocks = block,
+        )
+    }
+
+    private fun warmupRow(logged: LoggedSetView?, tracksWeight: Boolean, seconds: Boolean): SetRowModel {
+        val figure = if (seconds) logged?.durationSeconds else logged?.reps
+        val load = logged?.weightDisplay?.takeIf { it.isNotBlank() }
+        return SetRowModel(
+            label = "W",
+            roundNumber = logged?.roundNumber ?: 1,
+            previousText = "—",
+            loadText = if (tracksWeight) load ?: "—" else "—",
+            repsText = figure?.toString() ?: "—",
+            complete = logged != null,
+            active = false,
+            copyable = false,
+            rpeText = logged?.rpe?.let { formatWeight(it) },
+            warmup = true,
+        )
+    }
 
     private fun moveCursor(next: SessionCursor) {
         if (next.blockIndex != cursor.blockIndex) extraRounds = 0
@@ -1141,6 +1391,8 @@ class WorkoutSessionViewModel(
             extraRounds = extraRounds,
             substitutes = formatSubstitutes(substitutes),
             appliedProgression = formatProgressionMap(appliedSessionByExercise),
+            warmupExercises = formatIdList(warmupExerciseIds),
+            freestyleExercises = formatIdList(freestyleOrder),
         ),
     )
 
@@ -1166,6 +1418,19 @@ class WorkoutSessionViewModel(
             }
         }
     }
+}
+
+private fun formatIdList(ids: Collection<Long>): String = ids.joinToString(",")
+
+private fun parseIdList(stored: String): List<Long> =
+    stored.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
+
+private fun freestyleIdsFromLogs(logs: List<SetLogEntity>): List<Long> {
+    val ids = mutableListOf<Long>()
+    for (log in logs) {
+        if (log.exerciseId !in ids) ids += log.exerciseId
+    }
+    return ids
 }
 
 private fun formatSubstitutes(map: Map<Long, Long>): String =

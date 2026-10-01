@@ -4,6 +4,7 @@ import com.example.repsgrams.data.db.AppDatabase
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.domain.schedule.ScheduleEngine
 import com.example.repsgrams.domain.schedule.ScheduleSuggestion
+import com.example.repsgrams.domain.schedule.scopeToActiveProgram
 import java.time.Clock
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -26,14 +27,29 @@ class DefaultScheduleRepository(
         return combine(
             database.workoutSessionDao().observeAll(),
             database.workoutTemplateDao().observeAll(),
-        ) { sessions, templates ->
-            ScheduleEngine.replay(today, sessions, templates, includeDay = true)
+            database.programDao().observeAll(),
+        ) { sessions, templates, programs ->
+            val scope = scopeToActiveProgram(programs, templates)
+            ScheduleEngine.replay(
+                today,
+                sessions,
+                scope.templates,
+                includeDay = true,
+                scheduleMode = scope.mode,
+            )
         }.distinctUntilChanged()
     }
 
     override suspend fun getSuggestion(today: LocalDate): ScheduleSuggestion {
         val sessions = database.workoutSessionDao().getOnOrBefore(today)
         val templates = database.workoutTemplateDao().getAll()
-        return ScheduleEngine.replay(today, sessions, templates, includeDay = true)
+        val scope = scopeToActiveProgram(database.programDao().getAll(), templates)
+        return ScheduleEngine.replay(
+            today,
+            sessions,
+            scope.templates,
+            includeDay = true,
+            scheduleMode = scope.mode,
+        )
     }
 }

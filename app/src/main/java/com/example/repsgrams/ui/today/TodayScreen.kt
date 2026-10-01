@@ -50,6 +50,7 @@ import com.example.repsgrams.domain.today.formatElapsed
 import com.example.repsgrams.domain.today.isSupplementScrollTarget
 import com.example.repsgrams.domain.today.parseDose
 import com.example.repsgrams.domain.today.restDaysCaption
+import com.example.repsgrams.domain.today.weekdayCaption
 import com.example.repsgrams.domain.today.restRowLabel
 import com.example.repsgrams.domain.today.supplementItemIndex
 import com.example.repsgrams.reminder.ReminderNotifications
@@ -92,6 +93,7 @@ fun TodayRoute(
             state = state,
             onToggleSupplement = viewModel::setSupplementTaken,
             onStartWorkout = viewModel::startWorkout,
+            onEmptyWorkout = viewModel::startEmptyWorkout,
             onLogRestDay = viewModel::logRestDay,
             onResumeWorkout = viewModel::resumeWorkout,
             notificationTarget = notificationTarget,
@@ -107,7 +109,8 @@ fun TodayRoute(
 fun TodayScreen(
     state: TodayUiState,
     onToggleSupplement: (com.example.repsgrams.data.db.SupplementEntity, Boolean, Float?) -> Unit,
-    onStartWorkout: (String) -> Unit,
+    onStartWorkout: (Long) -> Unit,
+    onEmptyWorkout: () -> Unit,
     onLogRestDay: () -> Unit,
     onResumeWorkout: (Long) -> Unit,
     notificationTarget: String?,
@@ -142,6 +145,7 @@ fun TodayScreen(
             state = state,
             onToggleSupplement = onToggleSupplement,
             onStartWorkout = onStartWorkout,
+            onEmptyWorkout = onEmptyWorkout,
             onLogRestDay = onLogRestDay,
             onResumeWorkout = onResumeWorkout,
             notificationTarget = notificationTarget,
@@ -158,7 +162,8 @@ fun TodayScreen(
 private fun TodayContent(
     state: TodayUiState.Content,
     onToggleSupplement: (com.example.repsgrams.data.db.SupplementEntity, Boolean, Float?) -> Unit,
-    onStartWorkout: (String) -> Unit,
+    onStartWorkout: (Long) -> Unit,
+    onEmptyWorkout: () -> Unit,
     onLogRestDay: () -> Unit,
     onResumeWorkout: (Long) -> Unit,
     notificationTarget: String?,
@@ -193,7 +198,7 @@ private fun TodayContent(
                 onPill = {
                     when (state.hero.pill) {
                         "RESUME" -> state.activeSessionId?.let(onResumeWorkout)
-                        "START" -> state.suggestion.suggestedTemplate?.dayLabel?.let(onStartWorkout)
+                        "START" -> state.suggestion.suggestedTemplate?.id?.let(onStartWorkout)
                     }
                 },
                 onAlternate = {
@@ -296,7 +301,7 @@ private fun TodayContent(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         onClick = {
                             showAlternatives = false
-                            onStartWorkout(template.dayLabel)
+                            onStartWorkout(template.id)
                         },
                     ) {
                         Row(
@@ -312,7 +317,7 @@ private fun TodayContent(
                             Column(Modifier.weight(1f)) {
                                 Text(template.name, style = MaterialTheme.typography.bodyLarge)
                                 Text(
-                                    restDaysCaption(template.restDaysAfter),
+                                    if (state.weekly) weekdayCaption(template.weekday) else restDaysCaption(template.restDaysAfter),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -329,6 +334,19 @@ private fun TodayContent(
                 ) {
                     Text(
                         restRowLabel(state.suggestion.status),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                BoardTile(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    onClick = {
+                        showAlternatives = false
+                        onEmptyWorkout()
+                    },
+                ) {
+                    Text(
+                        "Empty workout",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.titleMedium,
                     )
