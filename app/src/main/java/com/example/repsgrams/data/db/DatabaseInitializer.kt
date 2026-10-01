@@ -52,6 +52,8 @@ class DatabaseInitializer(
                     name = "Workout A — Upper Body + Light Legs",
                     dayLabel = "A",
                     maxDurationMinutes = 40,
+                    orderIndex = 0,
+                    restDaysAfter = 1,
                 ),
                 blocks = workoutABlocks,
                 exerciseIds = exerciseIds,
@@ -64,6 +66,8 @@ class DatabaseInitializer(
                     name = "Workout B — Upper Body + Posterior Chain",
                     dayLabel = "B",
                     maxDurationMinutes = 40,
+                    orderIndex = 1,
+                    restDaysAfter = 2,
                 ),
                 blocks = workoutBBlocks,
                 exerciseIds = exerciseIds,
@@ -71,6 +75,7 @@ class DatabaseInitializer(
                 blockDao = blockDao,
                 assignmentDao = assignmentDao,
             )
+            applySeedOrder(templateDao)
 
             val supplementDao = database.supplementDao()
             val existingSupplements = supplementDao.getAll()
@@ -107,6 +112,11 @@ class DatabaseInitializer(
             metadataDao.put(DatabaseMetadataEntity(SEED_VERSION_KEY, CURRENT_SEED_VERSION))
             }
 
+    }
+
+    private suspend fun applySeedOrder(templateDao: WorkoutTemplateDao) {
+        val updated = seedOrderBackfill(templateDao.getAll()) ?: return
+        templateDao.update(updated)
     }
 
     private suspend fun seedTemplate(
@@ -167,7 +177,7 @@ class DatabaseInitializer(
 
     private companion object {
         const val SEED_VERSION_KEY = "default_program_seed_version"
-        const val CURRENT_SEED_VERSION = 4
+        const val CURRENT_SEED_VERSION = 5
 
         val DEFAULT_EXERCISES = listOf(
             ExerciseEntity(name = "Jumping Jacks", muscleGroup = "Full Body", tracksWeight = false),
@@ -237,4 +247,23 @@ class DatabaseInitializer(
             )),
         )
     }
+}
+
+/**
+ * Fresh schema 7 skipped migration 3 to 4, so A and B share order 0 and one rest day.
+ * That pair is rewritten once. A different rest day is kept, and its order moves only when the next index is free.
+ */
+internal fun seedOrderBackfill(templates: List<WorkoutTemplateEntity>): WorkoutTemplateEntity? {
+    val a = templates.find { it.dayLabel == "A" } ?: return null
+    val b = templates.find { it.dayLabel == "B" } ?: return null
+    if (a.orderIndex == 0 && b.orderIndex == 0 && a.restDaysAfter == 1 && b.restDaysAfter == 1) {
+        return b.copy(orderIndex = 1, restDaysAfter = 2)
+    }
+    if (b.restDaysAfter != 1 && a.orderIndex == b.orderIndex) {
+        val next = a.orderIndex + 1
+        if (templates.none { it.id != b.id && it.orderIndex == next }) {
+            return b.copy(orderIndex = next)
+        }
+    }
+    return null
 }

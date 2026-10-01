@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.repsgrams.reminder.ReminderNotifications
 import com.example.repsgrams.ui.components.IosCard
 import com.example.repsgrams.ui.components.IosButton
 import com.example.repsgrams.ui.components.shimmer
@@ -132,8 +133,9 @@ private fun TodayContent(
     var showAlternatives by remember { mutableStateOf(false) }
     LaunchedEffect(notificationTarget) {
         if (notificationTarget != null) {
-            if (notificationTarget == "creatine" || notificationTarget == "whey") {
-                listState.animateScrollToItem(1) // Approximate
+            if (notificationTarget == ReminderNotifications.TARGET_SUPPLEMENTS) {
+                val index = if (state.lowSupplyWarnings.isNotEmpty()) 2 else 1
+                listState.animateScrollToItem(index)
             }
             onNotificationHandled()
         }
@@ -229,7 +231,7 @@ private fun TodayContent(
                 }
             }
         }
-        item { SupplementCard(state, onToggleSupplement) }
+        item(key = ReminderNotifications.TARGET_SUPPLEMENTS) { SupplementCard(state, onToggleSupplement) }
         item {
             IosCard {
                 Row(

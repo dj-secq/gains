@@ -16,33 +16,19 @@ import com.example.repsgrams.MainActivity
 object ReminderNotifications {
     const val EXTRA_TARGET = "notification_target"
     const val TARGET_WORKOUT = "workout"
-    const val TARGET_CREATINE = "creatine"
-    const val TARGET_WHEY = "whey"
     const val TARGET_SUPPLEMENTS = "supplements"
     private const val CHANNEL_ROUTINE = "routine_reminders"
-    private const val CHANNEL_POST_WORKOUT = "post_workout_reminders"
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannels(
-            listOf(
-                NotificationChannel(CHANNEL_ROUTINE, "Routine reminders", NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel(CHANNEL_POST_WORKOUT, "Post-workout reminders", NotificationManager.IMPORTANCE_DEFAULT),
-            ),
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ROUTINE, "Routine reminders", NotificationManager.IMPORTANCE_DEFAULT),
         )
     }
 
     fun showWorkout(context: Context, dayLabel: String, minutes: Int) = show(
         context, 1001, CHANNEL_ROUTINE, "Workout $dayLabel is on for today",
         "$minutes min, whenever you're ready.", TARGET_WORKOUT,
-    )
-
-    fun showCreatine(context: Context) = show(
-        context, 1002, CHANNEL_ROUTINE, "Creatine check", "5 g, anytime today.", TARGET_CREATINE,
-    )
-
-    fun showWhey(context: Context, notificationId: Int) = show(
-        context, notificationId, CHANNEL_POST_WORKOUT, "Nice work", "Grab your whey when you're ready.", TARGET_WHEY,
     )
 
     fun showSupplements(context: Context, names: List<String>) = show(

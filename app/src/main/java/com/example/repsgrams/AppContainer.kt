@@ -132,6 +132,14 @@ class DefaultAppContainer(
             val deferred = applicationScope.async {
                 cycleSettingsRepository.ensureInitialized()
                 DatabaseInitializer(db, clock).ensureSeeded()
+                runCatching { reminderScheduler.syncDailyReminders() }
+                    .onFailure { error ->
+                        Log.e(
+                            "Reminders",
+                            "init sync failed: ${error.javaClass.simpleName}: ${error.message}",
+                        )
+                    }
+                Unit
             }
             // Repositories exist only after init starts, so the gate cannot await Room.
             database = db

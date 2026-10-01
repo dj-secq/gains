@@ -55,6 +55,41 @@ class DatabaseInitializerTest {
         assertEquals("serving", wheySupplement.unit)
         assertEquals(5f, creatineSupplement.doseAmount)
         assertEquals("g", creatineSupplement.unit)
+
+        val seededA = checkNotNull(database.workoutTemplateDao().getByDayLabel("A"))
+        val seededB = checkNotNull(database.workoutTemplateDao().getByDayLabel("B"))
+        assertEquals(0, seededA.orderIndex)
+        assertEquals(1, seededA.restDaysAfter)
+        assertEquals(1, seededB.orderIndex)
+        assertEquals(2, seededB.restDaysAfter)
+        assertEquals(5, database.databaseMetadataDao().getInt("default_program_seed_version"))
+    }
+
+    @Test
+    fun rewritesOnlyTheUntouchedDefaultPair() = runTest {
+        val templateDao = database.workoutTemplateDao()
+        templateDao.insert(
+            WorkoutTemplateEntity(name = "Workout A", dayLabel = "A", maxDurationMinutes = 40),
+        )
+        templateDao.insert(
+            WorkoutTemplateEntity(name = "Custom B name", dayLabel = "B", maxDurationMinutes = 40),
+        )
+
+        DatabaseInitializer(database, clock).ensureSeeded()
+
+        val a = checkNotNull(templateDao.getByDayLabel("A"))
+        val b = checkNotNull(templateDao.getByDayLabel("B"))
+        assertEquals(0, a.orderIndex)
+        assertEquals(1, a.restDaysAfter)
+        assertEquals("Custom B name", b.name)
+        assertEquals(1, b.orderIndex)
+        assertEquals(2, b.restDaysAfter)
+
+        templateDao.update(b.copy(orderIndex = 0, restDaysAfter = 1))
+        DatabaseInitializer(database, clock).ensureSeeded()
+        val kept = checkNotNull(templateDao.getByDayLabel("B"))
+        assertEquals(0, kept.orderIndex)
+        assertEquals(1, kept.restDaysAfter)
     }
 
     @Test

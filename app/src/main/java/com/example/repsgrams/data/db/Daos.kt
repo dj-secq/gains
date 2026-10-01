@@ -35,9 +35,9 @@ interface WorkoutTemplateDao {
     @Query("SELECT * FROM workout_templates WHERE id = :id")
     suspend fun getById(id: Long): WorkoutTemplateEntity?
 
-    @Query("SELECT * FROM workout_templates ORDER BY dayLabel")
+    @Query("SELECT * FROM workout_templates ORDER BY orderIndex ASC, dayLabel ASC")
     fun observeAll(): Flow<List<WorkoutTemplateEntity>>
-    @Query("SELECT * FROM workout_templates ORDER BY id ASC")
+    @Query("SELECT * FROM workout_templates ORDER BY orderIndex ASC, dayLabel ASC")
     suspend fun getAll(): List<WorkoutTemplateEntity>
 
     @Query("SELECT * FROM workout_templates WHERE dayLabel = :dayLabel")

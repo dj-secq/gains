@@ -1,7 +1,6 @@
 package com.example.repsgrams.ui.settings
 
 import android.app.AlarmManager
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Intent
 import android.os.Build
@@ -10,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +28,6 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.ImportExport
 import androidx.compose.material.icons.outlined.MonitorWeight
-import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.HealthAndSafety
 
 import com.example.repsgrams.ui.theme.AppColors
@@ -48,7 +45,6 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.WeightRecord
 
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.datastore.UnitSystem
@@ -112,21 +108,16 @@ fun SettingsRoute(
             onWorkoutTime = viewModel::setWorkoutTime,
             onCreatineEnabled = viewModel::setCreatineEnabled,
             onCreatineTime = viewModel::setCreatineTime,
-            onWheyEnabled = viewModel::setWheyEnabled,
-            onWheyDelay = viewModel::setWheyDelay,
-            onCycleDate = viewModel::setCycleStartDate,
             onAdherenceGraceDays = viewModel::setAdherenceGraceDays,
             onUnitSystem = viewModel::setUnitSystem,
-            onWheyGrams = viewModel::setWheyServingGrams,
             onRestTimerSound = viewModel::setRestTimerSound,
             onRestTimerVibrationEnabled = viewModel::setRestTimerVibrationEnabled,
             onDefaultRestSeconds = viewModel::updateDefaultRestSeconds,
             onThemeMode = viewModel::setThemeMode,
-            onProteinGoal = viewModel::setProteinGoalMultiplier,
             onNavigateToTemplates = onNavigateToTemplates,
             onNavigateToExercises = onNavigateToExercises,
             onNavigateToExerciseLibrary = onNavigateToExerciseLibrary,
-        onNavigateToSupplements = onNavigateToSupplements,
+            onNavigateToSupplements = onNavigateToSupplements,
         )
     }
 }
@@ -144,13 +135,8 @@ fun SettingsScreen(
     onWorkoutTime: (LocalTime) -> Unit,
     onCreatineEnabled: (Boolean) -> Unit,
     onCreatineTime: (LocalTime) -> Unit,
-    onWheyEnabled: (Boolean) -> Unit,
-    onWheyDelay: (Int) -> Unit,
-    onCycleDate: (LocalDate) -> Unit,
     onAdherenceGraceDays: (Int) -> Unit,
     onUnitSystem: (UnitSystem) -> Unit,
-    onWheyGrams: (Float) -> Unit,
-    onProteinGoal: (Float, Float) -> Unit,
     onRestTimerSound: (String) -> Unit,
     onRestTimerVibrationEnabled: (Boolean) -> Unit,
     onDefaultRestSeconds: (Int) -> Unit,
@@ -213,20 +199,6 @@ fun SettingsScreen(
                     Text("GENERAL", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
                     IosCard {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Cycle Start Date", style = MaterialTheme.typography.bodyLarge)
-                                val context = LocalContext.current
-                                TextButton(onClick = {
-                                    DatePickerDialog(
-                                        context,
-                                        { _, y, m, d -> onCycleDate(LocalDate.of(y, m + 1, d)) },
-                                        settings.cycleStartDate.year,
-                                        settings.cycleStartDate.monthValue - 1,
-                                        settings.cycleStartDate.dayOfMonth
-                                    ).show()
-                                }) { Text(settings.cycleStartDate.format(DateTimeFormatter.ISO_LOCAL_DATE), style = MaterialTheme.typography.bodyLarge) }
-                            }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -234,7 +206,7 @@ fun SettingsScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Adherence grace period", style = MaterialTheme.typography.bodyLarge)
-                                    Text("Days allowed before a workout is overdue", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Extra sessions a streak can bridge. Does not change the due date.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 IconButton(onClick = { onAdherenceGraceDays(settings.adherenceGraceDays - 1) }, enabled = settings.adherenceGraceDays > 0) { Text("−") }
                                 Text(settings.adherenceGraceDays.toString(), style = MaterialTheme.typography.titleMedium)
@@ -318,39 +290,16 @@ fun SettingsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("SUPPLEMENTS & GOALS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+                    Text("SUPPLEMENTS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
                     IosCard {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            var wheyStr by remember(settings.wheyServingGrams) { mutableStateOf(settings.wheyServingGrams.toString()) }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OutlinedTextField(
-                                    value = wheyStr,
-                                    onValueChange = { wheyStr = it },
-                                    label = { Text("Whey Serving (g)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                                IosButton(text = "Save", onClick = { wheyStr.toFloatOrNull()?.let { onWheyGrams(it) } }, modifier = Modifier.weight(0.5f))
-                            }
-
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                            var lowStr by remember(settings.proteinGoalMultiplierLow) { mutableStateOf(settings.proteinGoalMultiplierLow.toString()) }
-                            var highStr by remember(settings.proteinGoalMultiplierHigh) { mutableStateOf(settings.proteinGoalMultiplierHigh.toString()) }
-                            Column {
-                                Text("Protein Goal Multiplier (g/kg)", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedTextField(value = lowStr, onValueChange = { lowStr = it }, label = { Text("Low") }, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                                    OutlinedTextField(value = highStr, onValueChange = { highStr = it }, label = { Text("High") }, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                IosButton(text = "Save Goal", onClick = {
-                                    val l = lowStr.toFloatOrNull()
-                                    val h = highStr.toFloatOrNull()
-                                    if (l != null && h != null && l <= h) onProteinGoal(l, h)
-                                })
-                            }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { onNavigateToSupplements() }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            IconBadge(icon = Icons.Outlined.Science, tint = AppColors.creatineTeal)
+                            Text("Manage Supplements", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Icon(Icons.Outlined.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -456,16 +405,6 @@ fun SettingsScreen(
                                 onChecked = { checked ->
                                     onHealthConnectEnabled(checked)
                                 }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                            SettingToggle(
-                                "Voice Cues",
-                                "Coming soon — voice cues are not available yet",
-                                Icons.Outlined.RecordVoiceOver,
-                                AppColors.creatineTeal,
-                                checked = false,
-                                enabled = false,
-                                onChecked = {},
                             )
                         }
                     }

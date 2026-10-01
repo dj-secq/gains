@@ -1,5 +1,6 @@
 package com.example.repsgrams.ui.settings
 
+import android.database.sqlite.SQLiteConstraintException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -55,20 +56,22 @@ class ProgramEditorViewModel(
                 _messages.emit("Name and day label are required")
                 return@launch
             }
-            repository.insertTemplate(
-                WorkoutTemplateEntity(
-                    name = name.trim(),
-                    dayLabel = dayLabel.trim(),
-                    maxDurationMinutes = 60,
-                    category = category,
-                    restDaysAfter = restDaysAfter.coerceIn(0, 7),
+            runDayLabelEdit {
+                repository.insertTemplate(
+                    WorkoutTemplateEntity(
+                        name = name.trim(),
+                        dayLabel = dayLabel.trim(),
+                        maxDurationMinutes = 60,
+                        category = category,
+                        restDaysAfter = restDaysAfter.coerceIn(0, 7),
+                    )
                 )
-            )
+            }
         }
     }
 
     fun updateTemplate(template: WorkoutTemplateEntity) {
-        viewModelScope.launch { repository.updateTemplate(template) }
+        viewModelScope.launch { runDayLabelEdit { repository.updateTemplate(template) } }
     }
 
     fun deleteTemplate(template: WorkoutTemplateEntity) {
@@ -156,6 +159,25 @@ class ProgramEditorViewModel(
 
     fun swapBlockExercises(e1Id: Long, e2Id: Long, blockId: Long) {
         viewModelScope.launch { repository.swapBlockExercises(e1Id, e2Id, blockId) }
+    }
+
+    private suspend fun runDayLabelEdit(write: suspend () -> Unit) {
+        try {
+            write()
+        } catch (error: Exception) {
+            if (!error.isDayLabelConflict()) throw error
+            _messages.emit("That day label is already used.")
+        }
+    }
+
+    private fun Throwable.isDayLabelConflict(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is SQLiteConstraintException) return true
+            if (current.message.orEmpty().contains("UNIQUE constraint failed", ignoreCase = true)) return true
+            current = current.cause
+        }
+        return false
     }
 
     companion object {

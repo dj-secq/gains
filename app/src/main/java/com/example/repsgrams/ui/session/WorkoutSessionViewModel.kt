@@ -171,6 +171,10 @@ class WorkoutSessionViewModel(
             showSummary()
             return
         }
+        if (plan.blocks.isEmpty() || plan.blocks.any { it.exercises.isEmpty() }) {
+            _uiState.value = WorkoutSessionUiState.Error("This workout has a block with no exercises.")
+            return
+        }
         val saved = progressStore.progress.first()?.takeIf { it.sessionId == sessionId }
         if (saved != null && saved.blockIndex in plan.blocks.indices &&
             saved.exerciseIndex in plan.blocks[saved.blockIndex].exercises.indices
