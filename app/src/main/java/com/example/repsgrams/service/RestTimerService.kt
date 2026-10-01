@@ -36,7 +36,9 @@ class RestTimerService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var upNextText: String = ""
     private var sessionId: Long = -1L
+    private var restToken: Long = 0L
     private var activeStartId: Int = 0
+    private var latestStartId: Int = 0
 
     /** When true, onDestroy leaves the timeout lock so a one-shot alert can finish with the screen off. */
     private var retainWakeLock: Boolean = false
@@ -55,52 +57,62 @@ class RestTimerService : Service() {
     override fun onDestroy() {
         stopped = true
         timerJob?.cancel()
-        if (!retainWakeLock) releaseWakeLock()
         serviceJob.cancel()
+        RestAlarmScheduler.cancel(this)
+        // Skip, finish, and discard clear retainWakeLock before stopping. A deadline that just
+        // fired keeps the short lock and the one-shot; destroying the service must not cut them.
+        if (!retainWakeLock) {
+            RestAlertPlayback.stop()
+            releaseWakeLock()
+        }
         super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        activeStartId = startId
-        val commandStartId = startId
+        latestStartId = startId
         when (intent?.action) {
             ACTION_STOP -> {
                 // Notification Skip uses getForegroundService, so this still has to enter the foreground.
                 if (!enterForeground()) {
-                    scope.launch { gate.withLock { handleStop(intent, commandStartId) } }
+                    val appContext = applicationContext
+                    val expectedEnd = intent.getLongExtra(EXTRA_END_MILLIS, 0L).takeIf { it != 0L }
+                    val expectedToken = intent.getLongExtra(EXTRA_REST_TOKEN, 0L)
+                    holdRecoveryLock()
+                    recoveryScope.launch { stopStoredRest(appContext, expectedEnd, expectedToken) }
+                    stopSelf(startId)
                     return START_STICKY
                 }
-                scope.launch { gate.withLock { handleStop(intent, commandStartId) } }
+                scope.launch { gate.withLock { if (!stopped) handleStop(intent, startId) } }
             }
             ACTION_CONTINUE, ACTION_DISMISS_ALARM -> {
-                scope.launch { gate.withLock { handleDismiss(commandStartId) } }
+                scope.launch { gate.withLock { if (!stopped) handleDismiss(startId) } }
             }
             else -> {
                 captureExtras(intent)
                 if (!enterForeground()) {
                     val commandAction = intent?.action
-                    scope.launch {
-                        val storedEnd = progressStore.progress.first()?.restEndEpochMillis
-                        val extraEnd = intent?.getLongExtra(EXTRA_END_MILLIS, 0L)?.takeIf { it != 0L }
-                        val end = storedEnd ?: extraEnd
-                        val due = end != null && end <= System.currentTimeMillis()
-                        // A failed start of a future rest must not ring or claim the alert.
-                        if (commandAction == ACTION_DEADLINE || due) {
-                            playDeadlineFallback(applicationContext)
-                        } else if (end != null) {
-                            RestAlarmScheduler.schedule(applicationContext, end)
+                    val appContext = applicationContext
+                    holdRecoveryLock()
+                    // Independent of serviceJob: stopSelf below destroys this instance and cancels that job.
+                    recoveryScope.launch {
+                        val end = SessionProgressStore(appContext).progress.first()?.restEndEpochMillis
+                        if (end == null) return@launch
+                        if (commandAction == ACTION_DEADLINE || end <= System.currentTimeMillis()) {
+                            playDeadlineFallback(appContext)
+                        } else {
+                            RestAlarmScheduler.schedule(appContext, end)
                         }
                     }
-                    stopSelf(commandStartId)
+                    stopSelf(startId)
                     return START_STICKY
                 }
                 scope.launch {
                     gate.withLock {
                         if (stopped) return@withLock
                         when (intent?.action) {
-                            ACTION_ADJUST -> handleAdjust(intent, commandStartId)
-                            ACTION_START -> handleStart(intent, commandStartId)
-                            else -> handleReconcile(commandStartId)
+                            ACTION_ADJUST -> handleAdjust(intent, startId)
+                            ACTION_START -> handleStart(intent, startId)
+                            else -> handleReconcile(startId)
                         }
                     }
                 }
@@ -118,9 +130,9 @@ class RestTimerService : Service() {
             if (id > 0L) sessionId = id
         }
         intent.getStringExtra(EXTRA_UP_NEXT)?.let { upNextText = it }
-        if (intent.action == ACTION_START && intent.hasExtra(EXTRA_END_MILLIS)) {
-            val end = intent.getLongExtra(EXTRA_END_MILLIS, 0L)
-            if (end != 0L) _restEndMillis.value = end
+        if (intent.hasExtra(EXTRA_REST_TOKEN)) {
+            val token = intent.getLongExtra(EXTRA_REST_TOKEN, 0L)
+            if (token != 0L) restToken = token
         }
     }
 
@@ -134,7 +146,7 @@ class RestTimerService : Service() {
             ServiceCompat.startForeground(
                 this,
                 RestNotifications.ID_ONGOING,
-                RestNotifications.ongoing(this, _restEndMillis.value, upNextText, sessionId),
+                RestNotifications.ongoing(this, _restEndMillis.value, upNextText, sessionId, restToken),
                 type,
             )
             true
@@ -147,14 +159,21 @@ class RestTimerService : Service() {
     private suspend fun handleStart(intent: Intent, commandStartId: Int) {
         stopped = false
         val saved = progressStore.progress.first()
+        // A late start must not rebuild a countdown from the intent after Skip or discard cleared the store.
         val end = saved?.restEndEpochMillis
-            ?: intent.getLongExtra(EXTRA_END_MILLIS, 0L).takeIf { it != 0L }
         if (end == null) {
             releaseAndStop(commandStartId)
             return
         }
-        sessionId = intent.getLongExtra(EXTRA_SESSION_ID, saved?.sessionId ?: sessionId)
-        upNextText = saved?.restCaption?.takeIf { it.isNotBlank() }
+        val progress = saved ?: run {
+            releaseAndStop(commandStartId)
+            return
+        }
+        activeStartId = commandStartId
+        sessionId = progress.sessionId.takeIf { it > 0L }
+            ?: intent.getLongExtra(EXTRA_SESSION_ID, sessionId)
+        restToken = progress.restToken.takeIf { it != 0L } ?: restToken
+        upNextText = progress.restCaption.takeIf { it.isNotBlank() }
             ?: intent.getStringExtra(EXTRA_UP_NEXT)
             ?: upNextText
         _restEndMillis.value = end
@@ -169,9 +188,11 @@ class RestTimerService : Service() {
             releaseAndStop(commandStartId)
             return
         }
+        activeStartId = commandStartId
         val saved = progressStore.progress.first()
         if (saved != null) {
             sessionId = saved.sessionId
+            if (saved.restToken != 0L) restToken = saved.restToken
             if (saved.restCaption.isNotBlank()) upNextText = saved.restCaption
         }
         _restEndMillis.value = updated
@@ -185,43 +206,45 @@ class RestTimerService : Service() {
             releaseAndStop(commandStartId)
             return
         }
+        activeStartId = commandStartId
         sessionId = saved.sessionId
+        if (saved.restToken != 0L) restToken = saved.restToken
         upNextText = saved.restCaption
         _restEndMillis.value = end
         applyTiming(end, commandStartId)
     }
 
     private suspend fun handleStop(intent: Intent?, commandStartId: Int) {
-        // The notification carries the deadline it was built for. A newer rest must survive Skip.
-        val expected = intent?.takeIf { it.hasExtra(EXTRA_END_MILLIS) }
+        val expectedEnd = intent?.takeIf { it.hasExtra(EXTRA_END_MILLIS) }
             ?.getLongExtra(EXTRA_END_MILLIS, 0L)
-        val current = progressStore.progress.first()?.restEndEpochMillis
-        if (expected != null && current != expected) {
-            if (timerJob?.isActive != true && commandStartId == activeStartId) {
-                dropForeground()
-                stopSelf(commandStartId)
-            }
+            ?.takeIf { it != 0L }
+        val expectedToken = intent?.getLongExtra(EXTRA_REST_TOKEN, 0L) ?: 0L
+        val saved = progressStore.progress.first()
+        if (isDifferentRest(expectedEnd, expectedToken, saved?.restEndEpochMillis, saved?.restToken ?: 0L)) {
+            // A newer rest owns the service. This Skip must not become the id that blocks stopSelf.
             return
         }
-        if (current != null) {
-            progressStore.clearRestDeadlineIfMatch(expected ?: current)
+        if (expectedToken != 0L) {
+            progressStore.clearRestForToken(expectedToken)
+        } else if (expectedEnd != null) {
+            progressStore.clearRestDeadlineIfMatch(expectedEnd)
         }
-        if (progressStore.progress.first()?.restEndEpochMillis != null) {
-            if (timerJob?.isActive != true && commandStartId == activeStartId) {
-                dropForeground()
-                stopSelf(commandStartId)
-            }
+        val after = progressStore.progress.first()
+        if (isDifferentRest(expectedEnd, expectedToken, after?.restEndEpochMillis, after?.restToken ?: 0L)) {
             return
         }
+        activeStartId = commandStartId
         stopped = true
         timerJob?.cancel()
         RestAlertPlayback.stop()
+        retainWakeLock = false
         releaseWakeLock()
         RestAlarmScheduler.cancel(this)
         _restEndMillis.value = null
+        restToken = 0L
         RestNotifications.cancelRestOver(this)
         dropForeground()
-        if (commandStartId == activeStartId) stopSelf(commandStartId)
+        stopSelf(latestStartId)
     }
 
     private fun handleDismiss(commandStartId: Int) {
@@ -230,10 +253,12 @@ class RestTimerService : Service() {
         RestNotifications.cancelRestOver(this)
         val end = _restEndMillis.value
         if (end != null && end > System.currentTimeMillis()) return
+        activeStartId = commandStartId
+        retainWakeLock = false
         releaseWakeLock()
         _restEndMillis.value = null
         dropForeground()
-        if (commandStartId == activeStartId) stopSelf(commandStartId)
+        stopSelf(latestStartId)
     }
 
     private suspend fun applyTiming(end: Long, commandStartId: Int) {
@@ -245,7 +270,12 @@ class RestTimerService : Service() {
             return
         }
         acquireWakeLock(remaining + ALERT_GRACE_MS)
+        if (stopped) return
         RestAlarmScheduler.schedule(this, end)
+        if (stopped) {
+            RestAlarmScheduler.cancel(this)
+            return
+        }
         RestNotifications.cancelRestOver(this)
         refreshOngoing()
         startLoop(commandStartId)
@@ -274,31 +304,41 @@ class RestTimerService : Service() {
 
     private suspend fun onTimerFinished(commandStartId: Int) {
         if (stopped) return
+        val settings = PreferencesCycleSettingsRepository(applicationContext, Clock.systemUTC())
+            .settings
+            .first()
+        if (stopped) return
+        val sessionVisible = isSessionForeground
+        val willSound = !sessionVisible && settings.restTimerSound != "off"
+        val willVibrate = settings.restTimerVibrationEnabled
+        val willNotify = !sessionVisible
+        if (!willSound && !willVibrate && !willNotify) {
+            _restEndMillis.value = null
+            if (!retainWakeLock) releaseWakeLock()
+            dropForeground()
+            stopSelf(latestStartId)
+            return
+        }
         val won = progressStore.claimRestAlert()
         if (!won || stopped) {
             if (!stopped) {
                 _restEndMillis.value = null
-                // The winner already holds the timeout lock for the one-shot. Don't drop it.
                 if (!retainWakeLock) releaseWakeLock()
                 dropForeground()
-                if (commandStartId == activeStartId) stopSelf(commandStartId)
+                stopSelf(latestStartId)
             }
             return
         }
         RestAlarmScheduler.cancel(this)
         val alertEnd = _restEndMillis.value
-        val settings = PreferencesCycleSettingsRepository(applicationContext, Clock.systemUTC())
-            .settings
-            .first()
-        if (stopped) return
         RestAlertPlayback.play(
             applicationContext,
             sound = settings.restTimerSound,
             vibrationEnabled = settings.restTimerVibrationEnabled,
-            sessionVisible = isSessionForeground,
+            sessionVisible = sessionVisible,
         )
-        if (!isSessionForeground) {
-            RestNotifications.postRestOver(this, upNextText, sessionId, alertEnd)
+        if (willNotify) {
+            RestNotifications.postRestOver(this, upNextText, sessionId, alertEnd, restToken)
         }
         // Mirror only. The stored deadline stays until Skip, finish, or discard.
         _restEndMillis.value = null
@@ -307,14 +347,14 @@ class RestTimerService : Service() {
         retainWakeLock = true
         retainedWakeLock = wakeLock
         dropForeground()
-        if (commandStartId == activeStartId) stopSelf(commandStartId)
+        stopSelf(latestStartId)
     }
 
     private fun refreshOngoing() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.notify(
             RestNotifications.ID_ONGOING,
-            RestNotifications.ongoing(this, _restEndMillis.value, upNextText, sessionId),
+            RestNotifications.ongoing(this, _restEndMillis.value, upNextText, sessionId, restToken),
         )
     }
 
@@ -348,12 +388,23 @@ class RestTimerService : Service() {
     }
 
     private fun releaseAndStop(commandStartId: Int) {
+        activeStartId = commandStartId
+        stopped = true
         timerJob?.cancel()
+        RestAlertPlayback.stop()
+        retainWakeLock = false
         releaseWakeLock()
         RestAlarmScheduler.cancel(this)
         _restEndMillis.value = null
+        restToken = 0L
         dropForeground()
-        if (commandStartId == activeStartId) stopSelf(commandStartId)
+        stopSelf(latestStartId)
+    }
+
+    private fun holdRecoveryLock() {
+        acquireWakeLock(ALERT_GRACE_MS)
+        retainWakeLock = true
+        retainedWakeLock = wakeLock
     }
 
     companion object {
@@ -371,32 +422,85 @@ class RestTimerService : Service() {
         const val EXTRA_UP_NEXT = "up_next"
         const val EXTRA_DELTA_MS = "delta_ms"
         const val EXTRA_SESSION_ID = "session_id"
+        const val EXTRA_REST_TOKEN = "rest_token"
 
         var isSessionForeground = false
 
         private const val ALERT_GRACE_MS = 5_000L
         private const val TAG = "RestTimer"
         private var retainedWakeLock: PowerManager.WakeLock? = null
+        private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         suspend fun playDeadlineFallback(context: Context) {
             val appContext = context.applicationContext
             val store = SessionProgressStore(appContext)
-            if (!store.claimRestAlert()) return
             val saved = store.progress.first()
-            RestNotifications.ensureChannels(appContext)
-            RestNotifications.postRestOver(
-                appContext,
-                saved?.restCaption.orEmpty(),
-                saved?.sessionId ?: -1L,
-                saved?.restEndEpochMillis,
-            )
+            if (saved?.restEndEpochMillis == null || saved.restAlertFired) return
             val settings = PreferencesCycleSettingsRepository(appContext, Clock.systemUTC()).settings.first()
+            val sessionVisible = isSessionForeground
+            val willSound = !sessionVisible && settings.restTimerSound != "off"
+            val willVibrate = settings.restTimerVibrationEnabled
+            val willNotify = !sessionVisible
+            if (!willSound && !willVibrate && !willNotify) return
+            if (!store.claimRestAlert()) return
+            acquireFallbackWakeLock(appContext)
+            if (willNotify) {
+                RestNotifications.ensureChannels(appContext)
+                RestNotifications.postRestOver(
+                    appContext,
+                    saved.restCaption,
+                    saved.sessionId,
+                    saved.restEndEpochMillis,
+                    saved.restToken,
+                )
+            }
             RestAlertPlayback.play(
                 appContext,
                 sound = settings.restTimerSound,
                 vibrationEnabled = settings.restTimerVibrationEnabled,
-                sessionVisible = false,
+                sessionVisible = sessionVisible,
             )
+        }
+
+        suspend fun stopStoredRest(context: Context, expectedEnd: Long?, expectedToken: Long) {
+            val appContext = context.applicationContext
+            val store = SessionProgressStore(appContext)
+            val saved = store.progress.first()
+            if (isDifferentRest(expectedEnd, expectedToken, saved?.restEndEpochMillis, saved?.restToken ?: 0L)) {
+                return
+            }
+            val cleared = when {
+                expectedToken != 0L -> store.clearRestForToken(expectedToken)
+                expectedEnd != null -> store.clearRestDeadlineIfMatch(expectedEnd)
+                else -> false
+            }
+            val after = store.progress.first()
+            if (!cleared && after?.restEndEpochMillis != null) return
+            if (isDifferentRest(expectedEnd, expectedToken, after?.restEndEpochMillis, after?.restToken ?: 0L)) {
+                return
+            }
+            RestAlarmScheduler.cancel(appContext)
+            RestAlertPlayback.stop()
+            releaseRetainedWakeLock()
+        }
+
+        private fun isDifferentRest(
+            expectedEnd: Long?,
+            expectedToken: Long,
+            currentEnd: Long?,
+            currentToken: Long,
+        ): Boolean {
+            if (expectedToken != 0L && currentToken != 0L) return expectedToken != currentToken
+            if (expectedEnd != null && currentEnd != null) return expectedEnd != currentEnd
+            return false
+        }
+
+        private fun acquireFallbackWakeLock(context: Context) {
+            val lock = (context.getSystemService(POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RepsGrams:RestTimer")
+                .also { it.setReferenceCounted(false) }
+            retainedWakeLock = lock
+            lock.acquire(ALERT_GRACE_MS)
         }
 
         fun releaseRetainedWakeLock() {

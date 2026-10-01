@@ -1,6 +1,7 @@
 package com.example.repsgrams.data.datastore
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -23,6 +24,8 @@ data class SessionProgress(
     val notes: String = "",
     val restCaption: String = "",
     val restAlertFired: Boolean = false,
+    /** Identifies one rest. ±15 keeps it; the next rest replaces it. */
+    val restToken: Long = 0L,
 )
 
 class SessionProgressStore(private val context: Context) {
@@ -35,6 +38,7 @@ class SessionProgressStore(private val context: Context) {
         val notes = stringPreferencesKey("notes")
         val restCaption = stringPreferencesKey("rest_caption")
         val restAlertFired = booleanPreferencesKey("rest_alert_fired")
+        val restToken = longPreferencesKey("rest_token")
     }
 
     val progress: Flow<SessionProgress?> = context.sessionProgressDataStore.data.map { values ->
@@ -48,6 +52,7 @@ class SessionProgressStore(private val context: Context) {
             notes = values[Keys.notes] ?: "",
             restCaption = values[Keys.restCaption] ?: "",
             restAlertFired = values[Keys.restAlertFired] ?: false,
+            restToken = values[Keys.restToken] ?: 0L,
         )
     }
 
@@ -60,7 +65,14 @@ class SessionProgressStore(private val context: Context) {
             values[Keys.notes] = progress.notes
             values[Keys.restCaption] = progress.restCaption
             values[Keys.restAlertFired] = progress.restAlertFired
-            progress.restEndEpochMillis?.let { values[Keys.restEnd] = it } ?: values.remove(Keys.restEnd)
+            val end = progress.restEndEpochMillis
+            if (end != null) {
+                values[Keys.restEnd] = end
+                if (progress.restToken != 0L) values[Keys.restToken] = progress.restToken
+            } else {
+                values.remove(Keys.restEnd)
+                values.remove(Keys.restToken)
+            }
         }
     }
 
@@ -92,14 +104,39 @@ class SessionProgressStore(private val context: Context) {
         won
     }
 
-    suspend fun clearRestDeadlineIfMatch(expectedEndEpochMillis: Long) {
+    /** @return true when this call removed [expectedEndEpochMillis]. A newer deadline is left alone. */
+    suspend fun clearRestDeadlineIfMatch(expectedEndEpochMillis: Long): Boolean {
+        var cleared = false
         context.sessionProgressDataStore.edit { values ->
             if (values[Keys.restEnd] == expectedEndEpochMillis) {
-                values.remove(Keys.restEnd)
-                values[Keys.restAlertFired] = false
-                values.remove(Keys.restCaption)
+                clearRestFields(values)
+                cleared = true
             }
         }
+        return cleared
+    }
+
+    /**
+     * Clears the deadline only when [expectedToken] is still the stored rest.
+     * An adjusted ±15 keeps the token, so Skip still matches. The next rest does not.
+     */
+    suspend fun clearRestForToken(expectedToken: Long): Boolean {
+        if (expectedToken == 0L) return false
+        var cleared = false
+        context.sessionProgressDataStore.edit { values ->
+            if (values[Keys.restToken] == expectedToken) {
+                clearRestFields(values)
+                cleared = true
+            }
+        }
+        return cleared
+    }
+
+    private fun clearRestFields(values: MutablePreferences) {
+        values.remove(Keys.restEnd)
+        values[Keys.restAlertFired] = false
+        values.remove(Keys.restCaption)
+        values.remove(Keys.restToken)
     }
 
     suspend fun clear() = context.sessionProgressDataStore.edit { it.clear() }

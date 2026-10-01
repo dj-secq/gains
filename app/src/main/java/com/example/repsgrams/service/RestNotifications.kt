@@ -62,7 +62,13 @@ internal object RestNotifications {
         }
     }
 
-    fun ongoing(context: Context, endEpochMillis: Long?, caption: String, sessionId: Long): Notification {
+    fun ongoing(
+        context: Context,
+        endEpochMillis: Long?,
+        caption: String,
+        sessionId: Long,
+        restToken: Long = 0L,
+    ): Notification {
         ensureChannels(context)
         val title = if (endEpochMillis == null) {
             "Rest"
@@ -70,7 +76,7 @@ internal object RestNotifications {
             val seconds = restSecondsUntil(endEpochMillis, System.currentTimeMillis()).remaining
             "Resting — ${formatSeconds(seconds)}"
         }
-        return base(context, CHANNEL_TIMER, sessionId, endEpochMillis)
+        return base(context, CHANNEL_TIMER, sessionId, endEpochMillis, restToken)
             .setContentTitle(title)
             .setContentText(caption)
             .setOngoing(true)
@@ -78,9 +84,15 @@ internal object RestNotifications {
             .build()
     }
 
-    fun postRestOver(context: Context, caption: String, sessionId: Long, endEpochMillis: Long?) {
+    fun postRestOver(
+        context: Context,
+        caption: String,
+        sessionId: Long,
+        endEpochMillis: Long?,
+        restToken: Long = 0L,
+    ) {
         ensureChannels(context)
-        val notification = base(context, CHANNEL_ALARM, sessionId, endEpochMillis)
+        val notification = base(context, CHANNEL_ALARM, sessionId, endEpochMillis, restToken)
             .setContentTitle("Rest over")
             .setContentText(caption)
             .setOngoing(false)
@@ -100,13 +112,14 @@ internal object RestNotifications {
         channelId: String,
         sessionId: Long,
         endEpochMillis: Long?,
+        restToken: Long,
     ): NotificationCompat.Builder {
         return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(openSession(context, sessionId))
             .addAction(0, "−15", adjust(context, -15_000L, RC_MINUS))
             .addAction(0, "+15", adjust(context, 15_000L, RC_PLUS))
-            .addAction(0, "Skip", skip(context, endEpochMillis))
+            .addAction(0, "Skip", skip(context, endEpochMillis, restToken))
     }
 
     private fun openSession(context: Context, sessionId: Long): PendingIntent {
@@ -135,10 +148,11 @@ internal object RestNotifications {
         )
     }
 
-    private fun skip(context: Context, endEpochMillis: Long?): PendingIntent {
+    private fun skip(context: Context, endEpochMillis: Long?, restToken: Long): PendingIntent {
         val intent = Intent(context, RestTimerService::class.java).apply {
             action = RestTimerService.ACTION_STOP
             if (endEpochMillis != null) putExtra(RestTimerService.EXTRA_END_MILLIS, endEpochMillis)
+            if (restToken != 0L) putExtra(RestTimerService.EXTRA_REST_TOKEN, restToken)
         }
         return PendingIntent.getForegroundService(
             context,

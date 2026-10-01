@@ -48,10 +48,12 @@ import com.example.repsgrams.ui.components.IosCard
 import com.example.repsgrams.ui.components.shimmer
 
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.launch
 @Composable
 fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Unit) {
 
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     var showCancelDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = state !is WorkoutSessionUiState.Summary) {
@@ -66,8 +68,10 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
             dismissText = "Cancel",
             onConfirm = {
                 showCancelDialog = false
-                viewModel.cancelWorkout()
-                onFinished()
+                scope.launch {
+                    viewModel.discardWorkout()
+                    onFinished()
+                }
             },
             onDismiss = { showCancelDialog = false }
         )
