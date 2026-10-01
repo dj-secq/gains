@@ -53,7 +53,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -273,7 +272,6 @@ fun RepsGramsApp(
                                     viewModel = settingsViewModel,
                                     onNavigateToTemplates = { navController.navigate("templates") },
                                     onNavigateToExercises = { navController.navigate("exercises") },
-                                    onNavigateToExerciseLibrary = { navController.navigate("exercise_library") },
                                     onNavigateToSupplements = { navController.navigate("manage_supplements") },
                                     onExportData = { uri ->
                                         scope.launch {
@@ -357,9 +355,8 @@ fun RepsGramsApp(
                 val exViewModel: com.example.repsgrams.ui.settings.ExerciseDictionaryViewModel = viewModel(
                     factory = com.example.repsgrams.ui.settings.ExerciseDictionaryViewModel.factory(container.workoutRepository)
                 )
-                val exercises by exViewModel.exercises.collectAsStateWithLifecycle()
-                com.example.repsgrams.ui.settings.ExerciseLibraryScreen(
-                    exercises = exercises,
+                com.example.repsgrams.ui.settings.ExerciseDictionaryRoute(
+                    viewModel = exViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }

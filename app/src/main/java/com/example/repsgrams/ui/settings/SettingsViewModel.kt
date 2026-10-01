@@ -98,4 +98,22 @@ class SettingsViewModel(
         }
     }
 
+    fun setKeepScreenOn(enabled: Boolean) = write { repository.setKeepScreenOn(enabled) }
+    fun setProgressionEnabled(enabled: Boolean) = write { repository.setProgressionEnabled(enabled) }
+    fun setProgressionIncrementKg(kilograms: Float) = write { repository.setProgressionIncrementKg(kilograms) }
+    fun setProgressionIncrementLb(pounds: Float) = write { repository.setProgressionIncrementLb(pounds) }
+    fun setRpeEnabled(enabled: Boolean) = write { repository.setRpeEnabled(enabled) }
+    fun setHapticsEnabled(enabled: Boolean) = write { repository.setHapticsEnabled(enabled) }
+    fun setBarbellKg(kilograms: Float) = write { repository.setBarbellKg(kilograms) }
+    fun setBarbellLb(pounds: Float) = write { repository.setBarbellLb(pounds) }
+    fun setPlatesKg(stored: String) = write { repository.setPlatesKg(stored) }
+    fun setPlatesLb(stored: String) = write { repository.setPlatesLb(stored) }
+    fun setWarmupRest(seconds: Int) = write { repository.setDefaultWarmupRestSeconds(seconds) }
+    fun setWorkingRest(seconds: Int) = write { repository.setDefaultWorkingRestSeconds(seconds) }
+    fun setSupersetRest(seconds: Int) = write { repository.setDefaultSupersetIntraRestSeconds(seconds) }
+
+    private fun write(change: suspend () -> Unit) {
+        viewModelScope.launch { change() }
+    }
+
 }

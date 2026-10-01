@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 import androidx.datastore.preferences.preferencesDataStore
@@ -12,12 +13,16 @@ import java.io.IOException
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
+import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class UnitSystem { KG, LB }
+
+const val DEFAULT_PLATES_KG = "25,20,15,10,5,2.5,1.25"
+const val DEFAULT_PLATES_LB = "45,35,25,10,5,2.5"
 
 data class CycleSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -42,6 +47,18 @@ data class CycleSettings(
     val healthConnectEnabled: Boolean,
     val voiceCuesEnabled: Boolean,
     val keepScreenOn: Boolean = true,
+    val progressionEnabled: Boolean = true,
+    val progressionIncrementKg: Float = 2.5f,
+    val progressionIncrementLb: Float = 5f,
+    val rpeEnabled: Boolean = false,
+    val hapticsEnabled: Boolean = true,
+    val barbellKg: Float = 20f,
+    val barbellLb: Float = 45f,
+    val platesKg: String = DEFAULT_PLATES_KG,
+    val platesLb: String = DEFAULT_PLATES_LB,
+    val defaultWarmupRestSeconds: Int = 90,
+    val defaultWorkingRestSeconds: Int = 180,
+    val defaultSupersetIntraRestSeconds: Int = 0,
 )
 
 interface CycleSettingsRepository {
@@ -68,6 +85,18 @@ interface CycleSettingsRepository {
     suspend fun setDefaultRestSeconds(seconds: Int)
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setKeepScreenOn(enabled: Boolean)
+    suspend fun setProgressionEnabled(enabled: Boolean)
+    suspend fun setProgressionIncrementKg(kilograms: Float)
+    suspend fun setProgressionIncrementLb(pounds: Float)
+    suspend fun setRpeEnabled(enabled: Boolean)
+    suspend fun setHapticsEnabled(enabled: Boolean)
+    suspend fun setBarbellKg(kilograms: Float)
+    suspend fun setBarbellLb(pounds: Float)
+    suspend fun setPlatesKg(stored: String)
+    suspend fun setPlatesLb(stored: String)
+    suspend fun setDefaultWarmupRestSeconds(seconds: Int)
+    suspend fun setDefaultWorkingRestSeconds(seconds: Int)
+    suspend fun setDefaultSupersetIntraRestSeconds(seconds: Int)
 }
 
 val Context.cycleSettingsDataStore by preferencesDataStore(name = "cycle_settings")
@@ -157,6 +186,30 @@ class PreferencesCycleSettingsRepository(
     override suspend fun setThemeMode(mode: ThemeMode) = update(THEME_MODE, mode.name)
     override suspend fun setDefaultRestSeconds(seconds: Int) = update(DEFAULT_REST_SECONDS, seconds)
     override suspend fun setKeepScreenOn(enabled: Boolean) = update(KEEP_SCREEN_ON, enabled)
+    override suspend fun setProgressionEnabled(enabled: Boolean) = update(PROGRESSION_ENABLED, enabled)
+    override suspend fun setProgressionIncrementKg(kilograms: Float) {
+        require(kilograms.isFinite() && kilograms > 0f)
+        update(PROGRESSION_INCREMENT_KG, kilograms)
+    }
+    override suspend fun setProgressionIncrementLb(pounds: Float) {
+        require(pounds.isFinite() && pounds > 0f)
+        update(PROGRESSION_INCREMENT_LB, pounds)
+    }
+    override suspend fun setRpeEnabled(enabled: Boolean) = update(RPE_ENABLED, enabled)
+    override suspend fun setHapticsEnabled(enabled: Boolean) = update(HAPTICS_ENABLED, enabled)
+    override suspend fun setBarbellKg(kilograms: Float) {
+        require(kilograms.isFinite() && kilograms > 0f)
+        update(BARBELL_KG, kilograms)
+    }
+    override suspend fun setBarbellLb(pounds: Float) {
+        require(pounds.isFinite() && pounds > 0f)
+        update(BARBELL_LB, pounds)
+    }
+    override suspend fun setPlatesKg(stored: String) = update(PLATES_KG, canonicalPlates(stored))
+    override suspend fun setPlatesLb(stored: String) = update(PLATES_LB, canonicalPlates(stored))
+    override suspend fun setDefaultWarmupRestSeconds(seconds: Int) = update(DEFAULT_WARMUP_REST_SECONDS, restSeconds(seconds))
+    override suspend fun setDefaultWorkingRestSeconds(seconds: Int) = update(DEFAULT_WORKING_REST_SECONDS, restSeconds(seconds))
+    override suspend fun setDefaultSupersetIntraRestSeconds(seconds: Int) = update(DEFAULT_SUPERSET_INTRA_REST_SECONDS, restSeconds(seconds))
 
     private fun toSettings(preferences: Preferences) = CycleSettings(
         themeMode = preferences[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
@@ -183,6 +236,18 @@ class PreferencesCycleSettingsRepository(
         healthConnectEnabled = preferences[HEALTH_CONNECT_ENABLED] ?: false,
         voiceCuesEnabled = preferences[VOICE_CUES_ENABLED] ?: false,
         keepScreenOn = preferences[KEEP_SCREEN_ON] ?: true,
+        progressionEnabled = preferences[PROGRESSION_ENABLED] ?: true,
+        progressionIncrementKg = preferences[PROGRESSION_INCREMENT_KG] ?: 2.5f,
+        progressionIncrementLb = preferences[PROGRESSION_INCREMENT_LB] ?: 5f,
+        rpeEnabled = preferences[RPE_ENABLED] ?: false,
+        hapticsEnabled = preferences[HAPTICS_ENABLED] ?: true,
+        barbellKg = preferences[BARBELL_KG] ?: 20f,
+        barbellLb = preferences[BARBELL_LB] ?: 45f,
+        platesKg = preferences[PLATES_KG]?.takeIf { parsePlateList(it).isNotEmpty() } ?: DEFAULT_PLATES_KG,
+        platesLb = preferences[PLATES_LB]?.takeIf { parsePlateList(it).isNotEmpty() } ?: DEFAULT_PLATES_LB,
+        defaultWarmupRestSeconds = preferences[DEFAULT_WARMUP_REST_SECONDS] ?: 90,
+        defaultWorkingRestSeconds = preferences[DEFAULT_WORKING_REST_SECONDS] ?: 180,
+        defaultSupersetIntraRestSeconds = preferences[DEFAULT_SUPERSET_INTRA_REST_SECONDS] ?: 0,
     )
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) {
@@ -214,7 +279,40 @@ class PreferencesCycleSettingsRepository(
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DEFAULT_REST_SECONDS = androidx.datastore.preferences.core.intPreferencesKey("default_rest_seconds")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        val PROGRESSION_ENABLED = booleanPreferencesKey("progression_enabled")
+        val PROGRESSION_INCREMENT_KG = floatPreferencesKey("progression_increment_kg")
+        val PROGRESSION_INCREMENT_LB = floatPreferencesKey("progression_increment_lb")
+        val RPE_ENABLED = booleanPreferencesKey("rpe_enabled")
+        val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
+        val BARBELL_KG = floatPreferencesKey("barbell_kg")
+        val BARBELL_LB = floatPreferencesKey("barbell_lb")
+        val PLATES_KG = stringPreferencesKey("plates_kg")
+        val PLATES_LB = stringPreferencesKey("plates_lb")
+        val DEFAULT_WARMUP_REST_SECONDS = intPreferencesKey("default_warmup_rest_seconds")
+        val DEFAULT_WORKING_REST_SECONDS = intPreferencesKey("default_working_rest_seconds")
+        val DEFAULT_SUPERSET_INTRA_REST_SECONDS = intPreferencesKey("default_superset_intra_rest_seconds")
     }
+}
+
+fun parsePlateList(stored: String): List<Float> =
+    stored.split(',')
+        .mapNotNull { token -> token.trim().toFloatOrNull() }
+        .filter { it.isFinite() && it > 0f }
+
+fun formatPlateList(plates: List<Float>): String =
+    plates.joinToString(",") { value ->
+        String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
+    }
+
+private fun canonicalPlates(stored: String): String {
+    val plates = parsePlateList(stored).distinct().sortedDescending()
+    require(plates.isNotEmpty()) { "Plate list needs one denomination" }
+    return formatPlateList(plates)
+}
+
+private fun restSeconds(seconds: Int): Int {
+    require(seconds >= 0) { "Rest seconds cannot be negative" }
+    return seconds
 }
 
 private fun String?.toLocalTimeOrDefault(default: LocalTime): LocalTime =

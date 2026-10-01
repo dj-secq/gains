@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.ui.components.BackChevron
 import com.example.repsgrams.ui.components.BoardDialog
 import com.example.repsgrams.ui.components.BoardTile
@@ -46,7 +49,7 @@ fun TemplateListRoute(
             TopAppBar(
                 title = { Text("Workout Templates") },
                 navigationIcon = { BackChevron(onClick = onBack) },
-                actions = { TextAction("Add", onClick = { showDialog = true }) },
+                actions = { TextAction("+", onClick = { showDialog = true }, contentDescription = "Add") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -65,14 +68,14 @@ fun TemplateListRoute(
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text(template.name, style = MaterialTheme.typography.titleMedium)
                         Text("Day: ${template.dayLabel}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             if (idx > 0) {
                                 TextAction("Up", onClick = { viewModel.swapTemplates(template.id, templates[idx - 1].id) })
                             }
                             if (idx < templates.lastIndex) {
                                 TextAction("Down", onClick = { viewModel.swapTemplates(template.id, templates[idx + 1].id) })
                             }
-                            TextAction("Delete", onClick = { pendingDelete = template })
+                            RowMenu(onDelete = { pendingDelete = template })
                         }
                     }
                 }
@@ -152,7 +155,7 @@ fun TemplateEditorRoute(
             TopAppBar(
                 title = { Text("Edit Template Blocks") },
                 navigationIcon = { BackChevron(onClick = onBack) },
-                actions = { TextAction("Add", onClick = { showDialog = true }) },
+                actions = { TextAction("+", onClick = { showDialog = true }, contentDescription = "Add") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -211,7 +214,7 @@ fun TemplateEditorRoute(
                             Text("Rest Days After: ${t.restDaysAfter}")
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(onClick = { if (t.restDaysAfter > 0) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter - 1) }) { Text("-") }
-                            IconButton(onClick = { viewModel.updateTemplateRestDays(t.id, t.restDaysAfter + 1) }) { Text("+") }
+                            IconButton(onClick = { if (t.restDaysAfter < 7) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter + 1) }) { Text("+") }
                         }
                     }
                     HorizontalDivider()
@@ -227,18 +230,17 @@ fun TemplateEditorRoute(
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text(block.label, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "${block.targetRoundsMin}-${block.targetRoundsMax} rounds, ${block.restSecondsBetweenRounds}s rest",
+                            "${block.kind.editorLabel()} · ${block.targetRoundsMin}-${block.targetRoundsMax} rounds, ${block.restSecondsBetweenRounds}s rest",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row {
-                            TextAction("Edit", onClick = { editingBlock = block })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             if (idx > 0) {
                                 TextAction("Up", onClick = { viewModel.swapBlocks(block.id, blocks[idx - 1].id, templateId) })
                             }
                             if (idx < blocks.lastIndex) {
                                 TextAction("Down", onClick = { viewModel.swapBlocks(block.id, blocks[idx + 1].id, templateId) })
                             }
-                            TextAction("Delete", onClick = { pendingDelete = block })
+                            RowMenu(onEdit = { editingBlock = block }, onDelete = { pendingDelete = block })
                         }
                     }
                 }
@@ -255,6 +257,7 @@ fun TemplateEditorRoute(
         var rest by remember(original?.id, defaultRest) { mutableStateOf((original?.restSecondsBetweenRounds ?: defaultRest).toString()) }
         var restAfter by remember(original?.id, defaultRest) { mutableStateOf((original?.restSecondsAfterBlock ?: defaultRest).toString()) }
         var optional by remember(original?.id) { mutableStateOf(original?.isOptional ?: false) }
+        var kind by remember(original?.id) { mutableStateOf(original?.kind ?: BlockKind.STANDARD) }
         BoardDialog(
             title = if (original == null) "New Block" else "Edit Block",
             onDismiss = { showDialog = false; editingBlock = null },
@@ -266,7 +269,7 @@ fun TemplateEditorRoute(
                 val rAfter = restAfter.toIntOrNull() ?: 60
                 if (label.isNotBlank() && min > 0 && min <= max && r >= 0 && rAfter >= 0) {
                     if (original == null) {
-                        viewModel.addBlock(templateId, label.trim(), com.example.repsgrams.data.db.BlockKind.STANDARD, min, max, r, rAfter, optional)
+                        viewModel.addBlock(templateId, label.trim(), kind, min, max, r, rAfter, optional)
                     } else {
                         viewModel.updateBlock(
                             original.copy(
@@ -276,6 +279,7 @@ fun TemplateEditorRoute(
                                 restSecondsBetweenRounds = r,
                                 restSecondsAfterBlock = rAfter,
                                 isOptional = optional,
+                                kind = kind,
                             ),
                         )
                     }
@@ -292,6 +296,12 @@ fun TemplateEditorRoute(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = rest, onValueChange = { rest = it }, label = { Text("Rest between rounds (s)") }, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     OutlinedTextField(value = restAfter, onValueChange = { restAfter = it }, label = { Text("Rest before next block (s)") }, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                }
+                Text("Kind", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BlockKind.entries.forEach { option ->
+                        MonoChip(option.editorLabel(), kind == option, onClick = { kind = option })
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Optional", modifier = Modifier.weight(1f))
@@ -335,7 +345,7 @@ fun BlockEditorRoute(
             TopAppBar(
                 title = { Text("Edit Block Exercises") },
                 navigationIcon = { BackChevron(onClick = onBack) },
-                actions = { TextAction("Add", onClick = { showDialog = true }) },
+                actions = { TextAction("+", onClick = { showDialog = true }, contentDescription = "Add") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -355,15 +365,14 @@ fun BlockEditorRoute(
                             "${link.targetValueLow}-${link.targetValueHigh} ${link.repType.name}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row {
-                            TextAction("Edit", onClick = { editingLink = link })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             if (idx > 0) {
                                 TextAction("Up", onClick = { viewModel.swapBlockExercises(link.id, exLinks[idx - 1].id, blockId) })
                             }
                             if (idx < exLinks.lastIndex) {
                                 TextAction("Down", onClick = { viewModel.swapBlockExercises(link.id, exLinks[idx + 1].id, blockId) })
                             }
-                            TextAction("Delete", onClick = { pendingDelete = link })
+                            RowMenu(onEdit = { editingLink = link }, onDelete = { pendingDelete = link })
                         }
                     }
                 }
@@ -445,5 +454,27 @@ fun BlockEditorRoute(
             },
         )
     }
+}
+
+@Composable
+private fun RowMenu(onDelete: () -> Unit, onEdit: (() -> Unit)? = null) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Outlined.MoreVert, contentDescription = "More")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (onEdit != null) {
+                DropdownMenuItem(text = { Text("Edit") }, onClick = { open = false; onEdit() })
+            }
+            DropdownMenuItem(text = { Text("Delete") }, onClick = { open = false; onDelete() })
+        }
+    }
+}
+
+private fun BlockKind.editorLabel(): String = when (this) {
+    BlockKind.WARM_UP -> "Warm-up"
+    BlockKind.SUPERSET -> "Superset"
+    BlockKind.STANDARD -> "Standard"
 }
 

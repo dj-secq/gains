@@ -93,7 +93,7 @@ class ProgramEditorViewModel(
     }
 
     fun updateTemplateRestDays(templateId: Long, restDays: Int) {
-        viewModelScope.launch { repository.updateTemplateRestDays(templateId, restDays) }
+        viewModelScope.launch { repository.updateTemplateRestDays(templateId, restDays.coerceIn(0, 7)) }
     }
 
     fun addBlock(templateId: Long, label: String, kind: com.example.repsgrams.data.db.BlockKind, targetRoundsMin: Int, targetRoundsMax: Int, restSecs: Int, restAfter: Int, isOptional: Boolean) {
