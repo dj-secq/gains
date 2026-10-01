@@ -25,6 +25,7 @@ data class CalendarSessionDetail(
     val completed: Boolean,
     val durationSeconds: Int?,
     val sets: List<CalendarSetLogRow>,
+    val notes: String? = null,
 )
 
 data class CalendarDayDetail(
@@ -75,8 +76,9 @@ class CalendarRepository(
         val sessions = sessionsForDate.map { session ->
             val name = session.templateId?.let { database.workoutTemplateDao().getById(it)?.name }
                 ?: if (session.notes == "Rest day") "Rest day" else "Deleted workout"
+            val notes = session.notes?.takeUnless { it.isBlank() || it == "Rest day" }
             CalendarSessionDetail(
-                session.id, name, session.completed, session.durationSeconds, allSets[session.id].orEmpty(),
+                session.id, name, session.completed, session.durationSeconds, allSets[session.id].orEmpty(), notes,
             )
         }
 

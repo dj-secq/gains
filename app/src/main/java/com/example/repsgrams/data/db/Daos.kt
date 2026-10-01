@@ -348,6 +348,14 @@ interface PersonalRecordDao {
         """,
     )
     fun observeNonEstimateInRange(start: LocalDate, end: LocalDate): Flow<List<PersonalRecordEntity>>
+
+    @Query(
+        """
+        DELETE FROM personal_records
+        WHERE sourceSetLogId IN (SELECT id FROM set_logs WHERE sessionId = :sessionId)
+        """,
+    )
+    suspend fun deleteForSession(sessionId: Long)
 }
 
 @Dao

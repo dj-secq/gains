@@ -2,6 +2,7 @@ package com.example.repsgrams.data.repository
 
 import com.example.repsgrams.data.db.AppDatabase
 import com.example.repsgrams.data.db.PersonalRecordEntity
+import com.example.repsgrams.domain.session.maxRepsType
 import java.time.LocalDate
 
 class PRManager(private val database: AppDatabase) {
@@ -24,7 +25,7 @@ class PRManager(private val database: AppDatabase) {
         }
 
         // Check Max Reps at this exact weight PR
-        val typeMaxReps = "maxReps_${weightKg}"
+        val typeMaxReps = maxRepsType(weightKg)
         val currentMaxReps = prDao.getLatestRecord(exerciseId, typeMaxReps)
         if (currentMaxReps == null || reps > currentMaxReps.value) {
             val pr = PersonalRecordEntity(exerciseId = exerciseId, type = typeMaxReps, value = reps.toFloat(), achievedDate = date, sourceSetLogId = setLogId)
@@ -43,5 +44,17 @@ class PRManager(private val database: AppDatabase) {
         }
 
         return newPRs
+    }
+
+    /** True when [checkAndSavePR] would insert at least one row. Does not write. */
+    suspend fun wouldRecord(exerciseId: Long, reps: Int, weightKg: Float): Boolean {
+        val prDao = database.personalRecordDao()
+        val currentMaxWeight = prDao.getLatestRecord(exerciseId, "maxWeight")
+        if (currentMaxWeight == null || weightKg > currentMaxWeight.value) return true
+        val currentMaxReps = prDao.getLatestRecord(exerciseId, maxRepsType(weightKg))
+        if (currentMaxReps == null || reps > currentMaxReps.value) return true
+        val estimated1RM = weightKg * (1f + reps / 30f)
+        val current1RM = prDao.getLatestRecord(exerciseId, "estimated1RM")
+        return current1RM == null || estimated1RM > current1RM.value
     }
 }

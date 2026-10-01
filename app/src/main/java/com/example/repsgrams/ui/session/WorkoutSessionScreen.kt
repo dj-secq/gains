@@ -22,9 +22,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import com.example.repsgrams.service.RestTimerService
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material3.FilterChip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -56,8 +53,15 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
     val scope = rememberCoroutineScope()
     var showCancelDialog by remember { mutableStateOf(false) }
 
+    fun leave() {
+        scope.launch {
+            viewModel.leaveWorkout()
+            onFinished()
+        }
+    }
+
     BackHandler(enabled = state !is WorkoutSessionUiState.Summary) {
-        showCancelDialog = true
+        leave()
     }
 
     if (showCancelDialog) {
@@ -102,7 +106,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
 
     WorkoutSessionScreen(
         state = state,
-        prAchieved = viewModel.prAchieved,
+        provisionalRecord = viewModel.provisionalRecord,
         onValueChanged = viewModel::updateValue,
         onWeightChanged = viewModel::updateWeight,
         onAdjustValue = viewModel::adjustValue,
@@ -110,7 +114,6 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onLog = viewModel::logCurrent,
         onSkipBlock = viewModel::skipOptionalBlock,
         onNotesChanged = viewModel::updateNotes,
-        onRpeTagChanged = viewModel::updateRpeTag,
         onAddRest = viewModel::addRestSeconds,
         onSkipRest = viewModel::skipRest,
         onFinish = viewModel::finishWorkout,
@@ -119,7 +122,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onPrevious = viewModel::previousStep,
         onCancelWorkout = { showCancelDialog = true },
         onDone = viewModel::saveSummary,
-        onBack = { showCancelDialog = true }
+        onBack = ::leave
     )
 }
 
@@ -127,7 +130,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
 @Composable
 fun WorkoutSessionScreen(
     state: WorkoutSessionUiState,
-    prAchieved: kotlinx.coroutines.flow.SharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>>,
+    provisionalRecord: kotlinx.coroutines.flow.SharedFlow<Unit>,
     onValueChanged: (String) -> Unit,
     onWeightChanged: (String) -> Unit,
     onAdjustValue: (Int) -> Unit,
@@ -143,15 +146,14 @@ fun WorkoutSessionScreen(
     onCancelWorkout: () -> Unit,
     onDone: () -> Unit,
     onNotesChanged: (String) -> Unit = {},
-    onRpeTagChanged: (String?) -> Unit = {},
     onBack: () -> Unit
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
-    LaunchedEffect(prAchieved) {
-        prAchieved.collect { prs ->
+    LaunchedEffect(provisionalRecord) {
+        provisionalRecord.collect {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            snackbarHostState.showSnackbar("🎉 New Personal Record!")
+            snackbarHostState.showSnackbar("Provisional record")
         }
     }
 
@@ -216,7 +218,6 @@ fun WorkoutSessionScreen(
                     onStopHold = onStopHold,
                     onCancelWorkout = onCancelWorkout,
                     onNotesChanged = onNotesChanged,
-                    onRpeTagChanged = onRpeTagChanged,
                 )
                 is WorkoutSessionUiState.Summary -> SummaryScreen(
                     state,   onDone,
@@ -242,7 +243,6 @@ private fun ActiveSession(
     onStopHold: () -> Unit,
     onCancelWorkout: () -> Unit,
     onNotesChanged: (String) -> Unit = {},
-    onRpeTagChanged: (String?) -> Unit = {},
 ) {
     var showFinishDialog by remember { mutableStateOf(false) }
 
@@ -272,7 +272,6 @@ private fun ActiveSession(
                 onLog = onLog,
                 onStartHold = onStartHold,
                 onStopHold = onStopHold,
-                onRpeTagChanged = onRpeTagChanged,
             )
 
 
@@ -309,6 +308,9 @@ private fun ActiveSession(
                 Text("End workout early", color = MaterialTheme.colorScheme.error)
             }
         }
+        TextButton(onClick = onCancelWorkout, modifier = Modifier.fillMaxWidth()) {
+            Text("Discard")
+        }
     }
 
     if (showFinishDialog) {
@@ -333,7 +335,6 @@ private fun ExerciseCard(
     onLog: () -> Unit,
     onStartHold: () -> Unit,
     onStopHold: () -> Unit,
-    onRpeTagChanged: (String?) -> Unit,
 ) {
     val exercise = state.exercise
     val haptic = LocalHapticFeedback.current
@@ -368,6 +369,9 @@ private fun ExerciseCard(
                 style = MaterialTheme.typography.bodyLarge,
             )
             if (exercise.perSide) Text("Per side", style = MaterialTheme.typography.labelLarge)
+            exercise.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                Text(notes, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
             if (exercise.repType == RepType.SECONDS) {
                 if (state.isHolding) {
@@ -434,20 +438,6 @@ private fun ExerciseCard(
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
-
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Easy", "Right", "Hard").forEach { tag ->
-                    FilterChip(
-                        selected = state.rpeTagInput == tag,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onRpeTagChanged(if (state.rpeTagInput == tag) null else tag)
-                        },
-                        label = { Text(tag) }
-                    )
-                }
-            }
             IosButton(
                 text = if (state.blockKind == BlockKind.WARM_UP) "Done" else "Log set",
                 onClick = {

@@ -26,6 +26,7 @@ import com.example.repsgrams.domain.session.SessionCursor
 import com.example.repsgrams.domain.session.SessionNavigator
 import com.example.repsgrams.domain.session.WorkoutExercise
 import com.example.repsgrams.domain.session.WorkoutPlan
+import com.example.repsgrams.domain.session.prEligibleExerciseIds
 import java.time.Clock
 import com.example.repsgrams.domain.progression.PriorRound
 import com.example.repsgrams.domain.progression.ProgressionCalculator
@@ -107,8 +108,8 @@ class WorkoutSessionViewModel(
     private val _summaryDone = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val summaryDone: SharedFlow<Unit> = _summaryDone.asSharedFlow()
 
-    private val _prAchieved = MutableSharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>>(extraBufferCapacity = 1)
-    val prAchieved: SharedFlow<List<com.example.repsgrams.data.db.PersonalRecordEntity>> = _prAchieved.asSharedFlow()
+    private val _provisionalRecord = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val provisionalRecord: SharedFlow<Unit> = _provisionalRecord.asSharedFlow()
 
     private lateinit var session: WorkoutSessionEntity
     private lateinit var plan: WorkoutPlan
@@ -231,6 +232,14 @@ class WorkoutSessionViewModel(
     fun updateNotes(notes: String) {
         notesInput = notes
         publishActive()
+        viewModelScope.launch {
+            withContext(NonCancellable) { progressStore.saveNotes(sessionId, notes) }
+        }
+    }
+
+    /** Leaves the session on screen. The row and its sets stay so Today can resume it. */
+    suspend fun leaveWorkout() {
+        withContext(NonCancellable) { progressStore.saveNotes(sessionId, notesInput) }
     }
     fun updateRpeTag(tag: String?) {
         rpeTagInput = tag
@@ -247,6 +256,10 @@ class WorkoutSessionViewModel(
         val exercise = currentExercise()
         isSaving = true
         publishActive()
+        val block = plan.blocks[cursor.blockIndex]
+        val weightKg = weightInput.toFloatOrNull()
+            ?.let { if (unitSystem == UnitSystem.LB) poundsToKilograms(it) else it }
+            .takeIf { exercise.tracksWeight }
         viewModelScope.launch {
             runCatching {
                 workoutRepository.logSet(
@@ -255,10 +268,18 @@ class WorkoutSessionViewModel(
                     roundNumber = cursor.roundNumber,
                     reps = value.takeIf { exercise.repType == RepType.REPS },
                     durationSeconds = value.takeIf { exercise.repType == RepType.SECONDS },
-                    weightKg = weightInput.toFloatOrNull()
-                        ?.let { if (unitSystem == UnitSystem.LB) poundsToKilograms(it) else it }
-                        .takeIf { exercise.tracksWeight },
+                    weightKg = weightKg,
+                    rpeTag = null,
                 )
+                val reps = value.takeIf { exercise.repType == RepType.REPS }
+                if (block.kind != BlockKind.WARM_UP &&
+                    reps != null &&
+                    weightKg != null &&
+                    exercise.id in prEligibleExerciseIds(plan) &&
+                    workoutRepository.wouldRecordPersonalRecord(exercise.id, reps, weightKg)
+                ) {
+                    _provisionalRecord.emit(Unit)
+                }
                 applyAdvance(SessionNavigator.afterExercise(plan, cursor))
             }.onFailure {
                 _uiState.value = WorkoutSessionUiState.Error(it.message ?: "Couldn't save this set.")
@@ -430,6 +451,9 @@ class WorkoutSessionViewModel(
         restAlertFired = false
         stopRestTimerService()
         session = workoutRepository.finishSession(sessionId, notesInput.takeIf { it.isNotBlank() })
+        if (::plan.isInitialized) {
+            workoutRepository.recordSessionRecords(sessionId, prEligibleExerciseIds(plan))
+        }
         progressStore.clear()
         showSummary()
     }

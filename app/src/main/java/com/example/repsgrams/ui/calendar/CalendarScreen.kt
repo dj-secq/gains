@@ -346,6 +346,9 @@ private fun SessionDetail(session: CalendarSessionDetail, unitSystem: UnitSystem
                 (session.durationSeconds?.let { " · ${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: ""),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        session.notes?.let { notes ->
+            Text(notes, style = MaterialTheme.typography.bodyMedium)
+        }
         if (session.sets.isEmpty()) Text("No sets logged", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         session.sets.groupBy { it.exerciseName }.forEach { (exercise, sets) ->
             Text(exercise, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(top = 8.dp))

@@ -76,6 +76,15 @@ class SessionProgressStore(private val context: Context) {
         }
     }
 
+    suspend fun saveNotes(sessionId: Long, notes: String) {
+        context.sessionProgressDataStore.edit { values ->
+            val stored = values[Keys.sessionId]
+            if (stored != null && stored != sessionId) return@edit
+            if (stored == null) values[Keys.sessionId] = sessionId
+            values[Keys.notes] = notes
+        }
+    }
+
     suspend fun adjustRestDeadline(deltaMs: Long, nowEpochMillis: Long): Long? {
         val after = context.sessionProgressDataStore.edit { values ->
             val current = values[Keys.restEnd] ?: return@edit

@@ -120,12 +120,12 @@ class WorkoutRepository(
         weightKg: Float?,
         rpeTag: String? = null,
         substitutedFrom: Long? = null,
-    ): List<com.example.repsgrams.data.db.PersonalRecordEntity> {
-        val session = database.workoutSessionDao().getById(sessionId) ?: return emptyList()
+    ): Long {
+        database.workoutSessionDao().getById(sessionId) ?: return -1L
         val existing = database.setLogDao().getForSession(sessionId)
             .find { it.exerciseId == exerciseId && it.roundNumber == roundNumber }
 
-        val setId = if (existing != null) {
+        return if (existing != null) {
             database.setLogDao().update(existing.copy(
                 reps = reps,
                 durationSeconds = durationSeconds,
@@ -149,12 +149,30 @@ class WorkoutRepository(
                 ),
             )
         }
-        if (reps != null && weightKg != null) {
-            val prManager = PRManager(database)
-            return prManager.checkAndSavePR(exerciseId, reps, weightKg, setId, session.date)
-        }
-        return emptyList()
     }
+
+    /**
+     * Writes personal records for a finished session.
+     * [eligibleExerciseIds] is the working-block set; warm-up-only exercises stay out.
+     */
+    suspend fun recordSessionRecords(
+        sessionId: Long,
+        eligibleExerciseIds: Set<Long>,
+    ): List<com.example.repsgrams.data.db.PersonalRecordEntity> {
+        val session = database.workoutSessionDao().getById(sessionId) ?: return emptyList()
+        val prManager = PRManager(database)
+        val recorded = mutableListOf<com.example.repsgrams.data.db.PersonalRecordEntity>()
+        for (set in database.setLogDao().getForSession(sessionId)) {
+            if (set.exerciseId !in eligibleExerciseIds) continue
+            val reps = set.reps ?: continue
+            val weightKg = set.weightKg ?: continue
+            recorded += prManager.checkAndSavePR(set.exerciseId, reps, weightKg, set.id, session.date)
+        }
+        return recorded
+    }
+
+    suspend fun wouldRecordPersonalRecord(exerciseId: Long, reps: Int, weightKg: Float): Boolean =
+        PRManager(database).wouldRecord(exerciseId, reps, weightKg)
 
     suspend fun finishSession(sessionId: Long, notes: String? = null): WorkoutSessionEntity {
         val session = requireNotNull(database.workoutSessionDao().getById(sessionId))
@@ -314,8 +332,10 @@ class WorkoutRepository(
 
 
     suspend fun deleteSession(sessionId: Long) {
-        val session = database.workoutSessionDao().getById(sessionId)
-        if (session != null) {
+        database.withTransaction {
+            // Set delete is ON DELETE SET NULL, which would keep the record and drop its source.
+            database.personalRecordDao().deleteForSession(sessionId)
+            val session = database.workoutSessionDao().getById(sessionId) ?: return@withTransaction
             database.workoutSessionDao().delete(session)
         }
     }
