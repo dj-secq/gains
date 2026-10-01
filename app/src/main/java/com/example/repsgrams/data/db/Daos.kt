@@ -82,6 +82,9 @@ interface TemplateBlockDao {
     @Query("SELECT * FROM template_blocks WHERE templateId = :templateId ORDER BY orderIndex")
     suspend fun getForTemplate(templateId: Long): List<TemplateBlockEntity>
 
+    @Query("SELECT * FROM template_blocks WHERE id = :id")
+    suspend fun getById(id: Long): TemplateBlockEntity?
+
     @Insert suspend fun insert(block: TemplateBlockEntity): Long
     @Insert suspend fun insertAll(blocks: List<TemplateBlockEntity>): List<Long>
     @Update suspend fun update(block: TemplateBlockEntity)

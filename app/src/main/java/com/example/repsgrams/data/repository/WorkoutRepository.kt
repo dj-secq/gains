@@ -2,6 +2,7 @@ package com.example.repsgrams.data.repository
 
 import androidx.room.withTransaction
 import com.example.repsgrams.data.db.AppDatabase
+import com.example.repsgrams.data.db.BlockKind
 import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.SessionKind
 import com.example.repsgrams.data.db.SessionRecordRow
@@ -115,6 +116,11 @@ class WorkoutRepository(
                         targetValueHigh = link.targetValueHigh,
                         repType = link.repType,
                         perSide = link.perSide,
+                        linkId = link.id,
+                        plannedExerciseId = exercise.id,
+                        plannedName = exercise.name,
+                        progressionIncrementKg = link.progressionIncrementKg,
+                        equipment = exercise.equipment,
                     )
                 },
             )
@@ -149,6 +155,7 @@ class WorkoutRepository(
         rpeTag: String? = null,
         substitutedFrom: Long? = null,
         setType: SetType = SetType.WORKING,
+        rpe: Float? = null,
     ): Long {
         database.workoutSessionDao().getById(sessionId) ?: return -1L
         val existing = database.setLogDao().getForSession(sessionId)
@@ -161,6 +168,7 @@ class WorkoutRepository(
                 weightKg = weightKg,
                 rpeTag = rpeTag,
                 substitutedFrom = substitutedFrom,
+                rpe = rpe,
             ))
             existing.id
         } else {
@@ -176,6 +184,7 @@ class WorkoutRepository(
                     rpeTag = rpeTag,
                     substitutedFrom = substitutedFrom,
                     setType = setType,
+                    rpe = rpe,
                 ),
             )
         }
@@ -311,13 +320,50 @@ class WorkoutRepository(
         }
     }
 
-    suspend fun insertBlockExercise(exercise: TemplateBlockExerciseEntity) {
+    suspend fun insertBlockExercise(
+        exercise: TemplateBlockExerciseEntity,
+        supersetIntraRestSeconds: Int? = null,
+    ) {
         database.withTransaction {
             val existing = database.templateBlockExerciseDao().getForBlock(exercise.blockId)
             val newOrder = existing.size
             database.templateBlockExerciseDao().insert(exercise.copy(orderIndex = newOrder))
+            if (supersetIntraRestSeconds != null && existing.isNotEmpty()) {
+                val block = database.templateBlockDao().getById(exercise.blockId)
+                val previous = existing.last()
+                if (block?.kind == BlockKind.SUPERSET && previous.restSecondsAfter == null) {
+                    database.templateBlockExerciseDao().update(
+                        previous.copy(restSecondsAfter = supersetIntraRestSeconds),
+                    )
+                }
+            }
         }
     }
+
+    suspend fun replaceLinkExercise(blockId: Long, linkId: Long, exerciseId: Long) {
+        val link = database.templateBlockExerciseDao().getForBlock(blockId).find { it.id == linkId } ?: return
+        database.templateBlockExerciseDao().update(link.copy(exerciseId = exerciseId))
+    }
+
+    suspend fun duplicateTemplate(sourceId: Long, dayLabel: String): Long {
+        databaseReady.await()
+        return database.withTransaction {
+            val source = requireNotNull(database.workoutTemplateDao().getById(sourceId))
+            val nextOrder = (database.workoutTemplateDao().getAll().maxOfOrNull { it.orderIndex } ?: -1) + 1
+            val newId = database.workoutTemplateDao().insert(
+                source.copy(id = 0, dayLabel = dayLabel.trim(), orderIndex = nextOrder),
+            )
+            for (block in database.templateBlockDao().getForTemplate(sourceId)) {
+                val newBlockId = database.templateBlockDao().insert(block.copy(id = 0, templateId = newId))
+                for (link in database.templateBlockExerciseDao().getForBlock(block.id)) {
+                    database.templateBlockExerciseDao().insert(link.copy(id = 0, blockId = newBlockId))
+                }
+            }
+            newId
+        }
+    }
+
+    suspend fun listExercises(): List<ExerciseEntity> = database.exerciseDao().getAll()
 
     suspend fun updateBlockExercise(exercise: TemplateBlockExerciseEntity) {
         database.templateBlockExerciseDao().update(exercise)

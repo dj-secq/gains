@@ -81,6 +81,59 @@ class SessionNavigatorTest {
         assertEquals(1, advance.cursorAfterRest.roundNumber)
     }
 
+    @Test
+    fun `finishBlock leaves once the minimum is logged`() {
+        val plan = WorkoutPlan(
+            templateId = 1,
+            name = "Test",
+            dayLabel = "A",
+            maxDurationMinutes = 60,
+            category = "Custom",
+            blocks = listOf(
+                WorkoutBlock(
+                    id = 1,
+                    label = "Work",
+                    kind = BlockKind.STANDARD,
+                    targetRoundsMin = 2,
+                    targetRoundsMax = 5,
+                    restSecondsBetweenRounds = 60,
+                    restSecondsAfterBlock = 0,
+                    isOptional = false,
+                    exercises = listOf(
+                        WorkoutExercise(1, "Squat", null, null, true, 8, 12, RepType.REPS, false),
+                    ),
+                ),
+                WorkoutBlock(
+                    id = 2,
+                    label = "Next",
+                    kind = BlockKind.STANDARD,
+                    targetRoundsMin = 1,
+                    targetRoundsMax = 1,
+                    restSecondsBetweenRounds = 0,
+                    restSecondsAfterBlock = 0,
+                    isOptional = false,
+                    exercises = listOf(
+                        WorkoutExercise(2, "Row", null, null, true, 8, 12, RepType.REPS, false),
+                    ),
+                ),
+            ),
+        )
+
+        val advance = SessionNavigator.finishBlock(plan, 0)
+        assertEquals(SessionAdvance.Continue(SessionCursor(1, 0, 1)), advance)
+    }
+
+    @Test
+    fun `an extra round raises the cap without changing the template max`() {
+        val plan = planWithWarmUpAndSuperset()
+        val extended = SessionNavigator.afterExercise(plan, SessionCursor(1, 1, 3), roundCap = 4)
+        val capped = SessionNavigator.afterExercise(plan, SessionCursor(1, 1, 3))
+
+        assertEquals(SessionAdvance.Rest(SessionCursor(1, 0, 4), 90), extended)
+        assertTrue(capped is SessionAdvance.Rest)
+        assertEquals(SessionCursor(2, 0, 1), (capped as SessionAdvance.Rest).cursorAfterRest)
+    }
+
     private fun planWithWarmUpAndSuperset() = WorkoutPlan(
         templateId = 1,
         name = "Test",

@@ -17,8 +17,11 @@ import com.example.repsgrams.data.datastore.SessionProgressStore
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BlockKind
+import com.example.repsgrams.data.db.Equipment
+import com.example.repsgrams.data.db.ExerciseEntity
 import com.example.repsgrams.data.db.RepType
 import com.example.repsgrams.data.db.SetLogEntity
+import com.example.repsgrams.data.db.SetType
 import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.repository.SupplementRepository
 import com.example.repsgrams.data.repository.WorkoutRepository
@@ -38,16 +41,22 @@ import com.example.repsgrams.domain.session.exercisePills
 import com.example.repsgrams.domain.session.formatPrevious
 import com.example.repsgrams.domain.session.formatRecordLine
 import com.example.repsgrams.domain.session.formatWeight
-import com.example.repsgrams.domain.session.loadStep
 import com.example.repsgrams.domain.session.nextExerciseCaption
 import com.example.repsgrams.domain.session.prEligibleExerciseIds
 import com.example.repsgrams.ui.today.TodaySupplement
 import java.time.Clock
+import com.example.repsgrams.domain.plates.calculatePlates
+import com.example.repsgrams.domain.plates.plateCaption
 import com.example.repsgrams.domain.progression.PriorRound
 import com.example.repsgrams.domain.progression.ProgressionCalculator
-import com.example.repsgrams.domain.progression.ProgressionSuggestion
+import com.example.repsgrams.domain.progression.ProgressionMaps
+import com.example.repsgrams.domain.progression.ProgressionResult
+import com.example.repsgrams.domain.progression.formatProgressionMap
+import com.example.repsgrams.domain.progression.parseProgressionMap
+import com.example.repsgrams.domain.progression.progressionSentence
 import com.example.repsgrams.domain.progress.kilogramsToPounds
 import com.example.repsgrams.domain.progress.poundsToKilograms
+import com.example.repsgrams.data.datastore.parsePlateList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -82,6 +91,17 @@ sealed interface WorkoutSessionUiState {
         val notesInput: String,
         val isHolding: Boolean,
         val holdElapsedSeconds: Int,
+        val hapticsEnabled: Boolean = true,
+        val rpeEnabled: Boolean = false,
+        val rpe: Float? = null,
+        val showEndBlock: Boolean = false,
+        val showAddRound: Boolean = false,
+        val insteadOf: String? = null,
+        val progressionLine: String? = null,
+        val progressionSkipped: Boolean = false,
+        val endLines: List<String> = emptyList(),
+        val plate: PlateView? = null,
+        val catalog: List<CatalogExercise> = emptyList(),
     ) : WorkoutSessionUiState
 
     data class Summary(
@@ -95,6 +115,18 @@ sealed interface WorkoutSessionUiState {
 
     data class Error(val message: String) : WorkoutSessionUiState
 }
+
+data class CatalogExercise(val id: Long, val name: String)
+
+data class PlateView(
+    val caption: String,
+    val struck: String?,
+    val makeable: String?,
+    val difference: String?,
+    val assumption: String?,
+    val dumbbell: Boolean,
+    val underBar: Boolean,
+)
 
 class WorkoutSessionViewModel(
     context: Context,
@@ -133,8 +165,22 @@ class WorkoutSessionViewModel(
     private var weightInput = ""
     private var isSaving = false
     private var unitSystem = UnitSystem.KG
-    private var progressionSuggestion: ProgressionSuggestion? = null
-    private var rpeTagInput: String? = null
+    private var progressionEnabled = true
+    private var incrementKg = 2.5f
+    private var incrementLb = 5f
+    private var rpeEnabled = false
+    private var hapticsEnabled = true
+    private var barbellKg = 20f
+    private var barbellLb = 45f
+    private var platesKg = com.example.repsgrams.data.datastore.DEFAULT_PLATES_KG
+    private var platesLb = com.example.repsgrams.data.datastore.DEFAULT_PLATES_LB
+    private var progressionMaps = ProgressionMaps()
+    private var rpeInput: Float? = null
+    private var extraRounds = 0
+    private var substitutes: Map<Long, Long> = emptyMap()
+    private val consumedExercises = mutableSetOf<Long>()
+    private val appliedSessionByExercise = mutableMapOf<Long, Long>()
+    private var catalog: List<CatalogExercise> = emptyList()
     private var notesInput: String = ""
     private var holdStartEpochMillis: Long? = null
     private var keypadOpen = true
@@ -145,7 +191,11 @@ class WorkoutSessionViewModel(
 
     init {
         viewModelScope.launch {
-            cycleSettingsRepository.settings.collect { _keepScreenOn.value = it.keepScreenOn }
+            cycleSettingsRepository.settings.collect { settings ->
+                _keepScreenOn.value = settings.keepScreenOn
+                applySettings(settings)
+                if (_uiState.value is WorkoutSessionUiState.Active) publishActive()
+            }
         }
         viewModelScope.launch {
             runCatching { load() }.onFailure {
@@ -183,7 +233,9 @@ class WorkoutSessionViewModel(
         val templateId = requireNotNull(session.templateId) { "This workout template was deleted" }
         plan = workoutRepository.loadPlan(templateId)
         val settings = cycleSettingsRepository.settings.first()
-        unitSystem = settings.unitSystem
+        applySettings(settings)
+        progressionMaps = ProgressionMaps(settings.progressionQualified, settings.progressionSkipped)
+        catalog = workoutRepository.listExercises().map { CatalogExercise(it.id, it.name) }
         _keepScreenOn.value = settings.keepScreenOn
         if (session.completed) {
             showSummary()
@@ -194,19 +246,30 @@ class WorkoutSessionViewModel(
             return
         }
         val saved = progressStore.progress.first()?.takeIf { it.sessionId == sessionId }
-        if (saved != null && saved.blockIndex in plan.blocks.indices &&
-            saved.exerciseIndex in plan.blocks[saved.blockIndex].exercises.indices
-        ) {
-            cursor = SessionCursor(saved.blockIndex, saved.exerciseIndex, saved.roundNumber)
-            restEndEpochMillis = saved.restEndEpochMillis
-            restCaption = saved.restCaption
-            restAlertFired = saved.restAlertFired
-            restToken = saved.restToken
+        if (saved != null) {
+            substitutes = parseSubstitutes(saved.substitutes)
+            appliedSessionByExercise.putAll(parseProgressionMap(saved.appliedProgression))
+            consumedExercises.addAll(appliedSessionByExercise.keys)
             if (saved.notes.isNotEmpty()) notesInput = saved.notes
+            val cursorFits = saved.blockIndex in plan.blocks.indices &&
+                saved.exerciseIndex in plan.blocks[saved.blockIndex].exercises.indices
+            if (cursorFits) {
+                cursor = SessionCursor(saved.blockIndex, saved.exerciseIndex, saved.roundNumber)
+                restEndEpochMillis = saved.restEndEpochMillis
+                restCaption = saved.restCaption
+                restAlertFired = saved.restAlertFired
+                restToken = saved.restToken
+                extraRounds = saved.extraRounds.coerceIn(0, MAX_EXTRA_ROUNDS)
+            } else {
+                extraRounds = 0
+                persistProgress()
+            }
         } else {
             persistProgress()
         }
+        applySubstitutes()
         // A past deadline stays on screen as overtime. Do not clear it here.
+        loadInputDefaults()
         if (restEndEpochMillis != null) {
             if (restCaption.isBlank()) {
                 restCaption = restCaptionForCursor()
@@ -214,7 +277,6 @@ class WorkoutSessionViewModel(
             }
             startRestTimerService(restEndEpochMillis!!, restCaption)
         }
-        loadInputDefaults()
         ready = true
         publishActive()
     }
@@ -265,9 +327,81 @@ class WorkoutSessionViewModel(
     suspend fun leaveWorkout() {
         withContext(NonCancellable) { progressStore.saveNotes(sessionId, notesInput) }
     }
-    fun updateRpeTag(tag: String?) {
-        rpeTagInput = tag
+    fun adjustRpe(delta: Float) {
+        if (!rpeEnabled) return
+        val current = rpeInput
+        rpeInput = if (current == null) {
+            if (delta > 0f) 6f else null
+        } else {
+            val next = current + delta
+            if (next < 6f) null else next.coerceAtMost(10f)
+        }
         publishActive()
+    }
+
+    fun skipProgressionOnce() {
+        if (!ready) return
+        val exercise = currentExercise()
+        progressionMaps = ProgressionCalculator.recordOnFinish(
+            progressionMaps,
+            exercise.id,
+            sessionId,
+            qualified = false,
+            skipped = true,
+        )
+        viewModelScope.launch {
+            cycleSettingsRepository.setProgressionQualified(progressionMaps.qualified)
+            cycleSettingsRepository.setProgressionSkipped(progressionMaps.skipped)
+            publishActive()
+        }
+    }
+
+    fun endBlock() {
+        val block = plan.blocks.getOrNull(cursor.blockIndex) ?: return
+        if (block.kind == BlockKind.WARM_UP) return
+        if (cursor.roundNumber <= block.targetRoundsMin) return
+        viewModelScope.launch { applyAdvance(SessionNavigator.finishBlock(plan, cursor.blockIndex)) }
+    }
+
+    fun addRound() {
+        val block = plan.blocks.getOrNull(cursor.blockIndex) ?: return
+        if (block.kind == BlockKind.WARM_UP || restEndEpochMillis != null) return
+        if (extraRounds >= MAX_EXTRA_ROUNDS) return
+        extraRounds += 1
+        viewModelScope.launch {
+            refreshPrevious()
+            persistProgress()
+            publishActive()
+        }
+    }
+
+    fun substituteThisSession(exerciseId: Long) {
+        if (!ready) return
+        val exercise = currentExercise()
+        if (exercise.linkId == 0L) return
+        substitutes = substitutes + (exercise.linkId to exerciseId)
+        viewModelScope.launch {
+            applySubstitutes()
+            loadInputDefaults()
+            persistProgress()
+            publishActive()
+        }
+    }
+
+    fun replaceInProgram(exerciseId: Long) {
+        if (!ready) return
+        val block = plan.blocks[cursor.blockIndex]
+        val exercise = currentExercise()
+        if (exercise.linkId == 0L) return
+        viewModelScope.launch {
+            workoutRepository.replaceLinkExercise(block.id, exercise.linkId, exerciseId)
+            val chosen = workoutRepository.getExercise(exerciseId) ?: return@launch
+            substitutes = substitutes - exercise.linkId
+            replacePlanned(block.id, exercise.linkId, chosen)
+            loadInputDefaults()
+            persistProgress()
+            publishActive()
+        }
     }
     fun adjustWeight(delta: Float) {
         weightInput = ((weightInput.toFloatOrNull() ?: 0f) + delta).coerceAtLeast(0f).let(::formatWeight)
@@ -291,7 +425,7 @@ class WorkoutSessionViewModel(
     fun keypadKey(key: String) {
         if (restEndEpochMillis != null || holdStartEpochMillis != null || !keypadOpen) return
         val edited = if (keypadField == KeypadField.LOAD) {
-            applyLoadKey(weightInput, key, keypadFresh, loadStep(unitSystem))
+            applyLoadKey(weightInput, key, keypadFresh, loadIncrementDisplay())
         } else {
             applyRepKey(valueInput, key, keypadFresh)
         }
@@ -334,6 +468,8 @@ class WorkoutSessionViewModel(
         val weightKg = weightInput.toFloatOrNull()
             ?.let { if (unitSystem == UnitSystem.LB) poundsToKilograms(it) else it }
             .takeIf { exercise.tracksWeight }
+        val rpe = rpeInput.takeIf { rpeEnabled }
+        val substitutedFrom = exercise.plannedExerciseId.takeIf { it != 0L && it != exercise.id }
         viewModelScope.launch {
             runCatching {
                 workoutRepository.logSet(
@@ -343,7 +479,10 @@ class WorkoutSessionViewModel(
                     reps = value.takeIf { exercise.repType == RepType.REPS },
                     durationSeconds = value.takeIf { exercise.repType == RepType.SECONDS },
                     weightKg = weightKg,
-                    rpeTag = null,
+                    rpeTag = rpe?.let { formatWeight(it) },
+                    substitutedFrom = substitutedFrom,
+                    setType = if (block.kind == BlockKind.WARM_UP) SetType.WARMUP else SetType.WORKING,
+                    rpe = rpe,
                 )
                 val reps = value.takeIf { exercise.repType == RepType.REPS }
                 if (block.kind != BlockKind.WARM_UP &&
@@ -354,7 +493,8 @@ class WorkoutSessionViewModel(
                 ) {
                     _provisionalRecord.emit(Unit)
                 }
-                applyAdvance(SessionNavigator.afterExercise(plan, cursor))
+                val cap = effectiveMax(block)
+                applyAdvance(SessionNavigator.afterExercise(plan, cursor, cap))
             }.onFailure {
                 _uiState.value = WorkoutSessionUiState.Error(it.message ?: "Couldn't save this set.")
             }
@@ -450,6 +590,7 @@ class WorkoutSessionViewModel(
             prevCursor = SessionCursor(prevBlockIndex, prevBlock.exercises.lastIndex, prevBlock.targetRoundsMax)
         }
 
+        if (prevCursor.blockIndex != cursor.blockIndex) extraRounds = 0
         cursor = prevCursor
 
         viewModelScope.launch {
@@ -497,26 +638,25 @@ class WorkoutSessionViewModel(
 
     private suspend fun applyAdvance(advance: SessionAdvance) {
         holdStartEpochMillis = null
+        rpeInput = null
         when (advance) {
             is SessionAdvance.Continue -> {
-                progressionSuggestion = null
-                cursor = advance.cursor
+                moveCursor(advance.cursor)
                 restEndEpochMillis = null
                 restToken = 0L
-                persistProgress()
                 loadInputDefaults()
+                persistProgress()
                 publishActive()
             }
             is SessionAdvance.Rest -> {
-                progressionSuggestion = null
-                cursor = advance.cursorAfterRest
+                moveCursor(advance.cursorAfterRest)
                 restEndEpochMillis = clock.millis() + advance.seconds * 1_000L
                 restToken = clock.millis().let { minted -> if (minted == restToken) minted + 1 else minted }
-                restCaption = restCaptionForCursor()
                 restAlertFired = false
+                loadInputDefaults()
+                restCaption = restCaptionForCursor()
                 persistProgress()
                 startRestTimerService(restEndEpochMillis!!, restCaption)
-                loadInputDefaults()
                 publishActive()
             }
             SessionAdvance.Finished -> finishAndSummarize()
@@ -531,6 +671,7 @@ class WorkoutSessionViewModel(
         stopRestTimerService()
         session = workoutRepository.finishSession(sessionId, notesInput.takeIf { it.isNotBlank() })
         if (::plan.isInitialized) {
+            recordProgression()
             workoutRepository.recordSessionRecords(sessionId, prEligibleExerciseIds(plan))
         }
         progressStore.clear()
@@ -562,30 +703,68 @@ class WorkoutSessionViewModel(
 
     private suspend fun loadInputDefaults() {
         val exercise = currentExercise()
+        val block = plan.blocks[cursor.blockIndex]
+        val warmUp = block.kind == BlockKind.WARM_UP
+        if (!warmUp && exercise.id !in consumedExercises) {
+            val consume = ProgressionCalculator.consumeOnLoad(progressionMaps, exercise.id, sessionId)
+            progressionMaps = consume.maps
+            consumedExercises += exercise.id
+            if (consume.applySessionId != null) appliedSessionByExercise[exercise.id] = consume.applySessionId
+            cycleSettingsRepository.setProgressionQualified(progressionMaps.qualified)
+            cycleSettingsRepository.setProgressionSkipped(progressionMaps.skipped)
+        }
         val previous = workoutRepository.previousSet(exercise.id, cursor.roundNumber, sessionId)
-        progressionSuggestion = null
-        if (plan.blocks[cursor.blockIndex].kind != BlockKind.WARM_UP) {
-            progressionSuggestion = ProgressionCalculator.suggestionFor(
-                exercise.targetValueHigh,
-                exercise.tracksWeight,
-                workoutRepository.previousSessionRounds(exercise.id, sessionId).map {
-                    PriorRound(if (exercise.repType == RepType.REPS) it.reps else it.durationSeconds, it.weightKg)
-                },
+        val applySession = if (warmUp) null else appliedSessionByExercise[exercise.id]
+        val qualifying = if (applySession == null) emptyList() else qualifyingLogs(applySession, exercise.id)
+        val result = if (applySession == null) {
+            null
+        } else {
+            ProgressionCalculator.decide(
+                enabled = progressionEnabled,
+                workingSets = qualifying.map { priorRound(exercise, it) },
+                targetHigh = exercise.targetValueHigh,
+                targetRoundsMin = block.targetRoundsMin,
+                repType = exercise.repType,
+                tracksWeight = exercise.tracksWeight,
             )
         }
-        valueInput = when (exercise.repType) {
-            RepType.REPS -> previous?.reps
-            RepType.SECONDS -> previous?.durationSeconds
-        }?.toString() ?: ((exercise.targetValueLow + exercise.targetValueHigh) / 2).toString()
-        val baseWeightKg = previous?.weightKg ?: 0f
-        val suggestedWeightKg = if (progressionSuggestion == ProgressionSuggestion.INCREASE_WEIGHT) {
-            baseWeightKg + if (unitSystem == UnitSystem.LB) poundsToKilograms(2.5f) else 1f
-        } else baseWeightKg
-
-        weightInput = if (previous?.weightKg != null || progressionSuggestion == ProgressionSuggestion.INCREASE_WEIGHT) {
-            formatWeight(if (unitSystem == UnitSystem.LB) kilogramsToPounds(suggestedWeightKg) else suggestedWeightKg)
-        } else {
-            if (exercise.tracksWeight) "0" else ""
+        val midpoint = ((exercise.targetValueLow + exercise.targetValueHigh) / 2).toString()
+        val roundLog = qualifying.firstOrNull { it.roundNumber == cursor.roundNumber }
+        val lastWeighted = qualifying.lastOrNull { it.weightKg != null }
+        when (result) {
+            ProgressionResult.INCREASE_LOAD -> {
+                val base = roundLog?.weightKg ?: lastWeighted?.weightKg ?: previous?.weightKg ?: 0f
+                val next = base + loadIncrementKg(exercise)
+                weightInput = formatWeight(displayWeight(next))
+                valueInput = if (exercise.repType == RepType.REPS) {
+                    exercise.targetValueLow.toString()
+                } else {
+                    (roundLog?.durationSeconds ?: previous?.durationSeconds)?.toString() ?: midpoint
+                }
+            }
+            ProgressionResult.ADVANCE_TARGET -> {
+                val base = roundLog?.weightKg ?: lastWeighted?.weightKg ?: previous?.weightKg
+                weightInput = if (exercise.tracksWeight && base != null) formatWeight(displayWeight(base)) else {
+                    if (exercise.tracksWeight) "0" else ""
+                }
+                valueInput = when (exercise.repType) {
+                    RepType.REPS -> exercise.targetValueLow.toString()
+                    RepType.SECONDS -> (roundLog?.durationSeconds ?: previous?.durationSeconds)?.toString() ?: midpoint
+                }
+            }
+            else -> {
+                valueInput = when (exercise.repType) {
+                    RepType.REPS -> previous?.reps
+                    RepType.SECONDS -> previous?.durationSeconds
+                }?.toString() ?: midpoint
+                weightInput = if (previous?.weightKg != null) {
+                    formatWeight(displayWeight(previous.weightKg))
+                } else if (exercise.tracksWeight) {
+                    "0"
+                } else {
+                    ""
+                }
+            }
         }
         refreshSessionLogs()
         refreshPrevious()
@@ -605,25 +784,31 @@ class WorkoutSessionViewModel(
         val seconds = exercise.repType == RepType.SECONDS
         val elapsed = elapsedSeconds()
         val holding = holdStartEpochMillis != null
-        val logs = sessionLogs.filter { it.exerciseId == exercise.id }.map { log ->
-            LoggedSetView(
-                roundNumber = log.roundNumber,
-                reps = log.reps,
-                durationSeconds = log.durationSeconds,
-                weightDisplay = log.weightKg?.let { formatWeight(displayWeight(it)) },
-            )
+        val logs = sessionLogs.filter { log ->
+            log.exerciseId == exercise.id && (warmUp || log.setType != SetType.WARMUP)
         }
+            .map { log ->
+                LoggedSetView(
+                    roundNumber = log.roundNumber,
+                    reps = log.reps,
+                    durationSeconds = log.durationSeconds,
+                    weightDisplay = log.weightKg?.let { formatWeight(displayWeight(it)) },
+                    rpe = log.rpe,
+                )
+            }
         val rest = restEndEpochMillis?.let { restSecondsUntil(it, clock.millis()) }
+        val plate = plateView(exercise)
+        val line = if (warmUp) null else progressionLine(exercise, block, sessionLogs)
         _uiState.value = WorkoutSessionUiState.Active(
             elapsedSeconds = elapsed,
             maxDurationMinutes = plan.maxDurationMinutes,
             durationPassed = durationPassed(elapsed, plan.maxDurationMinutes),
             blockLabel = block.label,
             exercise = exercise,
-            pills = exercisePills(plan.blocks, cursor),
+            pills = exercisePills(plan.blocks, cursor, extraRounds),
             rows = buildSetRows(
                 warmUp = warmUp,
-                roundCount = block.targetRoundsMax,
+                roundCount = effectiveMax(block),
                 activeRound = cursor.roundNumber,
                 tracksWeight = exercise.tracksWeight,
                 seconds = seconds,
@@ -633,6 +818,8 @@ class WorkoutSessionViewModel(
                 logs = logs,
                 previousText = previousByRound.mapValues { (_, prior) -> previousLabel(prior, seconds) },
                 previousCopyable = previousByRound.mapValues { (_, prior) -> prior != null },
+                activeRpe = rpeInput?.let { formatWeight(it) },
+                loggedRpe = logs.mapNotNull { view -> view.rpe?.let { view.roundNumber to formatWeight(it) } }.toMap(),
             ),
             keypadOpen = keypadOpen,
             keypadField = keypadField,
@@ -644,12 +831,28 @@ class WorkoutSessionViewModel(
             notesInput = notesInput,
             isHolding = holding,
             holdElapsedSeconds = holdStartEpochMillis?.let { ((clock.millis() - it) / 1000).toInt() } ?: 0,
+            hapticsEnabled = hapticsEnabled,
+            rpeEnabled = rpeEnabled,
+            rpe = rpeInput,
+            showEndBlock = !warmUp && cursor.roundNumber > block.targetRoundsMin &&
+                cursor.roundNumber <= effectiveMax(block),
+            showAddRound = !warmUp && restEndEpochMillis == null && extraRounds < MAX_EXTRA_ROUNDS,
+            insteadOf = exercise.plannedExerciseId.takeIf { it != 0L && it != exercise.id }?.let {
+                "INSTEAD OF ${exercise.plannedName.ifBlank { "planned" }}"
+            },
+            progressionLine = line,
+            progressionSkipped = progressionMaps.skipped[exercise.id] == sessionId,
+            endLines = endLines(),
+            plate = plate,
+            catalog = catalog,
         )
     }
 
     private fun restCaptionForCursor(): String {
         val exercise = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
-        return nextExerciseCaption(exercise.name)
+        val base = nextExerciseCaption(exercise.name)
+        val plates = plateView(exercise)?.caption?.takeIf { it.isNotBlank() }
+        return if (plates == null) base else "$base · $plates"
     }
 
     private fun previousLabel(prior: SetLogEntity?, seconds: Boolean): String {
@@ -675,7 +878,7 @@ class WorkoutSessionViewModel(
     private suspend fun refreshPrevious() {
         val exercise = currentExercise()
         val block = plan.blocks[cursor.blockIndex]
-        val rounds = if (block.kind == BlockKind.WARM_UP) 1 else block.targetRoundsMax.coerceAtLeast(1)
+        val rounds = effectiveMax(block)
         val loaded = LinkedHashMap<Int, SetLogEntity?>()
         for (round in 1..rounds) {
             loaded[round] = workoutRepository.previousColumn(exercise.id, round, sessionId)
@@ -730,6 +933,194 @@ class WorkoutSessionViewModel(
 
     private fun currentExercise() = plan.blocks[cursor.blockIndex].exercises[cursor.exerciseIndex]
 
+    private fun moveCursor(next: SessionCursor) {
+        if (next.blockIndex != cursor.blockIndex) extraRounds = 0
+        cursor = next
+    }
+
+    private fun effectiveMax(block: com.example.repsgrams.domain.session.WorkoutBlock): Int =
+        if (block.kind == BlockKind.WARM_UP) 1 else block.targetRoundsMax.coerceAtLeast(1) + extraRounds
+
+    private fun applySettings(settings: com.example.repsgrams.data.datastore.CycleSettings) {
+        unitSystem = settings.unitSystem
+        progressionEnabled = settings.progressionEnabled
+        incrementKg = settings.progressionIncrementKg
+        incrementLb = settings.progressionIncrementLb
+        rpeEnabled = settings.rpeEnabled
+        hapticsEnabled = settings.hapticsEnabled
+        barbellKg = settings.barbellKg
+        barbellLb = settings.barbellLb
+        platesKg = settings.platesKg
+        platesLb = settings.platesLb
+    }
+
+    private fun loadIncrementDisplay(): Float =
+        if (unitSystem == UnitSystem.LB) incrementLb else incrementKg
+
+    private fun loadIncrementKg(exercise: WorkoutExercise): Float {
+        val override = exercise.progressionIncrementKg
+        if (override != null && override.isFinite() && override > 0f) return override
+        return if (unitSystem == UnitSystem.LB) poundsToKilograms(incrementLb) else incrementKg
+    }
+
+    private suspend fun applySubstitutes() {
+        if (substitutes.isEmpty() || !::plan.isInitialized) return
+        val byId = workoutRepository.listExercises().associateBy { it.id }
+        plan = plan.copy(blocks = plan.blocks.map { block ->
+            block.copy(exercises = block.exercises.map { exercise ->
+                val chosenId = substitutes[exercise.linkId] ?: return@map exercise
+                val chosen = byId[chosenId] ?: return@map exercise
+                exercise.copy(
+                    id = chosen.id,
+                    name = chosen.name,
+                    imageAssetName = chosen.imageAssetName,
+                    notes = chosen.notes,
+                    tracksWeight = chosen.tracksWeight,
+                    equipment = chosen.equipment,
+                )
+            })
+        })
+    }
+
+    private fun replacePlanned(blockId: Long, linkId: Long, chosen: ExerciseEntity) {
+        plan = plan.copy(blocks = plan.blocks.map { block ->
+            if (block.id != blockId) block else block.copy(exercises = block.exercises.map { exercise ->
+                if (exercise.linkId != linkId) exercise else exercise.copy(
+                    id = chosen.id,
+                    name = chosen.name,
+                    imageAssetName = chosen.imageAssetName,
+                    notes = chosen.notes,
+                    tracksWeight = chosen.tracksWeight,
+                    equipment = chosen.equipment,
+                    plannedExerciseId = chosen.id,
+                    plannedName = chosen.name,
+                )
+            })
+        })
+    }
+
+    private suspend fun qualifyingLogs(session: Long, exerciseId: Long): List<SetLogEntity> =
+        workoutRepository.getSessionSets(session)
+            .filter { it.exerciseId == exerciseId && it.setType != SetType.WARMUP }
+
+    private fun priorRound(exercise: WorkoutExercise, log: SetLogEntity): PriorRound {
+        val value = if (exercise.repType == RepType.REPS) log.reps else log.durationSeconds
+        return PriorRound(value, log.weightKg)
+    }
+
+    private fun locate(exerciseId: Long): Pair<com.example.repsgrams.domain.session.WorkoutBlock, WorkoutExercise>? {
+        val hits = plan.blocks.mapNotNull { block ->
+            block.exercises.firstOrNull { it.id == exerciseId }?.let { block to it }
+        }
+        return hits.firstOrNull { it.first.kind != BlockKind.WARM_UP } ?: hits.firstOrNull()
+    }
+
+    private fun progressionLine(
+        exercise: WorkoutExercise,
+        block: com.example.repsgrams.domain.session.WorkoutBlock,
+        logs: List<SetLogEntity>,
+    ): String? {
+        val sets = logs.filter { it.exerciseId == exercise.id && it.setType != SetType.WARMUP }
+        if (sets.isEmpty() || block.kind == BlockKind.WARM_UP) return null
+        return sentenceFor(exercise, block, sets)
+    }
+
+    private fun sentenceFor(
+        exercise: WorkoutExercise,
+        block: com.example.repsgrams.domain.session.WorkoutBlock,
+        sets: List<SetLogEntity>,
+    ): String {
+        val result = ProgressionCalculator.decide(
+            enabled = progressionEnabled,
+            workingSets = sets.map { priorRound(exercise, it) },
+            targetHigh = exercise.targetValueHigh,
+            targetRoundsMin = block.targetRoundsMin,
+            repType = exercise.repType,
+            tracksWeight = exercise.tracksWeight,
+        )
+        val unit = if (unitSystem == UnitSystem.LB) "lb" else "kg"
+        val last = sets.lastOrNull { it.weightKg != null }?.weightKg
+        return when (result) {
+            ProgressionResult.HOLD -> {
+                val named = last?.let { "${formatWeight(displayWeight(it))} $unit" }
+                progressionSentence(result, named, exercise.targetValueLow)
+            }
+            ProgressionResult.INCREASE_LOAD -> {
+                val next = (last ?: 0f) + loadIncrementKg(exercise)
+                progressionSentence(result, "${formatWeight(displayWeight(next))} $unit", exercise.targetValueLow)
+            }
+            ProgressionResult.ADVANCE_TARGET -> progressionSentence(result, null, exercise.targetValueLow)
+        }
+    }
+
+    private fun endLines(): List<String> {
+        if (!::plan.isInitialized) return emptyList()
+        val working = sessionLogs.filter { it.setType != SetType.WARMUP }.groupBy { it.exerciseId }
+        return working.mapNotNull { (exerciseId, sets) ->
+            val located = locate(exerciseId) ?: return@mapNotNull null
+            if (located.first.kind == BlockKind.WARM_UP) return@mapNotNull null
+            "${located.second.name} — ${sentenceFor(located.second, located.first, sets)}"
+        }
+    }
+
+    private suspend fun recordProgression() {
+        val logs = workoutRepository.getSessionSets(sessionId).filter { it.setType != SetType.WARMUP }
+        var maps = progressionMaps
+        for ((exerciseId, sets) in logs.groupBy { it.exerciseId }) {
+            val located = locate(exerciseId) ?: continue
+            if (located.first.kind == BlockKind.WARM_UP) continue
+            val result = ProgressionCalculator.decide(
+                enabled = progressionEnabled,
+                workingSets = sets.map { priorRound(located.second, it) },
+                targetHigh = located.second.targetValueHigh,
+                targetRoundsMin = located.first.targetRoundsMin,
+                repType = located.second.repType,
+                tracksWeight = located.second.tracksWeight,
+            )
+            val skipped = maps.skipped[exerciseId] == sessionId
+            maps = ProgressionCalculator.recordOnFinish(
+                maps,
+                exerciseId,
+                sessionId,
+                qualified = result != ProgressionResult.HOLD,
+                skipped = skipped,
+            )
+        }
+        progressionMaps = maps
+        cycleSettingsRepository.setProgressionQualified(maps.qualified)
+        cycleSettingsRepository.setProgressionSkipped(maps.skipped)
+    }
+
+    private fun plateView(exercise: WorkoutExercise): PlateView? {
+        if (!exercise.tracksWeight) return null
+        val dumbbell = exercise.equipment == Equipment.DUMBBELL
+        val barbell = exercise.equipment == Equipment.BARBELL || exercise.equipment == Equipment.OTHER
+        if (!dumbbell && !barbell) return null
+        val unit = if (unitSystem == UnitSystem.LB) "lb" else "kg"
+        val target = weightInput.toFloatOrNull()
+        if (dumbbell) {
+            val text = target?.let { "${formatWeight(it)} $unit" } ?: "—"
+            return PlateView(text, null, null, null, null, dumbbell = true, underBar = false)
+        }
+        val bar = if (unitSystem == UnitSystem.LB) barbellLb else barbellKg
+        val plates = parsePlateList(if (unitSystem == UnitSystem.LB) platesLb else platesKg)
+        val breakdown = calculatePlates(target ?: 0f, bar, plates)
+        val assumption = if (exercise.equipment == Equipment.OTHER) {
+            "Assumes a ${formatWeight(bar)} $unit bar"
+        } else {
+            null
+        }
+        return PlateView(
+            caption = plateCaption(breakdown, unit),
+            struck = breakdown.makeable?.let { "${formatWeight(target ?: 0f)} $unit" },
+            makeable = breakdown.makeable?.let { "${formatWeight(it)} $unit" },
+            difference = breakdown.difference?.let { "${formatWeight(it)} $unit" },
+            assumption = assumption,
+            dumbbell = false,
+            underBar = breakdown.underBar,
+        )
+    }
+
     private fun elapsedSeconds(): Int {
         val start = session.startTime?.toEpochMilli() ?: clock.millis()
         val end = session.endTime?.toEpochMilli() ?: clock.millis()
@@ -747,10 +1138,15 @@ class WorkoutSessionViewModel(
             restCaption = restCaption,
             restAlertFired = restAlertFired,
             restToken = restToken,
+            extraRounds = extraRounds,
+            substitutes = formatSubstitutes(substitutes),
+            appliedProgression = formatProgressionMap(appliedSessionByExercise),
         ),
     )
 
     companion object {
+        private const val MAX_EXTRA_ROUNDS = 10
+
         fun factory(
             context: Context,
             sessionId: Long,
@@ -770,4 +1166,20 @@ class WorkoutSessionViewModel(
             }
         }
     }
+}
+
+private fun formatSubstitutes(map: Map<Long, Long>): String =
+    map.entries.joinToString(",") { (linkId, exerciseId) -> "$linkId:$exerciseId" }
+
+private fun parseSubstitutes(stored: String): Map<Long, Long> {
+    if (stored.isBlank()) return emptyMap()
+    val parsed = LinkedHashMap<Long, Long>()
+    for (token in stored.split(',')) {
+        val parts = token.split(':')
+        if (parts.size != 2) continue
+        val linkId = parts[0].trim().toLongOrNull() ?: continue
+        val exerciseId = parts[1].trim().toLongOrNull() ?: continue
+        parsed[linkId] = exerciseId
+    }
+    return parsed
 }

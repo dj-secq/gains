@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.repsgrams.domain.progression.formatProgressionMap
+import com.example.repsgrams.domain.progression.parseProgressionMap
 import java.io.IOException
 import java.time.Clock
 import java.time.LocalDate
@@ -59,6 +61,8 @@ data class CycleSettings(
     val defaultWarmupRestSeconds: Int = 90,
     val defaultWorkingRestSeconds: Int = 180,
     val defaultSupersetIntraRestSeconds: Int = 0,
+    val progressionQualified: Map<Long, Long> = emptyMap(),
+    val progressionSkipped: Map<Long, Long> = emptyMap(),
 )
 
 interface CycleSettingsRepository {
@@ -97,6 +101,8 @@ interface CycleSettingsRepository {
     suspend fun setDefaultWarmupRestSeconds(seconds: Int)
     suspend fun setDefaultWorkingRestSeconds(seconds: Int)
     suspend fun setDefaultSupersetIntraRestSeconds(seconds: Int)
+    suspend fun setProgressionQualified(qualified: Map<Long, Long>)
+    suspend fun setProgressionSkipped(skipped: Map<Long, Long>)
 }
 
 val Context.cycleSettingsDataStore by preferencesDataStore(name = "cycle_settings")
@@ -210,6 +216,10 @@ class PreferencesCycleSettingsRepository(
     override suspend fun setDefaultWarmupRestSeconds(seconds: Int) = update(DEFAULT_WARMUP_REST_SECONDS, restSeconds(seconds))
     override suspend fun setDefaultWorkingRestSeconds(seconds: Int) = update(DEFAULT_WORKING_REST_SECONDS, restSeconds(seconds))
     override suspend fun setDefaultSupersetIntraRestSeconds(seconds: Int) = update(DEFAULT_SUPERSET_INTRA_REST_SECONDS, restSeconds(seconds))
+    override suspend fun setProgressionQualified(qualified: Map<Long, Long>) =
+        update(PROGRESSION_QUALIFIED, formatProgressionMap(qualified))
+    override suspend fun setProgressionSkipped(skipped: Map<Long, Long>) =
+        update(PROGRESSION_SKIP, formatProgressionMap(skipped))
 
     private fun toSettings(preferences: Preferences) = CycleSettings(
         themeMode = preferences[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
@@ -248,6 +258,8 @@ class PreferencesCycleSettingsRepository(
         defaultWarmupRestSeconds = preferences[DEFAULT_WARMUP_REST_SECONDS] ?: 90,
         defaultWorkingRestSeconds = preferences[DEFAULT_WORKING_REST_SECONDS] ?: 180,
         defaultSupersetIntraRestSeconds = preferences[DEFAULT_SUPERSET_INTRA_REST_SECONDS] ?: 0,
+        progressionQualified = parseProgressionMap(preferences[PROGRESSION_QUALIFIED] ?: ""),
+        progressionSkipped = parseProgressionMap(preferences[PROGRESSION_SKIP] ?: ""),
     )
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) {
@@ -291,6 +303,8 @@ class PreferencesCycleSettingsRepository(
         val DEFAULT_WARMUP_REST_SECONDS = intPreferencesKey("default_warmup_rest_seconds")
         val DEFAULT_WORKING_REST_SECONDS = intPreferencesKey("default_working_rest_seconds")
         val DEFAULT_SUPERSET_INTRA_REST_SECONDS = intPreferencesKey("default_superset_intra_rest_seconds")
+        val PROGRESSION_QUALIFIED = stringPreferencesKey("progression_qualified")
+        val PROGRESSION_SKIP = stringPreferencesKey("progression_skip")
     }
 }
 

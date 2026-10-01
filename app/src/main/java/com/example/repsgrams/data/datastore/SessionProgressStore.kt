@@ -26,6 +26,12 @@ data class SessionProgress(
     val restAlertFired: Boolean = false,
     /** Identifies one rest. ±15 keeps it; the next rest replaces it. */
     val restToken: Long = 0L,
+    /** Extra working rounds for the current block. Not written to the template. */
+    val extraRounds: Int = 0,
+    /** `linkId:exerciseId` pairs for a this-session swap. */
+    val substitutes: String = "",
+    /** `exerciseId=sessionId` bumps already consumed in this session. */
+    val appliedProgression: String = "",
 )
 
 class SessionProgressStore(private val context: Context) {
@@ -39,6 +45,9 @@ class SessionProgressStore(private val context: Context) {
         val restCaption = stringPreferencesKey("rest_caption")
         val restAlertFired = booleanPreferencesKey("rest_alert_fired")
         val restToken = longPreferencesKey("rest_token")
+        val extraRounds = intPreferencesKey("extra_rounds")
+        val substitutes = stringPreferencesKey("substitutes")
+        val appliedProgression = stringPreferencesKey("applied_progression")
     }
 
     val progress: Flow<SessionProgress?> = context.sessionProgressDataStore.data.map { values ->
@@ -53,6 +62,9 @@ class SessionProgressStore(private val context: Context) {
             restCaption = values[Keys.restCaption] ?: "",
             restAlertFired = values[Keys.restAlertFired] ?: false,
             restToken = values[Keys.restToken] ?: 0L,
+            extraRounds = values[Keys.extraRounds] ?: 0,
+            substitutes = values[Keys.substitutes] ?: "",
+            appliedProgression = values[Keys.appliedProgression] ?: "",
         )
     }
 
@@ -65,6 +77,9 @@ class SessionProgressStore(private val context: Context) {
             values[Keys.notes] = progress.notes
             values[Keys.restCaption] = progress.restCaption
             values[Keys.restAlertFired] = progress.restAlertFired
+            values[Keys.extraRounds] = progress.extraRounds
+            values[Keys.substitutes] = progress.substitutes
+            values[Keys.appliedProgression] = progress.appliedProgression
             val end = progress.restEndEpochMillis
             if (end != null) {
                 values[Keys.restEnd] = end

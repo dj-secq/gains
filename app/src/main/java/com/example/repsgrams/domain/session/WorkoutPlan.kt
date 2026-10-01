@@ -1,6 +1,7 @@
 package com.example.repsgrams.domain.session
 
 import com.example.repsgrams.data.db.BlockKind
+import com.example.repsgrams.data.db.Equipment
 import com.example.repsgrams.data.db.RepType
 
 data class WorkoutPlan(
@@ -34,6 +35,12 @@ data class WorkoutExercise(
     val targetValueHigh: Int,
     val repType: RepType,
     val perSide: Boolean,
+    val linkId: Long = 0,
+    /** Zero means this row is still the planned exercise. */
+    val plannedExerciseId: Long = 0,
+    val plannedName: String = "",
+    val progressionIncrementKg: Float? = null,
+    val equipment: Equipment = Equipment.OTHER,
 )
 
 data class SessionCursor(val blockIndex: Int, val exerciseIndex: Int, val roundNumber: Int)
@@ -45,12 +52,17 @@ sealed interface SessionAdvance {
 }
 
 object SessionNavigator {
-    fun afterExercise(plan: WorkoutPlan, cursor: SessionCursor): SessionAdvance {
+    fun afterExercise(
+        plan: WorkoutPlan,
+        cursor: SessionCursor,
+        roundCap: Int = plan.blocks[cursor.blockIndex].targetRoundsMax,
+    ): SessionAdvance {
         val block = plan.blocks[cursor.blockIndex]
         if (cursor.exerciseIndex < block.exercises.lastIndex) {
             return SessionAdvance.Continue(cursor.copy(exerciseIndex = cursor.exerciseIndex + 1))
         }
-        if (block.kind != BlockKind.WARM_UP && cursor.roundNumber < block.targetRoundsMax) {
+        val cap = if (block.kind == BlockKind.WARM_UP) block.targetRoundsMax else roundCap
+        if (block.kind != BlockKind.WARM_UP && cursor.roundNumber < cap) {
             val nextRound = SessionCursor(cursor.blockIndex, 0, cursor.roundNumber + 1)
             val restSeconds = block.restSecondsBetweenRounds ?: 0
             return if (restSeconds > 0) SessionAdvance.Rest(nextRound, restSeconds)
@@ -63,6 +75,10 @@ object SessionNavigator {
         require(plan.blocks[blockIndex].isOptional) { "Only optional blocks can be skipped" }
         return nextBlock(plan, blockIndex, true)
     }
+
+    /** Leaves the block once the minimum working rounds are logged. */
+    fun finishBlock(plan: WorkoutPlan, blockIndex: Int): SessionAdvance =
+        nextBlock(plan, blockIndex, false)
 
     private fun nextBlock(plan: WorkoutPlan, blockIndex: Int, isSkipped: Boolean = false): SessionAdvance {
         if (blockIndex < plan.blocks.lastIndex) {

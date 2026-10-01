@@ -40,6 +40,7 @@ fun TemplateListRoute(
     val templates by viewModel.templates.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<WorkoutTemplateEntity?>(null) }
+    var pendingDuplicate by remember { mutableStateOf<WorkoutTemplateEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbarHostState.showSnackbar(it) } }
 
@@ -75,7 +76,10 @@ fun TemplateListRoute(
                             if (idx < templates.lastIndex) {
                                 TextAction("Down", onClick = { viewModel.swapTemplates(template.id, templates[idx + 1].id) })
                             }
-                            RowMenu(onDelete = { pendingDelete = template })
+                            RowMenu(
+                                onDelete = { pendingDelete = template },
+                                onDuplicate = { pendingDuplicate = template },
+                            )
                         }
                     }
                 }
@@ -94,6 +98,23 @@ fun TemplateListRoute(
                 pendingDelete = null
             },
             onDismiss = { pendingDelete = null },
+        )
+    }
+
+    pendingDuplicate?.let { template ->
+        var day by remember(template.id) { mutableStateOf("") }
+        BoardDialog(
+            title = "Duplicate",
+            onDismiss = { pendingDuplicate = null },
+            confirmText = "Duplicate",
+            confirmEnabled = day.isNotBlank(),
+            onConfirm = {
+                viewModel.duplicateTemplate(template.id, day)
+                pendingDuplicate = null
+            },
+            content = {
+                OutlinedTextField(value = day, onValueChange = { day = it }, label = { Text("Day label") })
+            },
         )
     }
 
@@ -216,6 +237,15 @@ fun TemplateEditorRoute(
                             IconButton(onClick = { if (t.restDaysAfter > 0) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter - 1) }) { Text("-") }
                             IconButton(onClick = { if (t.restDaysAfter < 7) viewModel.updateTemplateRestDays(t.id, t.restDaysAfter + 1) }) { Text("+") }
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Duration: ${t.maxDurationMinutes} min", modifier = Modifier.weight(1f))
+                            IconButton(onClick = {
+                                viewModel.updateTemplate(t.copy(maxDurationMinutes = (t.maxDurationMinutes - 5).coerceAtLeast(5)))
+                            }) { Text("−") }
+                            IconButton(onClick = {
+                                viewModel.updateTemplate(t.copy(maxDurationMinutes = (t.maxDurationMinutes + 5).coerceAtMost(240)))
+                            }) { Text("+") }
+                        }
                     }
                     HorizontalDivider()
                 }
@@ -248,14 +278,29 @@ fun TemplateEditorRoute(
         }
     }
 
+    val warmupRest by viewModel.warmupRestSeconds.collectAsStateWithLifecycle(90)
+    val workingRest by viewModel.workingRestSeconds.collectAsStateWithLifecycle(180)
     if (showDialog || editingBlock != null) {
-        val defaultRest by viewModel.defaultRestSeconds.collectAsStateWithLifecycle(90)
         val original = editingBlock
         var label by remember(original?.id) { mutableStateOf(original?.label.orEmpty()) }
         var rMin by remember(original?.id) { mutableStateOf((original?.targetRoundsMin ?: 3).toString()) }
         var rMax by remember(original?.id) { mutableStateOf((original?.targetRoundsMax ?: 5).toString()) }
-        var rest by remember(original?.id, defaultRest) { mutableStateOf((original?.restSecondsBetweenRounds ?: defaultRest).toString()) }
-        var restAfter by remember(original?.id, defaultRest) { mutableStateOf((original?.restSecondsAfterBlock ?: defaultRest).toString()) }
+        var rest by remember(original?.id) {
+            mutableStateOf(
+                when {
+                    original != null -> original.restSecondsBetweenRounds?.toString().orEmpty()
+                    else -> workingRest.toString()
+                },
+            )
+        }
+        var restAfter by remember(original?.id) {
+            mutableStateOf(
+                when {
+                    original != null -> original.restSecondsAfterBlock?.toString().orEmpty()
+                    else -> workingRest.toString()
+                },
+            )
+        }
         var optional by remember(original?.id) { mutableStateOf(original?.isOptional ?: false) }
         var kind by remember(original?.id) { mutableStateOf(original?.kind ?: BlockKind.STANDARD) }
         BoardDialog(
@@ -265,19 +310,22 @@ fun TemplateEditorRoute(
             onConfirm = {
                 val min = rMin.toIntOrNull() ?: 1
                 val max = rMax.toIntOrNull() ?: min
-                val r = rest.toIntOrNull() ?: 60
-                val rAfter = restAfter.toIntOrNull() ?: 60
-                if (label.isNotBlank() && min > 0 && min <= max && r >= 0 && rAfter >= 0) {
+                val r = rest.toIntOrNull()
+                val rAfter = restAfter.toIntOrNull()
+                val restOk = if (original == null) r != null && rAfter != null && r >= 0 && rAfter >= 0 else {
+                    (rest.isBlank() || (r != null && r >= 0)) && (restAfter.isBlank() || (rAfter != null && rAfter >= 0))
+                }
+                if (label.isNotBlank() && min > 0 && min <= max && restOk) {
                     if (original == null) {
-                        viewModel.addBlock(templateId, label.trim(), kind, min, max, r, rAfter, optional)
+                        viewModel.addBlock(templateId, label.trim(), kind, min, max, r ?: 0, rAfter ?: 0, optional)
                     } else {
                         viewModel.updateBlock(
                             original.copy(
                                 label = label.trim(),
                                 targetRoundsMin = min,
                                 targetRoundsMax = max,
-                                restSecondsBetweenRounds = r,
-                                restSecondsAfterBlock = rAfter,
+                                restSecondsBetweenRounds = if (rest.isBlank()) null else r,
+                                restSecondsAfterBlock = if (restAfter.isBlank()) null else rAfter,
                                 isOptional = optional,
                                 kind = kind,
                             ),
@@ -300,7 +348,22 @@ fun TemplateEditorRoute(
                 Text("Kind", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BlockKind.entries.forEach { option ->
-                        MonoChip(option.editorLabel(), kind == option, onClick = { kind = option })
+                        MonoChip(
+                            option.editorLabel(),
+                            kind == option,
+                            onClick = {
+                                kind = option
+                                if (original == null) {
+                                    if (option == BlockKind.WARM_UP) {
+                                        rest = "0"
+                                        restAfter = warmupRest.toString()
+                                    } else {
+                                        rest = workingRest.toString()
+                                        restAfter = workingRest.toString()
+                                    }
+                                }
+                            },
+                        )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -457,7 +520,11 @@ fun BlockEditorRoute(
 }
 
 @Composable
-private fun RowMenu(onDelete: () -> Unit, onEdit: (() -> Unit)? = null) {
+private fun RowMenu(
+    onDelete: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onDuplicate: (() -> Unit)? = null,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
@@ -466,6 +533,9 @@ private fun RowMenu(onDelete: () -> Unit, onEdit: (() -> Unit)? = null) {
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             if (onEdit != null) {
                 DropdownMenuItem(text = { Text("Edit") }, onClick = { open = false; onEdit() })
+            }
+            if (onDuplicate != null) {
+                DropdownMenuItem(text = { Text("Duplicate") }, onClick = { open = false; onDuplicate() })
             }
             DropdownMenuItem(text = { Text("Delete") }, onClick = { open = false; onDelete() })
         }

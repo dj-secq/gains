@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
@@ -28,6 +29,12 @@ class ProgramEditorViewModel(
     val messages = _messages.asSharedFlow()
     val defaultRestSeconds: StateFlow<Int> = cycleSettingsRepository.settings.map { it.defaultRestSeconds }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), 90
+    )
+    val warmupRestSeconds: StateFlow<Int> = cycleSettingsRepository.settings.map { it.defaultWarmupRestSeconds }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000), 90
+    )
+    val workingRestSeconds: StateFlow<Int> = cycleSettingsRepository.settings.map { it.defaultWorkingRestSeconds }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000), 180
     )
     val templates: StateFlow<List<WorkoutTemplateEntity>> = repository.observeAllTemplates().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList()
@@ -72,6 +79,16 @@ class ProgramEditorViewModel(
 
     fun updateTemplate(template: WorkoutTemplateEntity) {
         viewModelScope.launch { runDayLabelEdit { repository.updateTemplate(template) } }
+    }
+
+    fun duplicateTemplate(sourceId: Long, dayLabel: String) {
+        viewModelScope.launch {
+            if (dayLabel.isBlank()) {
+                _messages.emit("Name and day label are required")
+                return@launch
+            }
+            runDayLabelEdit { repository.duplicateTemplate(sourceId, dayLabel.trim()) }
+        }
     }
 
     fun deleteTemplate(template: WorkoutTemplateEntity) {
@@ -135,6 +152,7 @@ class ProgramEditorViewModel(
         perSide: Boolean,
     ) {
         viewModelScope.launch {
+            val intra = cycleSettingsRepository.settings.first().defaultSupersetIntraRestSeconds
             repository.insertBlockExercise(
                 TemplateBlockExerciseEntity(
                     blockId = blockId,
@@ -144,7 +162,8 @@ class ProgramEditorViewModel(
                     targetValueHigh = high,
                     repType = repType,
                     perSide = perSide,
-                )
+                ),
+                supersetIntraRestSeconds = intra,
             )
         }
     }

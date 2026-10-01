@@ -1,7 +1,5 @@
 package com.example.repsgrams.ui.session
 
-import com.example.repsgrams.data.db.RepType
-import com.example.repsgrams.domain.progression.ProgressionSuggestion
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

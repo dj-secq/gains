@@ -15,6 +15,7 @@ data class ExercisePill(
     val selected: Boolean,
     val superset: Boolean,
     val groupId: Int,
+    val minCaption: String? = null,
 )
 
 data class LoggedSetView(
@@ -22,6 +23,7 @@ data class LoggedSetView(
     val reps: Int?,
     val durationSeconds: Int?,
     val weightDisplay: String?,
+    val rpe: Float? = null,
 )
 
 data class SetRowModel(
@@ -33,6 +35,7 @@ data class SetRowModel(
     val complete: Boolean,
     val active: Boolean,
     val copyable: Boolean,
+    val rpeText: String? = null,
 )
 
 data class RecordLine(val exerciseName: String, val detail: String)
@@ -96,11 +99,25 @@ fun formatPrevious(load: String?, value: String?, seconds: Boolean): String {
  * same block use the current round. Later ones use round−1. Future blocks are 0/max.
  * A warm-up block's max is 1.
  */
-fun exercisePills(blocks: List<WorkoutBlock>, cursor: SessionCursor): List<ExercisePill> {
+fun exercisePills(
+    blocks: List<WorkoutBlock>,
+    cursor: SessionCursor,
+    extraRounds: Int = 0,
+): List<ExercisePill> {
     var working = 0
     return blocks.flatMapIndexed { blockIndex, block ->
         val grouped = block.exercises.size > 1
-        val max = if (block.kind == BlockKind.WARM_UP) 1 else block.targetRoundsMax.coerceAtLeast(1)
+        val templateMax = if (block.kind == BlockKind.WARM_UP) 1 else block.targetRoundsMax.coerceAtLeast(1)
+        val max = if (block.kind != BlockKind.WARM_UP && blockIndex == cursor.blockIndex) {
+            templateMax + extraRounds.coerceAtLeast(0)
+        } else {
+            templateMax
+        }
+        val minCaption = if (block.kind != BlockKind.WARM_UP && block.targetRoundsMin != max) {
+            "MIN ${block.targetRoundsMin}"
+        } else {
+            null
+        }
         block.exercises.mapIndexed { exerciseIndex, _ ->
             val label = if (block.kind == BlockKind.WARM_UP) {
                 "W"
@@ -120,6 +137,7 @@ fun exercisePills(blocks: List<WorkoutBlock>, cursor: SessionCursor): List<Exerc
                 selected = blockIndex == cursor.blockIndex && exerciseIndex == cursor.exerciseIndex,
                 superset = grouped,
                 groupId = blockIndex,
+                minCaption = minCaption,
             )
         }
     }
@@ -137,6 +155,8 @@ fun buildSetRows(
     logs: List<LoggedSetView>,
     previousText: Map<Int, String>,
     previousCopyable: Map<Int, Boolean>,
+    activeRpe: String? = null,
+    loggedRpe: Map<Int, String> = emptyMap(),
 ): List<SetRowModel> {
     val count = if (warmUp) 1 else roundCount.coerceAtLeast(1)
     return (1..count).map { round ->
@@ -165,6 +185,7 @@ fun buildSetRows(
             complete = log != null,
             active = active,
             copyable = active && previousCopyable[round] == true,
+            rpeText = if (active) activeRpe else loggedRpe[round],
         )
     }
 }

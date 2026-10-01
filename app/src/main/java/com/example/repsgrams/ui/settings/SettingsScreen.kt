@@ -272,7 +272,7 @@ fun SettingsScreen(
                     NavRow("Exercises", divided = true, onClick = onNavigateToExercises)
                     SettingToggle(
                         title = "Progression",
-                        description = "If every working set hits the top of the rep range, add ${formatWeight(increment)} $unitWord next time and start at the low end of the range.",
+                        description = "If every working set hits the top of the rep range, add ${formatWeight(increment)} $unitWord next time and start at the low end of the range.\nIf every working set hits the top of the range, next time asks for more challenge. The load does not change.",
                         checked = settings.progressionEnabled,
                         enabled = true,
                         divided = true,

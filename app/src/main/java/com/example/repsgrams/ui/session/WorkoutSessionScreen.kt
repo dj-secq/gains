@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,6 +75,7 @@ import com.example.repsgrams.domain.session.PLANNED_DURATION_PASSED
 import com.example.repsgrams.domain.session.SetRowModel
 import com.example.repsgrams.domain.session.cueText
 import com.example.repsgrams.domain.session.formatRestClock
+import com.example.repsgrams.domain.session.formatWeight
 import com.example.repsgrams.domain.session.formatSessionElapsed
 import com.example.repsgrams.domain.session.nextExerciseCaption
 import com.example.repsgrams.domain.today.formatDose
@@ -189,6 +191,12 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         onStopHold = viewModel::stopHold,
         onPrevious = viewModel::previousStep,
         onCancelWorkout = { showCancelDialog = true },
+        onEndBlock = viewModel::endBlock,
+        onAddRound = viewModel::addRound,
+        onSkipProgression = viewModel::skipProgressionOnce,
+        onAdjustRpe = viewModel::adjustRpe,
+        onSubstitute = viewModel::substituteThisSession,
+        onReplace = viewModel::replaceInProgram,
         onToggleSupplement = viewModel::toggleSummarySupplement,
         onDone = viewModel::saveSummary,
         onBack = ::leave,
@@ -212,6 +220,12 @@ fun WorkoutSessionScreen(
     onStopHold: () -> Unit,
     onPrevious: () -> Unit,
     onCancelWorkout: () -> Unit,
+    onEndBlock: () -> Unit,
+    onAddRound: () -> Unit,
+    onSkipProgression: () -> Unit,
+    onAdjustRpe: (Float) -> Unit,
+    onSubstitute: (Long) -> Unit,
+    onReplace: (Long) -> Unit,
     onToggleSupplement: (Long) -> Unit,
     onDone: () -> Unit,
     onNotesChanged: (String) -> Unit,
@@ -262,6 +276,12 @@ fun WorkoutSessionScreen(
                     onStopHold = onStopHold,
                     onPrevious = onPrevious,
                     onCancelWorkout = onCancelWorkout,
+                    onEndBlock = onEndBlock,
+                    onAddRound = onAddRound,
+                    onSkipProgression = onSkipProgression,
+                    onAdjustRpe = onAdjustRpe,
+                    onSubstitute = onSubstitute,
+                    onReplace = onReplace,
                     onNotesChanged = onNotesChanged,
                     onBack = onBack,
                 )
@@ -291,11 +311,21 @@ private fun ActiveSession(
     onStopHold: () -> Unit,
     onPrevious: () -> Unit,
     onCancelWorkout: () -> Unit,
+    onEndBlock: () -> Unit,
+    onAddRound: () -> Unit,
+    onSkipProgression: () -> Unit,
+    onAdjustRpe: (Float) -> Unit,
+    onSubstitute: (Long) -> Unit,
+    onReplace: (Long) -> Unit,
     onNotesChanged: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     var showFinishDialog by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
+    var showPlates by remember { mutableStateOf(false) }
+    var exerciseMenu by remember { mutableStateOf(false) }
+    var picker by remember { mutableStateOf<Boolean?>(null) }
+    var pendingReplace by remember { mutableStateOf<CatalogExercise?>(null) }
     val resting = state.restRemainingSeconds != null
     val seconds = state.exercise.repType == RepType.SECONDS
     val cue = cueText(state.exercise.notes)
@@ -316,7 +346,42 @@ private fun ActiveSession(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ExerciseStrip(state.pills)
-            Text(state.exercise.name, style = MaterialTheme.typography.headlineLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    state.exercise.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineLarge,
+                )
+                Box {
+                    IconButton(onClick = { exerciseMenu = true }) {
+                        Icon(Icons.Outlined.MoreVert, contentDescription = "Exercise")
+                    }
+                    DropdownMenu(
+                        expanded = exerciseMenu,
+                        onDismissRequest = { exerciseMenu = false },
+                        containerColor = PaperDark,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                        border = BorderStroke(1.dp, HairlineDark),
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("This session only") },
+                            onClick = {
+                                exerciseMenu = false
+                                picker = false
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Replace in program") },
+                            onClick = {
+                                exerciseMenu = false
+                                picker = true
+                            },
+                        )
+                    }
+                }
+            }
+            if (state.insteadOf != null) MonoLabel(state.insteadOf)
             if (cue != null) {
                 Text(cue, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -324,9 +389,24 @@ private fun ActiveSession(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextAction(text = "Note", onClick = { showNote = true })
                 OutlinePill(text = "Previous", onClick = onPrevious)
+                if (state.plate != null) TextAction(text = "Plates", onClick = { showPlates = true })
+            }
+            if (state.progressionLine != null) {
+                Text(state.progressionLine, style = MaterialTheme.typography.bodyLarge)
+                TextAction(
+                    text = if (state.progressionSkipped) "Skipped" else "Skip once",
+                    enabled = !state.progressionSkipped,
+                    onClick = onSkipProgression,
+                )
             }
             if (state.isOptionalBlock && !resting) {
                 TextAction(text = "Skip ${state.blockLabel}", onClick = onSkipBlock)
+            }
+            if (state.showEndBlock && !resting) {
+                TextAction(text = "End block", onClick = onEndBlock)
+            }
+            if (state.showAddRound) {
+                TextAction(text = "Add round", onClick = onAddRound)
             }
             SetTable(
                 rows = state.rows,
@@ -335,11 +415,21 @@ private fun ActiveSession(
                 resting = resting,
                 holding = state.isHolding,
                 saving = state.isSaving,
+                hapticsEnabled = state.hapticsEnabled,
+                showRpe = state.rpeEnabled,
                 onAim = onAim,
                 onCopyPrevious = onCopyPrevious,
                 onLog = onLog,
                 onStopHold = onStopHold,
             )
+            if (state.rpeEnabled && !resting) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MonoLabel("RPE", Modifier.weight(1f))
+                    TextAction(text = "−", onClick = { onAdjustRpe(-0.5f) })
+                    Text(state.rpe?.let { formatWeight(it) } ?: "—", style = MaterialTheme.typography.titleMedium)
+                    TextAction(text = "+", onClick = { onAdjustRpe(0.5f) })
+                }
+            }
             if (seconds && !state.isHolding && !resting) {
                 TextAction(text = "Start hold", onClick = onStartHold)
             }
@@ -377,6 +467,71 @@ private fun ActiveSession(
                 onFinish()
             },
             onDismiss = { showFinishDialog = false },
+            content = {
+                state.endLines.forEach { line ->
+                    Text(line, style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+        )
+    }
+    if (showPlates && state.plate != null) {
+        val plate = state.plate
+        BoardDialog(
+            title = "Plates",
+            confirmText = "Done",
+            dismissText = "Close",
+            onConfirm = { showPlates = false },
+            onDismiss = { showPlates = false },
+            content = {
+                if (plate.dumbbell) {
+                    Text(plate.caption, style = MaterialTheme.typography.titleLarge)
+                } else {
+                    if (plate.struck != null && plate.makeable != null) {
+                        Text(plate.struck, textDecoration = TextDecoration.LineThrough)
+                        Text(plate.makeable, textDecoration = TextDecoration.Underline)
+                        if (plate.difference != null) MonoLabel(plate.difference)
+                    }
+                    Text(plate.caption, style = MaterialTheme.typography.titleMedium)
+                    if (plate.assumption != null) {
+                        Text(plate.assumption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+        )
+    }
+    if (picker != null) {
+        val replace = picker == true
+        BoardDialog(
+            title = "Exercise",
+            confirmText = "Close",
+            dismissText = "Cancel",
+            onConfirm = { picker = null },
+            onDismiss = { picker = null },
+            content = {
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    state.catalog.forEach { item ->
+                        TextAction(
+                            text = item.name,
+                            onClick = {
+                                picker = null
+                                if (replace) pendingReplace = item else onSubstitute(item.id)
+                            },
+                        )
+                    }
+                }
+            },
+        )
+    }
+    pendingReplace?.let { chosen ->
+        BoardDialog(
+            title = "Replace in the program?",
+            message = "Older sessions stay as logged.",
+            confirmText = "Replace",
+            onConfirm = {
+                onReplace(chosen.id)
+                pendingReplace = null
+            },
+            onDismiss = { pendingReplace = null },
         )
     }
     if (showNote) {
@@ -520,6 +675,9 @@ private fun ExerciseIndexPill(pill: ExercisePill) {
                 style = MonoLabelStyle,
                 color = if (pill.selected) label else LabelDark,
             )
+            if (pill.minCaption != null) {
+                Text(pill.minCaption, style = MonoLabelStyle, color = if (pill.selected) label else LabelDark)
+            }
         }
     }
 }
@@ -532,6 +690,8 @@ private fun SetTable(
     resting: Boolean,
     holding: Boolean,
     saving: Boolean,
+    hapticsEnabled: Boolean,
+    showRpe: Boolean,
     onAim: (KeypadField) -> Unit,
     onCopyPrevious: () -> Unit,
     onLog: () -> Unit,
@@ -544,6 +704,7 @@ private fun SetTable(
             MonoLabel("Prev", Modifier.weight(1.3f))
             MonoLabel("Load", Modifier.weight(1f))
             MonoLabel(if (seconds) "Sec" else "Reps", Modifier.weight(1f))
+            if (showRpe) MonoLabel("RPE", Modifier.width(48.dp))
             Spacer(Modifier.size(48.dp))
         }
         rows.forEach { row ->
@@ -582,11 +743,19 @@ private fun SetTable(
                     description = if (seconds) "Seconds" else "Reps",
                     onClick = { onAim(KeypadField.VALUE) },
                 )
+                if (showRpe) {
+                    Text(
+                        row.rpeText ?: "—",
+                        modifier = Modifier.width(48.dp),
+                        style = MonoLabelStyle,
+                        maxLines = 1,
+                    )
+                }
                 SetCompleteCircle(
                     complete = row.complete,
                     onClick = {
                         if (row.active && !resting && !saving) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             if (holding) onStopHold() else onLog()
                         }
                     },
