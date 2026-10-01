@@ -126,6 +126,7 @@ fun RepsGramsApp(
             container.progressRepository,
             container.cycleSettingsRepository,
             container.supplementRepository,
+            container.healthConnectManager,
         ),
     )
     val settingsViewModel: com.example.repsgrams.ui.settings.SettingsViewModel = viewModel(

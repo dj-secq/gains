@@ -397,7 +397,7 @@ fun SettingsScreen(
                         Column {
                             SettingToggle(
                                 "Health Connect",
-                                "Sync workouts to Health Connect",
+                                "Sync finished workouts and bodyweight",
                                 Icons.Outlined.HealthAndSafety,
                                 AppColors.workout,
                                 checked = settings.healthConnectEnabled,

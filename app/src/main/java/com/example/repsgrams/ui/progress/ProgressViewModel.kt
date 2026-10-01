@@ -3,6 +3,7 @@ package com.example.repsgrams.ui.progress
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.repsgrams.data.HealthConnectManager
 import com.example.repsgrams.data.datastore.CycleSettingsRepository
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BodyweightLogEntity
@@ -12,8 +13,10 @@ import com.example.repsgrams.data.repository.ProgressRepository
 import com.example.repsgrams.domain.progress.bodyweightToDisplay
 import com.example.repsgrams.domain.progress.bodyweightToKilograms
 import com.example.repsgrams.domain.streak.StreakInfo
+import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -71,6 +74,7 @@ class ProgressViewModel(
     private val progressRepository: ProgressRepository,
     private val cycleSettingsRepository: CycleSettingsRepository,
     private val supplementRepository: SupplementRepository,
+    private val healthConnectManager: HealthConnectManager,
     private val today: LocalDate = LocalDate.now(),
 ) : ViewModel() {
     private val _isWeightView = MutableStateFlow(true)
@@ -90,7 +94,10 @@ class ProgressViewModel(
     fun logBodyweight(weight: Float) {
         val unitSystem = uiState.value.unitSystem
         viewModelScope.launch {
-            progressRepository.logBodyweight(today, bodyweightToKilograms(weight, unitSystem))
+            val kilograms = bodyweightToKilograms(weight, unitSystem)
+            progressRepository.logBodyweight(today, kilograms)
+            if (!cycleSettingsRepository.settings.first().healthConnectEnabled) return@launch
+            healthConnectManager.writeBodyweight(Instant.now(), kilograms)
         }
     }
 
@@ -182,10 +189,16 @@ class ProgressViewModel(
             progressRepository: ProgressRepository,
             cycleSettingsRepository: CycleSettingsRepository,
             supplementRepository: SupplementRepository,
+            healthConnectManager: HealthConnectManager,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return ProgressViewModel(progressRepository, cycleSettingsRepository, supplementRepository) as T
+                return ProgressViewModel(
+                    progressRepository,
+                    cycleSettingsRepository,
+                    supplementRepository,
+                    healthConnectManager,
+                ) as T
             }
         }
     }

@@ -22,6 +22,7 @@ import com.example.repsgrams.data.repository.DefaultSupplementRepository
 import com.example.repsgrams.data.repository.ProgressRepository
 import com.example.repsgrams.data.repository.ScheduleRepository
 import com.example.repsgrams.data.repository.SupplementRepository
+import com.example.repsgrams.data.db.WorkoutSessionEntity
 import com.example.repsgrams.data.repository.WorkoutRepository
 import com.example.repsgrams.reminder.ReminderScheduler
 import com.example.repsgrams.reminder.WorkManagerReminderScheduler
@@ -32,6 +33,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 
 interface AppContainer {
     val database: AppDatabase
@@ -146,11 +148,27 @@ class DefaultAppContainer(
             backupManager.attachDatabase(db)
             scheduleRepository = DefaultScheduleRepository(db, cycleSettingsRepository, clock)
             supplementRepository = DefaultSupplementRepository(db, clock)
-            workoutRepository = WorkoutRepository(db, clock, deferred, {})
+            workoutRepository = WorkoutRepository(db, clock, deferred) { session ->
+                runCatching { publishFinishedWorkout(db, session) }
+                    .onFailure { error ->
+                        Log.e("HealthConnect", "${error.javaClass.simpleName}: ${error.message}")
+                    }
+            }
             calendarRepository = CalendarRepository(db, cycleSettingsRepository, clock, deferred)
             progressRepository = DefaultProgressRepository(db)
             databaseInitialization = deferred
         }
+    }
+
+    private suspend fun publishFinishedWorkout(database: AppDatabase, session: WorkoutSessionEntity) {
+        if (!cycleSettingsRepository.settings.first().healthConnectEnabled) return
+        val start = session.startTime ?: return
+        val end = session.endTime ?: return
+        val title = session.templateId
+            ?.let { database.workoutTemplateDao().getById(it)?.name }
+            ?.takeIf { it.isNotBlank() }
+            ?: "Workout"
+        healthConnectManager.writeWorkoutSession(start, end, title)
     }
 
     private fun inspectDatabase(): InspectedDatabase {
