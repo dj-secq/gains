@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +27,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,7 +42,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,13 +56,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,8 +72,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.repsgrams.data.db.RepType
-import com.example.repsgrams.domain.session.ExercisePill
 import com.example.repsgrams.domain.session.KeypadField
+import com.example.repsgrams.domain.session.currentSetCaption
 import com.example.repsgrams.domain.session.PLANNED_DURATION_PASSED
 import com.example.repsgrams.domain.session.SetRowModel
 import com.example.repsgrams.domain.session.cueText
@@ -80,25 +83,27 @@ import com.example.repsgrams.domain.session.formatSessionElapsed
 import com.example.repsgrams.domain.session.nextExerciseCaption
 import com.example.repsgrams.domain.today.formatDose
 import com.example.repsgrams.service.RestTimerService
+import com.example.repsgrams.ui.components.BackChevron
 import com.example.repsgrams.ui.components.BoardDialog
 import com.example.repsgrams.ui.components.BoardTile
+import com.example.repsgrams.ui.components.ExerciseFigure
 import com.example.repsgrams.ui.components.InkPill
 import com.example.repsgrams.ui.components.MonoLabel
 import com.example.repsgrams.ui.components.OutlinePill
-import com.example.repsgrams.ui.components.SetCompleteCircle
 import com.example.repsgrams.ui.components.StatusDot
-import com.example.repsgrams.ui.components.TextAction
 import com.example.repsgrams.ui.components.TileTone
+import com.example.repsgrams.ui.components.TextAction
 import com.example.repsgrams.ui.components.shimmer
+import com.example.repsgrams.ui.components.tileMuted
 import com.example.repsgrams.ui.theme.DisplayNumeral
 import com.example.repsgrams.ui.theme.HairlineDark
-import com.example.repsgrams.ui.theme.HairlineLight
 import com.example.repsgrams.ui.theme.Ink
 import com.example.repsgrams.ui.theme.LabelDark
-import com.example.repsgrams.ui.theme.LocalDarkTheme
 import com.example.repsgrams.ui.theme.MonoLabelStyle
 import com.example.repsgrams.ui.theme.PaperDark
 import com.example.repsgrams.ui.theme.PaperLight
+import com.example.repsgrams.ui.theme.SignalRed
+import com.example.repsgrams.ui.theme.doneGreen
 import com.example.repsgrams.ui.today.TodaySupplement
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -118,7 +123,6 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         }
     }
 
-    BackHandler(enabled = state !is WorkoutSessionUiState.Summary) { leave() }
     BackHandler(enabled = state is WorkoutSessionUiState.Summary) { viewModel.saveSummary() }
 
     if (showCancelDialog) {
@@ -179,6 +183,7 @@ fun WorkoutSessionRoute(viewModel: WorkoutSessionViewModel, onFinished: () -> Un
         provisionalRecord = viewModel.provisionalRecord,
         onAim = viewModel::aimKeypad,
         onKey = viewModel::keypadKey,
+        onStep = viewModel::stepAimed,
         onDismissKeypad = viewModel::dismissKeypad,
         onCopyPrevious = viewModel::copyPreviousIntoActive,
         onLog = viewModel::logCurrent,
@@ -212,6 +217,7 @@ fun WorkoutSessionScreen(
     provisionalRecord: kotlinx.coroutines.flow.SharedFlow<Unit>,
     onAim: (KeypadField) -> Unit,
     onKey: (String) -> Unit,
+    onStep: (Boolean) -> Unit,
     onDismissKeypad: () -> Unit,
     onCopyPrevious: () -> Unit,
     onLog: () -> Unit,
@@ -279,6 +285,7 @@ fun WorkoutSessionScreen(
                     state = state,
                     onAim = onAim,
                     onKey = onKey,
+                    onStep = onStep,
                     onDismissKeypad = onDismissKeypad,
                     onCopyPrevious = onCopyPrevious,
                     onLog = onLog,
@@ -317,6 +324,7 @@ private fun ActiveSession(
     state: WorkoutSessionUiState.Active,
     onAim: (KeypadField) -> Unit,
     onKey: (String) -> Unit,
+    onStep: (Boolean) -> Unit,
     onDismissKeypad: () -> Unit,
     onCopyPrevious: () -> Unit,
     onLog: () -> Unit,
@@ -350,6 +358,8 @@ private fun ActiveSession(
     val resting = state.restRemainingSeconds != null
     val seconds = state.exercise.repType == RepType.SECONDS
     val cue = cueText(state.exercise.notes)
+    val haptic = LocalHapticFeedback.current
+    val warmupOpen = state.rows.any { it.warmup && !it.complete }
 
     Column(modifier = Modifier.fillMaxSize()) {
         SessionBar(
@@ -366,12 +376,23 @@ private fun ActiveSession(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ExerciseStrip(state.pills)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                currentSetCaption(state.rows),
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ExerciseFigure(
+                    imageAssetName = state.exercise.imageAssetName,
+                    contentDescription = state.exercise.name,
+                    modifier = Modifier.size(64.dp),
+                )
                 Text(
                     state.exercise.name,
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.headlineLarge,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Box {
                     IconButton(onClick = { exerciseMenu = true }) {
@@ -382,8 +403,7 @@ private fun ActiveSession(
                         onDismissRequest = { exerciseMenu = false },
                         containerColor = PaperDark,
                         tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
-                        border = BorderStroke(1.dp, HairlineDark),
+                        shadowElevation = 2.dp,
                     ) {
                         DropdownMenuItem(
                             text = { Text("This session only") },
@@ -425,10 +445,16 @@ private fun ActiveSession(
                 Text(cue, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (state.exercise.perSide) MonoLabel("Per side")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction(text = "Note", onClick = { showNote = true })
-                OutlinePill(text = "Previous", onClick = onPrevious)
-                if (state.plate != null) TextAction(text = "Plates", onClick = { showPlates = true })
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SessionAction("Note", Icons.Outlined.Edit, onClick = { showNote = true })
+                SessionAction("Previous", Icons.Outlined.History, onClick = onPrevious)
+                if (state.plate != null) {
+                    SessionAction("Plates", Icons.Outlined.FitnessCenter, onClick = { showPlates = true })
+                }
             }
             if (state.progressionLine != null) {
                 Text(state.progressionLine, style = MaterialTheme.typography.bodyLarge)
@@ -447,21 +473,25 @@ private fun ActiveSession(
             if (state.showAddRound) {
                 TextAction(text = "Add round", onClick = onAddRound)
             }
-            SetTable(
-                rows = state.rows,
-                seconds = seconds,
-                tracksWeight = state.exercise.tracksWeight,
-                resting = resting,
-                holding = state.isHolding,
-                saving = state.isSaving,
-                hapticsEnabled = state.hapticsEnabled,
-                showRpe = state.rpeEnabled,
-                onAim = onAim,
-                onCopyPrevious = onCopyPrevious,
-                onLog = onLog,
-                onLogWarmup = onLogWarmup,
-                onStopHold = onStopHold,
-            )
+            BoardTile(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+                    SetTable(
+                        rows = state.rows,
+                        seconds = seconds,
+                        tracksWeight = state.exercise.tracksWeight,
+                        resting = resting,
+                        holding = state.isHolding,
+                        showRpe = state.rpeEnabled,
+                        keypadOpen = state.keypadOpen,
+                        keypadField = state.keypadField,
+                        onAim = onAim,
+                        onCopyPrevious = onCopyPrevious,
+                    )
+                }
+            }
+            if (warmupOpen && !resting && !state.isHolding) {
+                TextAction(text = "Log warm-up", onClick = onLogWarmup)
+            }
             if (state.rpeEnabled && !resting) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MonoLabel("RPE", Modifier.weight(1f))
@@ -484,7 +514,6 @@ private fun ActiveSession(
                 overtime = state.restOvertimeSeconds,
                 caption = state.restCaption.ifBlank { nextExerciseCaption(state.exercise.name) },
                 onAddRest = onAddRest,
-                onSkipRest = onSkipRest,
             )
         } else if (state.keypadOpen && !state.isHolding) {
             SessionKeypad(
@@ -492,6 +521,61 @@ private fun ActiveSession(
                 onKey = onKey,
                 onDone = onDismissKeypad,
             )
+        }
+        val canStep = !resting && !state.isHolding && !state.isSaving
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (!resting && state.nextLine.isNotBlank()) {
+                Text(
+                    state.nextLine,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinePill(
+                    text = "−",
+                    enabled = canStep,
+                    onClick = { onStep(false) },
+                    modifier = Modifier
+                        .width(64.dp)
+                        .semantics { contentDescription = "Decrease" },
+                )
+                InkPill(
+                    text = "Next",
+                    enabled = !state.isSaving,
+                    onClick = {
+                        if (resting) {
+                            onSkipRest()
+                        } else if (state.isHolding) {
+                            if (state.hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onStopHold()
+                        } else {
+                            if (state.hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLog()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinePill(
+                    text = "+",
+                    enabled = canStep,
+                    onClick = { onStep(true) },
+                    modifier = Modifier
+                        .width(64.dp)
+                        .semantics { contentDescription = "Increase" },
+                )
+            }
         }
     }
 
@@ -628,7 +712,7 @@ private fun FreestyleEmptySession(
             modifier = Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Empty workout", style = MaterialTheme.typography.headlineLarge)
+            Text("Empty workout", style = MaterialTheme.typography.titleLarge)
             TextAction(text = "Add exercise", onClick = { adding = true })
             TextAction(text = "Note", onClick = { showNote = true })
         }
@@ -708,10 +792,10 @@ private fun SessionBar(
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextAction(text = "Close", onClick = onBack, contentDescription = "Close session")
+        BackChevron(onClick = onBack)
         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 formatSessionElapsed(elapsedSeconds),
@@ -737,8 +821,7 @@ private fun SessionBar(
                 onDismissRequest = { menu = false },
                 containerColor = PaperDark,
                 tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-                border = BorderStroke(1.dp, HairlineDark),
+                shadowElevation = 16.dp,
             ) {
                 DropdownMenuItem(
                     text = { Text("Discard", color = LabelDark) },
@@ -753,111 +836,50 @@ private fun SessionBar(
 }
 
 @Composable
-private fun ExerciseStrip(pills: List<ExercisePill>) {
-    val hairline = if (LocalDarkTheme.current) HairlineDark else HairlineLight
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        pills.groupBy { it.groupId }.values.forEach { group ->
-            ExerciseGroup(group, hairline)
-        }
-    }
-}
-
-@Composable
-private fun ExerciseGroup(group: List<ExercisePill>, hairline: Color) {
-    val density = LocalDensity.current
-    var width by remember { mutableStateOf(0.dp) }
-    Column {
-        Row(
-            modifier = Modifier.onSizeChanged { width = with(density) { it.width.toDp() } },
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            group.forEach { ExerciseIndexPill(it) }
-        }
-        if (group.first().superset && width > 0.dp) {
-            Box(
-                Modifier
-                    .padding(top = 4.dp)
-                    .width(width)
-                    .height(1.dp)
-                    .background(hairline),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ExerciseIndexPill(pill: ExercisePill) {
-    val dark = LocalDarkTheme.current
-    val fill = when {
-        !pill.selected -> Color.Transparent
-        dark -> PaperLight
-        else -> Ink
-    }
-    val label = when {
-        !pill.selected -> if (dark) PaperLight else Ink
-        dark -> Ink
-        else -> PaperLight
-    }
-    Surface(
-        modifier = Modifier.heightIn(min = 48.dp),
-        shape = RoundedCornerShape(50),
-        color = fill,
-        contentColor = label,
-        border = if (pill.selected) null else BorderStroke(1.dp, if (dark) HairlineDark else HairlineLight),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(pill.label, style = MaterialTheme.typography.titleMedium)
-            Text(
-                pill.fraction,
-                style = MonoLabelStyle,
-                color = if (pill.selected) label else LabelDark,
-            )
-            if (pill.minCaption != null) {
-                Text(pill.minCaption, style = MonoLabelStyle, color = if (pill.selected) label else LabelDark)
-            }
-        }
-    }
-}
-
-@Composable
 private fun SetTable(
     rows: List<SetRowModel>,
     seconds: Boolean,
     tracksWeight: Boolean,
     resting: Boolean,
     holding: Boolean,
-    saving: Boolean,
-    hapticsEnabled: Boolean,
     showRpe: Boolean,
+    keypadOpen: Boolean,
+    keypadField: KeypadField,
     onAim: (KeypadField) -> Unit,
     onCopyPrevious: () -> Unit,
-    onLog: () -> Unit,
-    onLogWarmup: () -> Unit,
-    onStopHold: () -> Unit,
 ) {
-    val haptic = LocalHapticFeedback.current
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MonoLabel("Set", Modifier.width(36.dp))
-            MonoLabel("Prev", Modifier.weight(1.3f))
-            MonoLabel("Load", Modifier.weight(1f))
-            MonoLabel(if (seconds) "Sec" else "Reps", Modifier.weight(1f))
-            if (showRpe) MonoLabel("RPE", Modifier.width(48.dp))
-            Spacer(Modifier.size(48.dp))
+            TableHeader("Set", Modifier.weight(SetColumn))
+            TableHeader("Prev", Modifier.weight(PrevColumn), align = TextAlign.Start)
+            TableHeader("Load", Modifier.weight(LoadColumn))
+            TableHeader(if (seconds) "Sec" else "Reps", Modifier.weight(ValueColumn))
+            if (showRpe) TableHeader("RPE", Modifier.weight(RpeColumn))
         }
         rows.forEach { row ->
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(row.label, modifier = Modifier.width(36.dp), style = MonoLabelStyle)
+                Row(
+                    modifier = Modifier.weight(SetColumn).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        row.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                    )
+                    if (row.complete) {
+                        Icon(
+                            Icons.Outlined.Check,
+                            contentDescription = "Logged",
+                            modifier = Modifier.padding(start = 2.dp).size(16.dp),
+                            tint = doneGreen(),
+                        )
+                    }
+                }
                 Box(
                     modifier = Modifier
-                        .weight(1.3f)
+                        .weight(PrevColumn)
                         .heightIn(min = 48.dp)
                         .then(
                             if (row.copyable && !resting && !holding) {
@@ -870,20 +892,28 @@ private fun SetTable(
                         ),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    Text(row.previousText, color = LabelDark, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        row.previousText,
+                        color = LabelDark,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 NumeralCell(
                     text = row.loadText,
-                    active = row.active,
-                    modifier = Modifier.weight(1f),
+                    emphasized = row.active,
+                    aimed = row.active && keypadOpen && keypadField == KeypadField.LOAD,
+                    modifier = Modifier.weight(LoadColumn),
                     enabled = row.active && tracksWeight && !resting && !holding,
                     description = "Load",
                     onClick = { onAim(KeypadField.LOAD) },
                 )
                 NumeralCell(
                     text = row.repsText,
-                    active = row.active,
-                    modifier = Modifier.weight(1f),
+                    emphasized = row.active,
+                    aimed = row.active && keypadOpen && keypadField == KeypadField.VALUE,
+                    modifier = Modifier.weight(ValueColumn),
                     enabled = row.active && !resting && !holding,
                     description = if (seconds) "Seconds" else "Reps",
                     onClick = { onAim(KeypadField.VALUE) },
@@ -891,49 +921,90 @@ private fun SetTable(
                 if (showRpe) {
                     Text(
                         row.rpeText ?: "—",
-                        modifier = Modifier.width(48.dp),
-                        style = MonoLabelStyle,
+                        modifier = Modifier.weight(RpeColumn),
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                SetCompleteCircle(
-                    complete = row.complete,
-                    onClick = {
-                        if (row.warmup && !row.complete && !resting && !saving) {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onLogWarmup()
-                        } else if (row.active && !resting && !saving) {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (holding) onStopHold() else onLog()
-                        }
-                    },
-                )
             }
         }
     }
 }
 
+private const val SetColumn = 0.9f
+private const val PrevColumn = 1.3f
+private const val LoadColumn = 1.15f
+private const val ValueColumn = 0.95f
+private const val RpeColumn = 0.85f
+
+@Composable
+private fun TableHeader(text: String, modifier: Modifier, align: TextAlign = TextAlign.Center) {
+    Text(
+        text.uppercase(Locale.US),
+        modifier = modifier,
+        style = MonoLabelStyle,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = align,
+        maxLines = 1,
+    )
+}
+
 @Composable
 private fun NumeralCell(
     text: String,
-    active: Boolean,
+    emphasized: Boolean,
+    aimed: Boolean,
     modifier: Modifier,
     enabled: Boolean,
     description: String,
     onClick: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = modifier
+            .padding(horizontal = 2.dp)
             .heightIn(min = 48.dp)
+            .then(if (emphasized && !aimed) Modifier.border(1.dp, HairlineDark, shape) else Modifier)
+            .clip(shape)
+            .background(if (aimed) PaperLight else Color.Transparent)
             .then(if (enabled) Modifier.clickable(onClick = onClick).semantics { contentDescription = description } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text,
-            style = if (active) DisplayNumeral else MaterialTheme.typography.titleLarge,
+            color = if (aimed) Ink else PaperLight,
+            style = if (emphasized) {
+                DisplayNumeral.copy(fontSize = 28.sp, lineHeight = 32.sp)
+            } else {
+                MaterialTheme.typography.titleMedium
+            },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+private fun SessionAction(text: String, icon: ImageVector, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .border(1.dp, HairlineDark, shape)
+            .clip(shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
     }
 }
 
@@ -943,11 +1014,12 @@ private fun RestDock(
     overtime: Int?,
     caption: String,
     onAddRest: (Int) -> Unit,
-    onSkipRest: () -> Unit,
 ) {
     val expired = remaining == 0 || (overtime != null && overtime > 0)
-    BoardTile(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    BoardTile(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Rest", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 TextAction(text = "−15", onClick = { onAddRest(-15) })
@@ -958,16 +1030,12 @@ private fun RestDock(
                 style = DisplayNumeral,
                 color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    caption,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TextAction(text = "Skip", onClick = onSkipRest)
-            }
+            Text(
+                caption,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -979,17 +1047,18 @@ private fun SessionKeypad(
     onDone: () -> Unit,
 ) {
     val rows = listOf(
-        listOf(key("1"), key("2"), key("3"), key("−", "minus", "Decrease")),
-        listOf(key("4"), key("5"), key("6"), key("+", "plus", "Increase")),
-        listOf(key("7"), key("8"), key("9"), null),
-        listOf(key(".", ".", "Decimal"), key("0"), key("⌫", "delete", "Backspace"), key("Done", "done", "Done")),
+        listOf(key("1"), key("2"), key("3")),
+        listOf(key("4"), key("5"), key("6")),
+        listOf(key("7"), key("8"), key("9")),
+        listOf(key(".", ".", "Decimal"), key("0"), key("⌫", "delete", "Backspace")),
+        listOf(key("Done", "done", "Done")),
     )
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { spec ->
                     if (spec == null) {
                         Spacer(Modifier.weight(1f).height(48.dp))
@@ -1025,15 +1094,17 @@ private fun KeyButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val dark = LocalDarkTheme.current
-    val hairline = if (dark) HairlineDark else HairlineLight
-    val shape = RoundedCornerShape(24.dp)
+    val done = label == "Done"
+    val shape = RoundedCornerShape(12.dp)
+    val fill = if (done) PaperLight else PaperDark
+    val content = if (done) Ink else PaperLight
     Box(
         modifier = modifier
             .height(48.dp)
-            .alpha(if (!enabled) 0.38f else if (pressed) 0.55f else 1f)
+            .alpha(if (!enabled) 0.38f else if (pressed) 0.82f else 1f)
+            .then(if (done) Modifier else Modifier.border(1.dp, HairlineDark, shape))
             .clip(shape)
-            .border(1.dp, hairline, shape)
+            .background(fill)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
@@ -1043,7 +1114,12 @@ private fun KeyButton(
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(
+            label,
+            color = content,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1055,7 +1131,7 @@ private fun SummaryScreen(
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(state.workoutName, style = MaterialTheme.typography.headlineLarge)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1071,7 +1147,7 @@ private fun SummaryScreen(
         state.records.forEach { line ->
             BoardTile(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), tone = TileTone.Ink) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     StatusDot(live = true)
@@ -1083,7 +1159,7 @@ private fun SummaryScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(line.detail, style = MonoLabelStyle, color = LabelDark)
+                    Text(line.detail, style = MonoLabelStyle, color = tileMuted())
                 }
             }
         }
@@ -1096,25 +1172,32 @@ private fun SummaryScreen(
 
 @Composable
 private fun SummaryFigure(value: String, caption: String, modifier: Modifier) {
-    Column(modifier = modifier) {
-        Text(value, style = DisplayNumeral, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        MonoLabel(caption)
+    BoardTile(modifier = modifier) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(value, style = DisplayNumeral, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            MonoLabel(caption)
+        }
     }
 }
 
 @Composable
 private fun SupplementTile(row: TodaySupplement, onToggle: () -> Unit) {
-    val ink = row.taken
+    val taken = row.taken
     BoardTile(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        tone = if (ink) TileTone.Ink else TileTone.Paper,
         onClick = onToggle,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Icon(
+                imageVector = if (taken) Icons.Outlined.Check else Icons.Outlined.Circle,
+                contentDescription = if (taken) "Taken" else "Not taken",
+                modifier = Modifier.size(18.dp),
+                tint = if (taken) doneGreen() else SignalRed,
+            )
             Text(
                 row.supplement.name,
                 modifier = Modifier.weight(1f),
@@ -1126,7 +1209,7 @@ private fun SupplementTile(row: TodaySupplement, onToggle: () -> Unit) {
             Text(
                 row.supplement.unit.uppercase(Locale.US),
                 style = MonoLabelStyle,
-                color = if (ink) LabelDark else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = tileMuted(),
             )
         }
     }

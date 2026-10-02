@@ -69,7 +69,7 @@ fun TemplateListRoute(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
                 Text("Programs", style = MaterialTheme.typography.titleMedium)
@@ -109,7 +109,7 @@ fun TemplateListRoute(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onNavigateToTemplate(template.id) },
                 ) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(template.name, style = MaterialTheme.typography.titleMedium)
                         Text("Day: ${template.dayLabel}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
@@ -340,10 +340,10 @@ fun TemplateEditorRoute(
             items(blocks.sortedBy { it.orderIndex }) { block ->
                 val idx = blocks.indexOf(block)
                 BoardTile(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     onClick = { onNavigateToBlock(block.id) },
                 ) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(block.label, style = MaterialTheme.typography.titleMedium)
                         Text(
                             "${block.kind.editorLabel()} · ${block.targetRoundsMin}-${block.targetRoundsMax} rounds, ${block.restSecondsBetweenRounds}s rest",
@@ -502,13 +502,13 @@ fun BlockEditorRoute(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(exLinks.sortedBy { it.orderIndex }) { link ->
                 val ex = allExercises.find { it.id == link.exerciseId }
                 val idx = exLinks.indexOf(link)
                 BoardTile(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(ex?.name ?: "Unknown", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "${link.targetValueLow}-${link.targetValueHigh} ${link.repType.name}",

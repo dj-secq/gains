@@ -56,9 +56,20 @@ class CalendarViewModel(
         .map { session -> session?.id }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    fun previousMonth() { displayedMonth.value = displayedMonth.value.minusMonths(1) }
-    fun nextMonth() { displayedMonth.value = displayedMonth.value.plusMonths(1) }
-    fun showToday() { displayedMonth.value = YearMonth.from(today) }
+    fun previousMonth() {
+        closeDay()
+        displayedMonth.value = displayedMonth.value.minusMonths(1)
+    }
+
+    fun nextMonth() {
+        closeDay()
+        displayedMonth.value = displayedMonth.value.plusMonths(1)
+    }
+
+    fun showToday() {
+        displayedMonth.value = YearMonth.from(today)
+        selectDate(today)
+    }
 
     fun selectDate(date: LocalDate) {
         val token = ++request

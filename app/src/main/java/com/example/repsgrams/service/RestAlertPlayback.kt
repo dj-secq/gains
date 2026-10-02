@@ -11,7 +11,8 @@ import android.os.VibratorManager
 
 /**
  * One-shot alert. The player is not looping, and vibration uses a finite waveform
- * (repeat index -1). Sound is skipped while the session screen is resumed.
+ * (repeat index -1). Sound plays while the workout is on screen. The system
+ * notification is the only part skipped in that case.
  */
 internal object RestAlertPlayback {
     private val lock = Any()
@@ -35,13 +36,13 @@ internal object RestAlertPlayback {
         }
     }
 
-    fun play(context: Context, sound: String, vibrationEnabled: Boolean, sessionVisible: Boolean) {
+    fun play(context: Context, sound: String, vibrationEnabled: Boolean) {
         stop()
         val appContext = context.applicationContext
         if (vibrationEnabled) {
-            vibrate(appContext, shortPulse = sessionVisible)
+            vibrate(appContext)
         }
-        if (sessionVisible || sound == "off") return
+        if (sound == "off") return
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
             ?: return
@@ -73,7 +74,7 @@ internal object RestAlertPlayback {
         }
     }
 
-    private fun vibrate(context: Context, shortPulse: Boolean) {
+    private fun vibrate(context: Context) {
         val resolved = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val manager = context.getSystemService(VibratorManager::class.java)
@@ -86,11 +87,7 @@ internal object RestAlertPlayback {
             null
         } ?: return
         vibrator = resolved
-        val effect = if (shortPulse) {
-            VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE)
-        } else {
-            VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400), -1)
-        }
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400, 200, 400), -1)
         try {
             resolved.vibrate(effect)
         } catch (_: Exception) {

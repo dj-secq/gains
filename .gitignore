@@ -2,22 +2,21 @@
 .gradle
 /.kotlin
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-/.idea/deploymentTargetSelector.xml
-/.idea/deviceManager.xml
 .DS_Store
 **/build/
 /captures/
 .externalNativeBuild
 .cxx
 local.properties
-.agents/*
-!.agents/skills/
+
+# IDE and agent notes. These stay on this machine and are not part of the app.
+/.idea/
+.agents/
+AGENTS.md
+agents.md
+CLAUDE.md
+GEMINI.md
+.codex/
 .gemini/
 
 # Local signing and service configuration
@@ -27,6 +26,9 @@ keystore.properties
 google-services.json
 
 # Packaged build artifacts and logs
+/app/release/
+/dist/
 *.apk
 *.aab
+*.dm
 *.log

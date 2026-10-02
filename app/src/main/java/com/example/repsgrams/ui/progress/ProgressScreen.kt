@@ -74,13 +74,10 @@ import com.example.repsgrams.ui.components.MonoLabel
 import com.example.repsgrams.ui.components.OutlinePill
 import com.example.repsgrams.ui.components.RestockDialog
 import com.example.repsgrams.ui.components.TextAction
-import com.example.repsgrams.ui.components.TileTone
 import com.example.repsgrams.ui.theme.DisplayNumeral
-import com.example.repsgrams.ui.theme.Ink
-import com.example.repsgrams.ui.theme.LocalDarkTheme
 import com.example.repsgrams.ui.theme.MonoLabelStyle
-import com.example.repsgrams.ui.theme.PaperLight
 import com.example.repsgrams.ui.theme.SignalRed
+import com.example.repsgrams.ui.theme.doneGreen
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.math.abs
@@ -131,7 +128,7 @@ fun ProgressScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             contentPadding = PaddingValues(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
                 ExerciseHero(
@@ -262,7 +259,6 @@ private fun ExerciseHero(
     onOpenExercises: () -> Unit,
     onMetricSelected: (ProgressMetric) -> Unit,
 ) {
-    val dark = LocalDarkTheme.current
     val exercise = state.exercises.find { it.id == state.selectedExerciseId }
     val series = progressSeries(
         rows = state.exerciseHistory,
@@ -277,11 +273,8 @@ private fun ExerciseHero(
         else -> selected
     }
     val point = series.points.getOrNull(index)
-    val line = if (dark) PaperLight else Ink
-    BoardTile(
-        modifier = Modifier.fillMaxWidth(),
-        tone = if (dark) TileTone.Ink else TileTone.Paper,
-    ) {
+    val line = MaterialTheme.colorScheme.onSurface
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(
                 modifier = Modifier.heightIn(min = 48.dp).clickable(enabled = state.exercises.isNotEmpty(), onClick = onOpenExercises),
@@ -363,7 +356,7 @@ private fun MiniChart(points: List<ProgressPoint>, animationKey: Any) {
     var selected by remember(animationKey) { mutableIntStateOf(-1) }
     val index = if (selected in points.indices) selected else points.lastIndex
     val point = points.getOrNull(index)
-    val line = if (LocalDarkTheme.current) PaperLight else Ink
+    val line = MaterialTheme.colorScheme.onSurface
     SeriesChart(
         points = points,
         animationKey = animationKey,
@@ -383,40 +376,82 @@ private fun MiniChart(points: List<ProgressPoint>, animationKey: Any) {
 
 @Composable
 private fun RecordList(records: List<ProgressRecord>, onDelete: (ProgressRecord) -> Unit) {
+    var expanded by remember { mutableStateOf(setOf<Long>()) }
     BoardTile(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             MonoLabel("Records", modifier = Modifier.padding(vertical = 8.dp))
-            records.groupBy { it.exerciseId }.forEach { (_, group) ->
+            records.groupBy { it.exerciseId }.entries.forEachIndexed { groupIndex, (exerciseId, group) ->
+                if (groupIndex > 0) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                }
                 Text(
                     group.first().exerciseName,
                     modifier = Modifier.padding(top = 8.dp),
                     style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                group.forEachIndexed { index, row ->
+                val open = exerciseId in expanded
+                val visible = if (open || group.size <= 4) group else group.take(4)
+                visible.chunked(2).forEach { pair ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(
-                            row.label,
-                            modifier = Modifier.weight(1f),
-                            style = MonoLabelStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(row.value, style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            formatProgressDate(row.date),
-                            style = MonoLabelStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        TextAction("Delete", onClick = { onDelete(row) }, destructive = true)
-                    }
-                    if (index < group.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        pair.forEach { row ->
+                            RecordCell(row, Modifier.weight(1f), onDelete)
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
+                if (group.size > 4) {
+                    TextAction(
+                        text = if (open) "Show less" else "Show ${group.size - 4} more",
+                        onClick = {
+                            expanded = if (open) expanded - exerciseId else expanded + exerciseId
+                        },
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecordCell(
+    row: ProgressRecord,
+    modifier: Modifier,
+    onDelete: (ProgressRecord) -> Unit,
+) {
+    Column(modifier.padding(vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                row.label,
+                modifier = Modifier.weight(1f),
+                style = MonoLabelStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                formatProgressDate(row.date),
+                style = MonoLabelStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                row.value,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TextAction("Delete", onClick = { onDelete(row) }, destructive = true)
         }
     }
 }
@@ -430,6 +465,7 @@ private fun SupplySection(state: ProgressUiState, onRestock: (SupplyInventoryEnt
             state.supplyInventory.forEachIndexed { index, inventory ->
                 val supplement = state.supplements.find { it.id == inventory.supplementId }
                 val fraction = (inventory.servingsRemaining / inventory.totalServings.coerceAtLeast(1)).coerceIn(0f, 1f)
+                val bar = if (fraction <= 0.15f) SignalRed else MaterialTheme.colorScheme.onSurface
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -446,11 +482,11 @@ private fun SupplySection(state: ProgressUiState, onRestock: (SupplyInventoryEnt
                         LinearProgressIndicator(
                             progress = { fraction },
                             modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            trackColor = MaterialTheme.colorScheme.outlineVariant,
+                            color = bar,
+                            trackColor = bar.copy(alpha = 0.18f),
                         )
                     }
-                    OutlinePill(text = "Restock", onClick = { onRestock(inventory) }, modifier = Modifier.width(96.dp))
+                    OutlinePill(text = "Restock", onClick = { onRestock(inventory) })
                 }
                 if (index < state.supplyInventory.lastIndex) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -465,8 +501,9 @@ private fun AdherenceSection(state: ProgressUiState, onOpen: () -> Unit) {
     val active = state.supplements.filter { it.isActive }
     val selected = active.firstOrNull { it.id == state.selectedSupplementId } ?: active.first()
     val taken = state.supplementAdherence.count { it.second }
-    val dot = MaterialTheme.colorScheme.onSurface
+    val takenColor = doneGreen()
     BoardTile(modifier = Modifier.fillMaxWidth()) {
+        val open = MaterialTheme.colorScheme.outline
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -487,9 +524,9 @@ private fun AdherenceSection(state: ProgressUiState, onOpen: () -> Unit) {
                 state.supplementAdherence.forEachIndexed { index, (_, wasTaken) ->
                     val center = Offset(gap * (index + 0.5f), size.height / 2f)
                     if (wasTaken) {
-                        drawCircle(dot, radius, center)
+                        drawCircle(takenColor, radius, center)
                     } else {
-                        drawCircle(dot, radius, center, style = Stroke(1.dp.toPx()))
+                        drawCircle(open, radius, center, style = Stroke(1.dp.toPx()))
                     }
                 }
             }
@@ -510,7 +547,7 @@ private fun ExerciseSheet(
         .sortedBy { it.name.lowercase(Locale.US) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = MaterialTheme.colorScheme.background,
         tonalElevation = 0.dp,
         scrimColor = Color.Black.copy(alpha = 0.42f),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -570,7 +607,7 @@ private fun SupplementSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = MaterialTheme.colorScheme.background,
         tonalElevation = 0.dp,
         scrimColor = Color.Black.copy(alpha = 0.42f),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -658,7 +695,7 @@ private fun SeriesChart(
     val drawProgress = remember(animationKey) { Animatable(0f) }
     LaunchedEffect(animationKey) {
         drawProgress.snapTo(0f)
-        drawProgress.animateTo(1f, tween(durationMillis = 400, easing = EaseOutCubic))
+        drawProgress.animateTo(1f, tween(durationMillis = 220, easing = EaseOutCubic))
     }
     Canvas(
         modifier.pointerInput(points) {
@@ -679,7 +716,7 @@ private fun SeriesChart(
         }
         clipRect(right = size.width * drawProgress.value) {
             if (offsets.size > 1) {
-                drawPath(path, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(path, lineColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
             }
             offsets.forEachIndexed { index, center ->
                 val point = points[index]

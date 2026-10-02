@@ -309,7 +309,7 @@ class RestTimerService : Service() {
             .first()
         if (stopped) return
         val sessionVisible = isSessionForeground
-        val willSound = !sessionVisible && settings.restTimerSound != "off"
+        val willSound = settings.restTimerSound != "off"
         val willVibrate = settings.restTimerVibrationEnabled
         val willNotify = !sessionVisible
         if (!willSound && !willVibrate && !willNotify) {
@@ -335,7 +335,6 @@ class RestTimerService : Service() {
             applicationContext,
             sound = settings.restTimerSound,
             vibrationEnabled = settings.restTimerVibrationEnabled,
-            sessionVisible = sessionVisible,
         )
         if (willNotify) {
             RestNotifications.postRestOver(this, upNextText, sessionId, alertEnd, restToken)
@@ -438,7 +437,7 @@ class RestTimerService : Service() {
             if (saved?.restEndEpochMillis == null || saved.restAlertFired) return
             val settings = PreferencesCycleSettingsRepository(appContext, Clock.systemUTC()).settings.first()
             val sessionVisible = isSessionForeground
-            val willSound = !sessionVisible && settings.restTimerSound != "off"
+            val willSound = settings.restTimerSound != "off"
             val willVibrate = settings.restTimerVibrationEnabled
             val willNotify = !sessionVisible
             if (!willSound && !willVibrate && !willNotify) return
@@ -458,7 +457,6 @@ class RestTimerService : Service() {
                 appContext,
                 sound = settings.restTimerSound,
                 vibrationEnabled = settings.restTimerVibrationEnabled,
-                sessionVisible = sessionVisible,
             )
         }
 

@@ -2,6 +2,7 @@ package com.example.repsgrams.ui.calendar
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,7 @@ import com.example.repsgrams.data.repository.CalendarMonth
 import com.example.repsgrams.data.repository.CalendarSessionDetail
 import com.example.repsgrams.domain.calendar.CalendarDay
 import com.example.repsgrams.domain.calendar.CalendarDayStatus
+import com.example.repsgrams.domain.calendar.DayMarkKind
 import com.example.repsgrams.domain.calendar.CalendarSheetAction
 import com.example.repsgrams.domain.calendar.calendarSheetAction
 import com.example.repsgrams.domain.calendar.formatCalendarDate
@@ -59,12 +63,12 @@ import com.example.repsgrams.domain.session.formatSessionElapsed
 import com.example.repsgrams.ui.components.BoardTile
 import com.example.repsgrams.ui.components.DayMark
 import com.example.repsgrams.ui.components.InkPill
-import com.example.repsgrams.ui.components.TextAction
-import com.example.repsgrams.ui.components.TileTone
+import com.example.repsgrams.ui.components.OutlinePill
 import com.example.repsgrams.ui.components.shimmer
 import com.example.repsgrams.ui.theme.Ink
-import com.example.repsgrams.ui.theme.LabelDark
 import com.example.repsgrams.ui.theme.LocalDarkTheme
+import com.example.repsgrams.ui.theme.SignalRed
+import com.example.repsgrams.ui.theme.doneGreen
 import com.example.repsgrams.ui.theme.MonoLabelStyle
 import com.example.repsgrams.ui.theme.PaperLight
 import java.time.DayOfWeek
@@ -146,26 +150,22 @@ fun CalendarScreen(
                         )
                     }
                     item {
-                        WeekdayHeader()
-                        month.days.chunked(7).forEach { week ->
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                week.forEach { day ->
-                                    DayCell(
-                                        day = day,
-                                        selected = day.date == selectedDate,
-                                        modifier = Modifier.weight(1f),
-                                        onSelectDate = onSelectDate,
-                                    )
+                        Column(Modifier.monthSwipe(onPreviousMonth, onNextMonth).padding(bottom = 8.dp)) {
+                            WeekdayHeader()
+                            month.days.chunked(7).forEach { week ->
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    week.forEach { day ->
+                                        DayCell(
+                                            day = day,
+                                            selected = day.date == selectedDate,
+                                            modifier = Modifier.weight(1f),
+                                            onSelectDate = onSelectDate,
+                                        )
+                                    }
                                 }
                             }
+                            MonthLegend()
                         }
-                        Text(
-                            "FILLED TRAINED · HOLLOW MISSED · RED PR",
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                            style = MonoLabelStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
                     }
                 }
             }
@@ -173,7 +173,7 @@ fun CalendarScreen(
             if (selectedDate != null || loadingDay) {
                 ModalBottomSheet(
                     onDismissRequest = onDismissDay,
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                     tonalElevation = 0.dp,
                     scrimColor = Color.Black.copy(alpha = 0.42f),
                     shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -182,7 +182,7 @@ fun CalendarScreen(
                     if (loadingDay || detail == null || detail.date != selectedDate) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Box(Modifier.fillMaxWidth().height(28.dp).clip(MaterialTheme.shapes.medium).shimmer())
                             Box(Modifier.fillMaxWidth().height(120.dp).clip(MaterialTheme.shapes.medium).shimmer())
@@ -210,48 +210,71 @@ private fun MonthHeader(
     onNextMonth: () -> Unit,
     onThisMonth: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onPreviousMonth) {
-            Icon(
-                Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                contentDescription = "Previous month",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
         Text(
             title,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onClick = onNextMonth) {
-            Icon(
-                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = "Next month",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onPreviousMonth) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                    contentDescription = "Previous month",
+                )
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                OutlinePill(text = "Today", onClick = onThisMonth)
+            }
+            IconButton(onClick = onNextMonth) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = "Next month",
+                )
+            }
         }
-        TextAction("This month", onClick = onThisMonth)
+    }
+}
+
+private fun Modifier.monthSwipe(onPrevious: () -> Unit, onNext: () -> Unit): Modifier {
+    return pointerInput(onPrevious, onNext) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onHorizontalDrag = { _, amount -> total += amount },
+            onDragEnd = {
+                val threshold = 72.dp.toPx()
+                when {
+                    total > threshold -> onPrevious()
+                    total < -threshold -> onNext()
+                }
+            },
+        )
     }
 }
 
 @Composable
 private fun WeekdayHeader() {
-    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        DayOfWeek.entries.forEach { day ->
-            Text(
-                day.getDisplayName(TextStyle.NARROW, Locale.US).uppercase(Locale.US),
-                modifier = Modifier.weight(1f),
-                style = MonoLabelStyle,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            DayOfWeek.entries.forEach { day ->
+                Text(
+                    day.getDisplayName(TextStyle.SHORT, Locale.US).take(3).uppercase(Locale.US),
+                    modifier = Modifier.weight(1f),
+                    style = MonoLabelStyle,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -266,12 +289,13 @@ private fun DayCell(
     val ring = if (dark) PaperLight else Ink
     BoxWithConstraints(
         modifier = modifier
-            .heightIn(min = 48.dp)
-            .alpha(if (day.inDisplayedMonth) 1f else 0.3f)
+            .heightIn(min = 52.dp)
+            .padding(vertical = 4.dp)
+            .alpha(if (day.inDisplayedMonth) 1f else 0.55f)
             .then(if (day.inDisplayedMonth) Modifier.clickable { onSelectDate(day.date) } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        val markSize = if (maxWidth < 48.dp) maxWidth else 40.dp
+        val markSize = if (maxWidth < 44.dp) maxWidth else 40.dp
         Box(modifier = Modifier.size(markSize), contentAlignment = Alignment.Center) {
             if (selected) {
                 Box(Modifier.matchParentSize().border(1.dp, ring, CircleShape))
@@ -282,6 +306,31 @@ private fun DayCell(
                 size = if (selected) (markSize - 4.dp).coerceAtLeast(0.dp) else markSize,
             )
         }
+    }
+}
+
+@Composable
+private fun MonthLegend() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LegendItem(DayMarkKind.TRAINED, "Trained")
+        LegendItem(DayMarkKind.MISSED, "Missed")
+        LegendItem(DayMarkKind.PR, "Record")
+        LegendItem(DayMarkKind.PENDING, "Today")
+    }
+}
+
+@Composable
+private fun LegendItem(kind: DayMarkKind, caption: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        DayMark(kind = kind, label = "", size = 16.dp)
+        Text(caption, style = MonoLabelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -305,8 +354,8 @@ private fun DayDetail(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(formatCalendarDate(detail.date), style = MaterialTheme.typography.titleLarge)
         if (detail.sessions.isEmpty()) {
@@ -327,7 +376,6 @@ private fun DayDetail(
             val taken = log?.taken == true
             BoardTile(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                tone = if (taken) TileTone.Ink else TileTone.Paper,
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp),
@@ -343,7 +391,7 @@ private fun DayDetail(
                     Text(
                         if (taken) "taken" else "not taken",
                         style = MonoLabelStyle,
-                        color = if (taken) LabelDark else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (taken) doneGreen() else SignalRed,
                     )
                 }
             }
@@ -366,7 +414,11 @@ private fun DayDetail(
 
 @Composable
 private fun SessionBlock(session: CalendarSessionDetail, unitSystem: UnitSystem) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 session.workoutName,
@@ -391,20 +443,58 @@ private fun SessionBlock(session: CalendarSessionDetail, unitSystem: UnitSystem)
         session.notes?.let { notes ->
             Text(notes, style = MaterialTheme.typography.bodyMedium)
         }
-        session.sets.groupBy { it.exerciseName }.forEach { (exercise, sets) ->
-            Text(
-                exercise,
-                modifier = Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            sets.forEach { set ->
-                formatCalendarSet(set.reps, set.durationSeconds, set.weightKg, unitSystem)?.let { line ->
-                    Text(
-                        line,
-                        style = MonoLabelStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        val groups = session.sets.groupBy { it.exerciseName }.entries.toList()
+        groups.chunked(2).forEach { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                pair.forEach { (exercise, sets) ->
+                    DayExerciseColumn(
+                        exercise = exercise,
+                        lines = sets.mapNotNull { set ->
+                            formatCalendarSet(set.reps, set.durationSeconds, set.weightKg, unitSystem)
+                        },
+                        columns = if (pair.size == 1) 2 else 1,
+                        modifier = Modifier.weight(1f),
                     )
                 }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+private fun DayExerciseColumn(
+    exercise: String,
+    lines: List<String>,
+    columns: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            exercise,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        lines.chunked(columns).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { line ->
+                    Text(
+                        line,
+                        modifier = Modifier.weight(1f),
+                        style = MonoLabelStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

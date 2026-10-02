@@ -200,6 +200,79 @@ class SessionInstrumentTest {
         assertEquals("Next · DB Floor Press", nextExerciseCaption("DB Floor Press"))
     }
 
+    @Test
+    fun currentSetCaptionNamesTheRoundOrWarmup() {
+        assertEquals("Set 1", currentSetCaption(emptyList()))
+        assertEquals(
+            "Warm-up",
+            currentSetCaption(listOf(row("W", 1, active = true))),
+        )
+        assertEquals(
+            "Set 2 of 3",
+            currentSetCaption(
+                listOf(
+                    row("1", 1, complete = true),
+                    row("2", 2, active = true),
+                    row("3", 3),
+                ),
+            ),
+        )
+        assertEquals(
+            "Set 1 of 2",
+            currentSetCaption(
+                listOf(
+                    row("W", 1, warmup = true),
+                    row("1", 1, active = true),
+                    row("2", 2),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun upcomingLinePreviewsTheNextRoundExerciseOrFinish() {
+        val paired = WorkoutPlan(
+            templateId = 1,
+            name = "A",
+            dayLabel = "A",
+            maxDurationMinutes = 60,
+            category = "Custom",
+            blocks = listOf(block(BlockKind.STANDARD, 3, exercise(1, "Squat"), exercise(2, "Bench"))),
+        )
+        assertEquals("Next · Bench · 3 × 6–10", upcomingLine(paired, SessionCursor(0, 0, 1), 3))
+        assertEquals("Next · Squat · 3 × 6–10", upcomingLine(paired, SessionCursor(0, 1, 1), 3))
+        assertEquals("Last set", upcomingLine(paired, SessionCursor(0, 1, 3), 3))
+
+        val single = WorkoutPlan(
+            templateId = 1,
+            name = "A",
+            dayLabel = "A",
+            maxDurationMinutes = 60,
+            category = "Custom",
+            blocks = listOf(block(BlockKind.STANDARD, 4, exercise(1, "Squat"))),
+        )
+        assertEquals("Next · Set 2 of 4", upcomingLine(single, SessionCursor(0, 0, 1), 4))
+        assertEquals("Last set", upcomingLine(single, SessionCursor(0, 0, 4), 4))
+    }
+
+    private fun row(
+        label: String,
+        round: Int,
+        active: Boolean = false,
+        complete: Boolean = false,
+        warmup: Boolean = false,
+    ) = SetRowModel(
+        label = label,
+        roundNumber = round,
+        previousText = "—",
+        loadText = "—",
+        repsText = "—",
+        complete = complete,
+        active = active,
+        copyable = false,
+        warmup = warmup,
+    )
+
     private fun exercise(id: Long, name: String) = WorkoutExercise(
         id = id,
         name = name,

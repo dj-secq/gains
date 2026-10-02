@@ -45,6 +45,7 @@ import com.example.repsgrams.domain.session.formatPrevious
 import com.example.repsgrams.domain.session.formatRecordLine
 import com.example.repsgrams.domain.session.formatWeight
 import com.example.repsgrams.domain.session.nextExerciseCaption
+import com.example.repsgrams.domain.session.upcomingLine
 import com.example.repsgrams.domain.session.prEligibleExerciseIds
 import com.example.repsgrams.ui.today.TodaySupplement
 import java.time.Clock
@@ -107,6 +108,7 @@ sealed interface WorkoutSessionUiState {
         val catalog: List<CatalogExercise> = emptyList(),
         val showAddWarmup: Boolean = false,
         val showAddExercise: Boolean = false,
+        val nextLine: String = "",
     ) : WorkoutSessionUiState
 
     /** Empty workout before the first exercise. The logging surface is not built yet. */
@@ -195,7 +197,7 @@ class WorkoutSessionViewModel(
     private var catalog: List<CatalogExercise> = emptyList()
     private var notesInput: String = ""
     private var holdStartEpochMillis: Long? = null
-    private var keypadOpen = true
+    private var keypadOpen = false
     private var keypadField = KeypadField.VALUE
     private var keypadFresh = true
     private var sessionLogs: List<SetLogEntity> = emptyList()
@@ -584,6 +586,22 @@ class WorkoutSessionViewModel(
         publishActive()
     }
 
+    /** Steps the aimed load or reps. The keypad can stay closed. */
+    fun stepAimed(increase: Boolean) {
+        if (!::plan.isInitialized || restEndEpochMillis != null || holdStartEpochMillis != null || isSaving) return
+        val exercise = currentExercise()
+        val key = if (increase) "plus" else "minus"
+        val stepLoad = keypadField == KeypadField.LOAD && exercise.tracksWeight
+        val edited = if (stepLoad) {
+            applyLoadKey(weightInput, key, false, loadIncrementDisplay())
+        } else {
+            applyRepKey(valueInput, key, false)
+        }
+        if (stepLoad) weightInput = edited.text else valueInput = edited.text
+        keypadFresh = false
+        publishActive()
+    }
+
     /** Copies the previous column into the active inputs. Does not complete the set. */
     fun copyPreviousIntoActive() {
         if (restEndEpochMillis != null || holdStartEpochMillis != null) return
@@ -594,7 +612,6 @@ class WorkoutSessionViewModel(
         if (exercise.tracksWeight && previous.weightKg != null) {
             weightInput = formatWeight(displayWeight(previous.weightKg))
         }
-        keypadOpen = true
         keypadFresh = true
         publishActive()
     }
@@ -753,7 +770,6 @@ class WorkoutSessionViewModel(
                 valueInput = (logged.reps ?: logged.durationSeconds)?.toString() ?: ""
                 weightInput = logged.weightKg?.let { formatWeight(displayWeight(it)) } ?: ""
                 refreshPrevious()
-                openKeypad()
             } else {
                 loadInputDefaults()
             }
@@ -928,7 +944,6 @@ class WorkoutSessionViewModel(
         }
         refreshSessionLogs()
         refreshPrevious()
-        openKeypad()
     }
 
     private fun tick() {
@@ -1032,6 +1047,7 @@ class WorkoutSessionViewModel(
             catalog = catalog,
             showAddWarmup = !warmUp && exercise.id !in warmupExerciseIds,
             showAddExercise = isFreestyle(),
+            nextLine = upcomingLine(plan, cursor, effectiveMax(block)),
         )
     }
 
@@ -1051,12 +1067,6 @@ class WorkoutSessionViewModel(
 
     private fun displayWeight(kilograms: Float): Float =
         if (unitSystem == UnitSystem.LB) kilogramsToPounds(kilograms) else kilograms
-
-    private fun openKeypad() {
-        keypadOpen = true
-        keypadField = KeypadField.VALUE
-        keypadFresh = true
-    }
 
     private suspend fun refreshSessionLogs() {
         sessionLogs = workoutRepository.getSessionSets(sessionId)

@@ -12,12 +12,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -41,6 +46,7 @@ import com.example.repsgrams.domain.today.DOSE_DELETE
 import com.example.repsgrams.domain.today.TodayAlternate
 import com.example.repsgrams.domain.today.TodayExerciseLine
 import com.example.repsgrams.domain.today.TodayHero
+import com.example.repsgrams.domain.today.TodayHeroMode
 import com.example.repsgrams.domain.today.TodayMark
 import com.example.repsgrams.domain.today.TodaySupply
 import com.example.repsgrams.domain.today.applyDoseKey
@@ -63,10 +69,11 @@ import com.example.repsgrams.ui.components.StatusDot
 import com.example.repsgrams.ui.components.TextAction
 import com.example.repsgrams.ui.components.TileTone
 import com.example.repsgrams.ui.components.shimmer
+import com.example.repsgrams.ui.components.tileMuted
 import com.example.repsgrams.ui.theme.DisplayNumeral
-import com.example.repsgrams.ui.theme.LabelDark
 import com.example.repsgrams.ui.theme.MonoLabelStyle
-import com.example.repsgrams.ui.theme.PaperLight
+import com.example.repsgrams.ui.theme.SignalRed
+import com.example.repsgrams.ui.theme.doneGreen
 import java.time.Instant
 import java.time.format.TextStyle
 import java.util.Locale
@@ -285,7 +292,7 @@ private fun TodayContent(
     if (showAlternatives) {
         ModalBottomSheet(
             onDismissRequest = { showAlternatives = false },
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.background,
             tonalElevation = 0.dp,
             scrimColor = Color.Black.copy(alpha = 0.42f),
             shape = MaterialTheme.shapes.extraLarge,
@@ -359,42 +366,51 @@ private fun TodayContent(
 
 @Composable
 private fun HeroTile(hero: TodayHero, startedAt: Instant?, onPill: () -> Unit, onAlternate: () -> Unit) {
-    BoardTile(modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp), tone = TileTone.Ink) {
-        Column(Modifier.padding(16.dp)) {
-            Text(hero.label, style = MonoLabelStyle, color = LabelDark)
-            Spacer(Modifier.height(4.dp))
+    val tone = if (hero.mode == TodayHeroMode.LIVE) TileTone.Ink else TileTone.Paper
+    val statusColor = when {
+        hero.mode == TodayHeroMode.DONE -> doneGreen()
+        hero.mode == TodayHeroMode.START && hero.label == "OVERDUE" -> SignalRed
+        else -> tileMuted()
+    }
+    val markColor = if (hero.mode == TodayHeroMode.DONE) doneGreen() else Color.Unspecified
+    BoardTile(modifier = Modifier.fillMaxWidth(), tone = tone) {
+        Column(Modifier.padding(20.dp)) {
+            Text(hero.label, style = MonoLabelStyle, color = statusColor)
+            Spacer(Modifier.height(8.dp))
             when (val mark = hero.mark) {
                 is TodayMark.Token -> Text(
                     mark.text,
-                    style = DisplayNumeral.copy(fontSize = 72.sp, lineHeight = 76.sp),
+                    style = DisplayNumeral.copy(fontSize = 56.sp, lineHeight = 60.sp),
+                    color = markColor,
                 )
                 is TodayMark.Words -> Text(
                     mark.text,
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 36.sp, lineHeight = 40.sp),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = markColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 TodayMark.Rest -> Text(
                     "REST",
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 56.sp, lineHeight = 60.sp),
+                    style = MaterialTheme.typography.headlineLarge,
                 )
                 TodayMark.Elapsed -> ElapsedMark(startedAt)
                 TodayMark.None -> Unit
             }
             if (hero.caption != null) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     hero.caption,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = LabelDark,
+                    color = tileMuted(),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             val pill = hero.pill
             if (pill != null) {
-                Spacer(Modifier.height(12.dp))
-                InkPill(text = pill, onClick = onPill, onInk = true)
+                Spacer(Modifier.height(16.dp))
+                InkPill(text = pill, onClick = onPill, onInk = hero.mode == TodayHeroMode.LIVE)
             }
             val alternate = when (hero.alternate) {
                 TodayAlternate.SHEET -> "Something else"
@@ -402,7 +418,7 @@ private fun HeroTile(hero: TodayHero, startedAt: Instant?, onPill: () -> Unit, o
                 TodayAlternate.NONE -> null
             }
             if (alternate != null) {
-                TextAction(text = alternate, onClick = onAlternate, color = PaperLight)
+                TextAction(text = alternate, onClick = onAlternate)
             }
         }
     }
@@ -420,16 +436,21 @@ private fun ElapsedMark(start: Instant?) {
     val text = if (start == null) "0:00" else formatElapsed(start, now)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatusDot(live = true)
-        Text(text, style = DisplayNumeral.copy(fontSize = 56.sp, lineHeight = 60.sp))
+        Text(text, style = DisplayNumeral.copy(fontSize = 48.sp, lineHeight = 52.sp))
     }
 }
 
 @Composable
 private fun WeekStrip(days: List<CalendarDay>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        MonoLabel("Week")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            days.forEach { day -> WeekMark(day) }
+    BoardTile(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MonoLabel("Week")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                days.forEach { day -> WeekMark(day) }
+            }
         }
     }
 }
@@ -480,16 +501,22 @@ private fun SupplementRow(
     onToggle: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val ink = row.taken
+    val taken = row.taken
     BoardTile(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        tone = if (ink) TileTone.Ink else TileTone.Paper,
         onClick = onToggle,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Icon(
+                imageVector = if (taken) Icons.Outlined.Check else Icons.Outlined.Circle,
+                contentDescription = if (taken) "Taken" else "Not taken",
+                modifier = Modifier.size(20.dp),
+                tint = if (taken) doneGreen() else SignalRed,
+            )
             Column(Modifier.weight(1f)) {
                 Text(row.supplement.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -497,14 +524,13 @@ private fun SupplementRow(
                     Text(
                         row.supplement.unit.uppercase(Locale.US),
                         style = MonoLabelStyle,
-                        color = if (ink) LabelDark else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = tileMuted(),
                     )
                 }
             }
             TextAction(
                 text = "Edit dose",
                 onClick = onEdit,
-                color = if (ink) PaperLight else null,
             )
         }
     }
@@ -513,7 +539,9 @@ private fun SupplementRow(
 @Composable
 private fun FooterRow(streak: Int, supply: TodaySupply?, onOpenSupply: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        BoardTile(modifier = if (supply == null) Modifier.fillMaxWidth(0.4f) else Modifier.weight(2f)) {
+        BoardTile(
+            modifier = if (supply == null) Modifier.fillMaxWidth(0.4f) else Modifier.weight(2f),
+        ) {
             Column(Modifier.padding(16.dp)) {
                 Text(streak.toString(), style = DisplayNumeral, maxLines = 1)
                 MonoLabel("Streak")

@@ -2,6 +2,7 @@ package com.example.repsgrams.domain.session
 
 import com.example.repsgrams.data.datastore.UnitSystem
 import com.example.repsgrams.data.db.BlockKind
+import com.example.repsgrams.data.db.RepType
 import com.example.repsgrams.domain.progress.kilogramsToPounds
 import java.util.Locale
 
@@ -79,6 +80,54 @@ fun durationPassed(elapsedSeconds: Int, maxDurationMinutes: Int): Boolean =
     maxDurationMinutes > 0 && elapsedSeconds >= maxDurationMinutes * 60
 
 fun nextExerciseCaption(exerciseName: String): String = "Next · $exerciseName"
+
+/**
+ * The logging line replaces the exercise circles. A warm-up block or warm-up row
+ * reads "Warm-up". A working round reads "Set 2 of 4".
+ */
+fun currentSetCaption(rows: List<SetRowModel>): String {
+    val active = rows.firstOrNull { it.active } ?: return "Set 1"
+    if (active.warmup || active.label == "W") return "Warm-up"
+    val total = rows.count { !it.warmup }.coerceAtLeast(1)
+    return "Set ${active.roundNumber} of $total"
+}
+
+/**
+ * What logging this set leads to, without moving the cursor.
+ * The same exercise previews the next round. A different one previews its name and target.
+ * Nothing after this set reads "Last set".
+ */
+fun upcomingLine(plan: WorkoutPlan, cursor: SessionCursor, roundCap: Int): String {
+    val advance = SessionNavigator.afterExercise(plan, cursor, roundCap)
+    val next = when (advance) {
+        is SessionAdvance.Continue -> advance.cursor
+        is SessionAdvance.Rest -> advance.cursorAfterRest
+        SessionAdvance.Finished -> return "Last set"
+    }
+    val block = plan.blocks.getOrNull(next.blockIndex) ?: return "Last set"
+    val exercise = block.exercises.getOrNull(next.exerciseIndex) ?: return "Last set"
+    val sameExercise = next.blockIndex == cursor.blockIndex && next.exerciseIndex == cursor.exerciseIndex
+    if (sameExercise) {
+        val total = if (block.kind == BlockKind.WARM_UP) 1 else roundCap.coerceAtLeast(1)
+        return "Next · Set ${next.roundNumber} of $total"
+    }
+    if (block.kind == BlockKind.WARM_UP) return "Next · ${exercise.name} · Warm-up"
+    val sets = if (next.blockIndex == cursor.blockIndex) {
+        roundCap.coerceAtLeast(1)
+    } else {
+        block.targetRoundsMax.coerceAtLeast(1)
+    }
+    val low = exercise.targetValueLow
+    val high = exercise.targetValueHigh
+    val span = if (exercise.repType == RepType.SECONDS) {
+        if (low == high) "${low}s" else "${low}–${high}s"
+    } else if (low == high) {
+        low.toString()
+    } else {
+        "$low–$high"
+    }
+    return "Next · ${exercise.name} · $sets × $span"
+}
 
 /**
  * `80 × 8`, `8`, or `40s`. Seconds with a load read `80 × 40s`.

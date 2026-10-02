@@ -1,42 +1,40 @@
 # Gains
 
-Gains is a comprehensive Android workout tracker and fitness planner designed to help you organize your routines, track your progress, and achieve your fitness goals with a clean, intuitive interface.
+Gains is a workout log for one person on one Android phone. Workouts, measurements, and supplement logs stay in a local database. There is no account and no cloud sync.
 
-## Key Features
+Version 1.1 (version code 2). Store text for this release is in [store/play-console.md](store/play-console.md).
 
-- **Workout Tracking & Programs:** Create custom workout programs, log your daily sessions, and track sets, reps, and weights.
-- **Exercise Library:** Built-in dictionary of exercises with visual guides to ensure proper form.
-- **Rest Timer:** Integrated background rest timer to keep your workouts on schedule.
-- **Progress & Stats:** Monitor your gains over time with detailed statistics, Personal Records (PRs) tracking, and workout streak calculation.
-- **Calendar History:** Visualize your workout history and consistency with an interactive calendar.
-- **Health Connect Integration:** Seamlessly sync your workout data with Android Health Connect.
-- **Smart Reminders:** Push notifications to remind you of your scheduled workouts.
-- **Supplement Tracker:** Log and manage your supplement intake alongside your fitness routines.
-- **Home Screen Widgets:** Quick access to your daily workout plan directly from your home screen.
-- **Data Backup:** Built-in backup and restore functionality to keep your workout data safe.
+## What it does
 
-## Technical Details
+- Today shows the workout to do, the week, the next exercises, and supplements.
+- A program can rotate (a workout, then rest, then the next) or assign one workout to each weekday.
+- The workout screen stays dark. The keypad starts closed. A rest timer can ring while the screen is off. Leaving the screen keeps the session. Discard is the only way to delete it.
+- Calendar and Progress share the same day marks. A trained day is green. A missed due day is red. A personal record is red.
+- Progress is one chart, plus bodyweight, measurements, and supply.
+- Settings cover theme, units, the catalog, programs, supplements, reminders, plates, and an optional Health Connect write.
+- The home screen widget shows today’s suggestion, the next exercise, and the week.
+- Backup is a zip you create.
 
-- **Language:** Kotlin
-- **UI Toolkit:** Jetpack Compose (featuring custom iOS-inspired design components)
-- **Architecture:** MVVM (Model-View-ViewModel) with Clean Architecture principles
-- **Database:** Room Database for local data persistence
-- **Asynchronous Programming:** Kotlin Coroutines & Flow
-- **Background Tasks:** Android WorkManager for reminders and timers
+Weights are stored as kilograms and lengths as centimeters, and shown in the unit you choose. The app does not track nutrition, and it has no social feed, ads, or Wear OS app.
 
-## Getting Started
+## Build
 
-To build and run this project locally:
+Requirements: Android Studio, JDK 17, and Android SDK 37. The minimum phone version is Android 8.0 (API 26).
 
 1. Open the project in Android Studio.
-2. Sync the project with Gradle files.
-3. Run the app on an Android emulator or a physical device.
+2. Sync Gradle.
+3. Run the `app` configuration on a device or emulator.
 
-## Requirements
+A signed release uses `keystore.properties` in this directory. That file is not committed. Without it, the release task still builds, and the output is unsigned.
 
-- Android Studio
-- Android SDK
+```bash
+./gradlew :app:bundleRelease :app:assembleRelease
+```
 
-## License
+The signed files for 1.1 are copied to `dist/` after a local release build. `dist/` is gitignored.
 
-This project is licensed under the MIT License.
+## Layout
+
+- `app/` is the Android application.
+- `guide/CURRENT.md` is the product spec.
+- Font licenses are in `app/src/main/assets/licenses/`.

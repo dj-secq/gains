@@ -115,7 +115,7 @@ internal object RestNotifications {
         restToken: Long,
     ): NotificationCompat.Builder {
         return NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_rest)
             .setContentIntent(openSession(context, sessionId))
             .addAction(0, "−15", adjust(context, -15_000L, RC_MINUS))
             .addAction(0, "+15", adjust(context, 15_000L, RC_PLUS))

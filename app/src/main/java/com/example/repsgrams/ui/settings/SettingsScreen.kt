@@ -27,6 +27,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Medication
+import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.ViewList
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -220,7 +227,7 @@ fun SettingsScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             contentPadding = PaddingValues(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -237,7 +244,7 @@ fun SettingsScreen(
                         MonoChip("LB", pounds, { onUnitSystem(UnitSystem.LB) })
                     }
                     ValueRow("Bar", "${formatWeight(bar)} $unitWord", divided = true, onClick = { editingBar = true })
-                    NavRow("Plates", divided = true, onClick = { editingPlates = true })
+                    NavRow("Plates", icon = Icons.Outlined.Layers, divided = true, onClick = { editingPlates = true })
                     StepperRow("Warm-up rest", "${settings.defaultWarmupRestSeconds} s", divided = true, onMinus = {
                         onWarmupRest((settings.defaultWarmupRestSeconds - 15).coerceAtLeast(0))
                     }, onPlus = {
@@ -268,8 +275,8 @@ fun SettingsScreen(
             }
             item {
                 SettingGroup("Program") {
-                    NavRow("Templates", onClick = onNavigateToTemplates)
-                    NavRow("Exercises", divided = true, onClick = onNavigateToExercises)
+                    NavRow("Templates", icon = Icons.Outlined.ViewList, onClick = onNavigateToTemplates)
+                    NavRow("Exercises", icon = Icons.Outlined.FitnessCenter, divided = true, onClick = onNavigateToExercises)
                     SettingToggle(
                         title = "Progression",
                         description = "If every working set hits the top of the rep range, add ${formatWeight(increment)} $unitWord next time and start at the low end of the range.\nIf every working set hits the top of the range, next time asks for more challenge. The load does not change.",
@@ -322,7 +329,7 @@ fun SettingsScreen(
             }
             item {
                 SettingGroup("Supplements") {
-                    NavRow("Manage Supplements", onClick = onNavigateToSupplements)
+                    NavRow("Manage Supplements", icon = Icons.Outlined.Medication, onClick = onNavigateToSupplements)
                 }
             }
             item {
@@ -363,10 +370,11 @@ fun SettingsScreen(
                 SettingGroup("Data") {
                     NavRow(
                         label = "Export",
+                        icon = Icons.Outlined.Download,
                         subtitle = "The zip contains the database and settings (units, reminders, theme, timer, plates). Anyone who can open the file can read the log.",
                         onClick = onExportClick,
                     )
-                    NavRow("Import", divided = true, onClick = onImportClick)
+                    NavRow("Import", icon = Icons.Outlined.Upload, divided = true, onClick = onImportClick)
                 }
             }
             item {
@@ -374,9 +382,9 @@ fun SettingsScreen(
                     ValueRow("Version", version)
                     Column(Modifier.padding(16.dp)) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Text("Exercise photography", modifier = Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyLarge)
+                        Text("Exercise figures", modifier = Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Selected images from yuhonas/free-exercise-db, released into the public domain under the Unlicense. Images are bundled locally and are never fetched while using the app.",
+                            "Matte mannequin figures stored in the app. They are not photographs, and they are never fetched while using the app.",
                             modifier = Modifier.padding(top = 4.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -420,23 +428,35 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingGroup(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        MonoLabel(title, modifier = Modifier.padding(start = 16.dp))
+        MonoLabel(title, modifier = Modifier.padding(horizontal = 4.dp))
         BoardTile(modifier = Modifier.fillMaxWidth()) {
-            Column(content = content)
+            Column(Modifier.padding(vertical = 4.dp), content = content)
         }
     }
 }
 
 @Composable
-private fun NavRow(label: String, onClick: () -> Unit, subtitle: String? = null, divided: Boolean = false) {
+private fun NavRow(
+    label: String,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+    subtitle: String? = null,
+    divided: Boolean = false,
+) {
     if (divided) HorizontalDivider(Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
+        }
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             if (subtitle != null) {
@@ -474,7 +494,7 @@ private fun StepperRow(
 ) {
     if (divided) HorizontalDivider(Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 16.dp, end = 4.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -529,7 +549,7 @@ private fun ReminderRow(
     val context = LocalContext.current
     if (divided) HorizontalDivider(Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

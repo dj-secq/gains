@@ -28,7 +28,8 @@ import com.example.repsgrams.ui.components.BoardTile
 import com.example.repsgrams.ui.components.MonoChip
 import com.example.repsgrams.ui.components.RestockDialog
 import com.example.repsgrams.ui.components.TextAction
-import com.example.repsgrams.ui.components.TileTone
+import com.example.repsgrams.ui.components.tileMuted
+import com.example.repsgrams.ui.theme.doneGreen
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -99,21 +100,30 @@ fun ManageSupplementsRoute(viewModel: ManageSupplementsViewModel, onNavigateBack
                 var menu by remember(item.id) { mutableStateOf(false) }
                 BoardTile(
                     modifier = Modifier.fillMaxWidth(),
-                    tone = if (item.isActive) TileTone.Ink else TileTone.Paper,
                     onClick = { viewModel.setActive(item, !item.isActive) },
                 ) {
                     Row(
-                        modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(item.name, style = MaterialTheme.typography.titleMedium)
-                            Text("${item.doseAmount.clean()} ${item.unit} · ${item.scheduleType.scheduleLabel()}")
+                            Text(
+                                "${item.doseAmount.clean()} ${item.unit} · ${item.scheduleType.scheduleLabel()}",
+                                color = tileMuted(),
+                            )
                             Text(
                                 "${stock?.servingsRemaining?.clean() ?: "—"} servings remaining",
                                 style = MaterialTheme.typography.bodySmall,
+                                color = tileMuted(),
                             )
                         }
+                        Text(
+                            if (item.isActive) "On" else "Off",
+                            modifier = Modifier.padding(end = 4.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (item.isActive) doneGreen() else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Box {
                             IconButton(onClick = { menu = true }) {
                                 Icon(Icons.Outlined.MoreVert, contentDescription = "More")

@@ -1,6 +1,6 @@
 package com.example.repsgrams.ui.settings
 
-import androidx.compose.foundation.Image
+import com.example.repsgrams.ui.components.ExerciseFigure
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,8 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,7 +44,6 @@ import com.example.repsgrams.ui.components.BoardTile
 import com.example.repsgrams.ui.components.MonoChip
 import com.example.repsgrams.ui.components.MonoLabel
 import com.example.repsgrams.ui.components.TextAction
-import com.example.repsgrams.ui.components.exerciseImageResource
 import java.util.Locale
 import kotlinx.coroutines.launch
 
@@ -122,16 +120,27 @@ fun ExerciseDictionaryRoute(
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(shown, key = { it.id }) { exercise ->
                         BoardTile(
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             onClick = { editing = exercise },
                         ) {
-                            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                Text(exercise.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                MonoLabel(exercise.muscleGroup)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                ExerciseFigure(
+                                    imageAssetName = exercise.imageAssetName,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(56.dp),
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(exercise.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    MonoLabel(exercise.muscleGroup)
+                                }
                             }
                         }
                     }
@@ -189,7 +198,6 @@ private fun ExerciseDialog(
     var notes by remember(exercise?.id) { mutableStateOf(exercise?.notes.orEmpty()) }
     var muscleGroup by remember(exercise?.id) { mutableStateOf(exercise?.muscleGroup ?: "Back") }
     val muscles = if (muscleGroup in MUSCLE_GROUPS) MUSCLE_GROUPS else listOf(muscleGroup) + MUSCLE_GROUPS
-    val image = exerciseImageResource(exercise?.imageAssetName)
     BoardDialog(
         title = if (exercise == null) "New exercise" else "Edit exercise",
         onDismiss = onDismiss,
@@ -197,14 +205,11 @@ private fun ExerciseDialog(
         confirmEnabled = name.isNotBlank() && muscleGroup.isNotBlank(),
         onConfirm = { onSave(name, tracksWeight, notes, muscleGroup) },
     ) {
-        if (image != 0) {
-            Image(
-                painter = painterResource(image),
-                contentDescription = exercise?.name,
-                modifier = Modifier.fillMaxWidth().height(96.dp),
-                contentScale = ContentScale.Fit,
-            )
-        }
+        ExerciseFigure(
+            imageAssetName = exercise?.imageAssetName,
+            contentDescription = exercise?.name,
+            modifier = Modifier.fillMaxWidth().height(160.dp),
+        )
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true)
         OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") })
         Row(verticalAlignment = Alignment.CenterVertically) {

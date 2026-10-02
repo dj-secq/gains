@@ -36,6 +36,8 @@ import com.example.repsgrams.domain.calendar.DayMarkKind
 import com.example.repsgrams.domain.widget.WidgetFace
 import com.example.repsgrams.ui.theme.CanvasDark
 import com.example.repsgrams.ui.theme.CanvasLight
+import com.example.repsgrams.ui.theme.DoneGreen
+import com.example.repsgrams.ui.theme.DoneGreenOnDark
 import com.example.repsgrams.ui.theme.Ink
 import com.example.repsgrams.ui.theme.SignalRed
 
@@ -56,6 +58,7 @@ internal class RepsGramsWidget : GlanceAppWidget() {
 
 private val widgetCanvas = ColorProvider(day = CanvasLight, night = CanvasDark)
 private val widgetType = ColorProvider(day = Ink, night = Color.White)
+private val widgetDone = ColorProvider(day = DoneGreen, night = DoneGreenOnDark)
 private val widgetLive = ColorProvider(day = SignalRed, night = SignalRed)
 
 private val statusStyle = TextStyle(
@@ -64,6 +67,8 @@ private val statusStyle = TextStyle(
     fontWeight = FontWeight.Medium,
     fontFamily = FontFamily.SansSerif,
 )
+private val doneStatusStyle = statusStyle.copy(color = widgetDone)
+private val dueStatusStyle = statusStyle.copy(color = widgetLive)
 private val headlineStyle = TextStyle(
     color = widgetType,
     fontSize = 28.sp,
@@ -94,7 +99,12 @@ private fun WidgetContent(face: WidgetFace) {
         if (face.status.isNotEmpty() || face.live) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (face.status.isNotEmpty()) {
-                    Text(text = face.status, style = statusStyle, maxLines = 1)
+                    val style = when (face.status) {
+                        "DONE" -> doneStatusStyle
+                        "DUE" -> dueStatusStyle
+                        else -> statusStyle
+                    }
+                    Text(text = face.status, style = style, maxLines = 1)
                 }
                 if (face.live) {
                     Box(
@@ -124,15 +134,26 @@ private fun WidgetContent(face: WidgetFace) {
 
 @Composable
 private fun WeekDot(kind: DayMarkKind) {
-    // A personal record stays filled. The only red on this tile is the live session.
+    // Trained is green. Missed is a red ring. A personal record and the live session are signal red.
     Box(
         modifier = GlanceModifier.padding(horizontal = 2.dp).size(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         when (kind) {
-            DayMarkKind.TRAINED, DayMarkKind.PR, DayMarkKind.PENDING ->
+            DayMarkKind.PR ->
+                Box(modifier = GlanceModifier.size(8.dp).cornerRadius(4.dp).background(widgetLive)) {}
+            DayMarkKind.TRAINED ->
+                Box(modifier = GlanceModifier.size(8.dp).cornerRadius(4.dp).background(widgetDone)) {}
+            DayMarkKind.PENDING ->
                 Box(modifier = GlanceModifier.size(8.dp).cornerRadius(4.dp).background(widgetType)) {}
-            DayMarkKind.MISSED, DayMarkKind.UPCOMING ->
+            DayMarkKind.MISSED ->
+                Box(
+                    modifier = GlanceModifier.size(8.dp).cornerRadius(4.dp).background(widgetLive),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(modifier = GlanceModifier.size(4.dp).cornerRadius(2.dp).background(widgetCanvas)) {}
+                }
+            DayMarkKind.UPCOMING ->
                 Box(
                     modifier = GlanceModifier.size(8.dp).cornerRadius(4.dp).background(widgetType),
                     contentAlignment = Alignment.Center,

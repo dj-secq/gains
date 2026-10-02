@@ -1,6 +1,6 @@
 # Gains — current spec
 
-This file is the product spec. `guide/00`–`09`, `guide/phase2/`, `guide/phase5/`, `guide/phase20-27/`, `guide/phase8_plan.md`, and `guide/phase9_plan.md` are history. Do not implement them.
+This file is the product spec. The old phase plans have been removed. Do not rebuild the 5-day cycle or the whey columns.
 
 ## Product
 
@@ -22,9 +22,11 @@ Schema 8 added `sessionKind`. Schema 9 adds `programs` (one backfilled row named
 
 ## Board
 
-Light canvas `#E8E8EA`, paper `#FFFFFF`, ink `#111111`, hairline `#E0E0E0`, label `#666666`. Dark canvas `#000000`, paper `#1A1A1A`, ink tile `#111111`, hairline `#333333`, label `#999999`. Signal red `#D71921` is only the live-session dot, a rest numeral at or after zero, a personal-record mark, and a destructive label on a paper dialog. It is not the primary button. The on-screen Discard label is paper or `#999999`.
+Light canvas `#E8E8EA`, paper `#FFFFFF`, ink `#111111`, hairline `#E0E0E0`, label `#666666`. Dark canvas `#000000`, paper `#1A1A1A`, hairline `#333333`, label `#999999`. Done green is `#128A42` on the light board and `#3DDC84` on the dark board. It marks a finished, taken, or trained state. Signal red `#D71921` marks not-yet (overdue, untaken, missed, low supply), and it stays on the live-session dot, a rest numeral at or after zero, a personal-record mark, and a destructive label on a paper dialog. It is not the primary button. Cards stay black and white. The on-screen Discard label is the label color.
 
-Type is Doto for numerals at 28sp or larger, Space Grotesk for words, and Space Mono for labels and figures. Do not bundle NDot, SF Pro, or Nothing trademarks. Shapes are a circle, a 48dp pill, and a 24dp squircle. Motion is 150–250ms ease-out. No shadows, gradients, glows, or bounce. New UI uses `ui/components/Board.kt`.
+A large card on the light board has a small drop shadow and no border. A dark card has a 1dp hairline and no glow. Icon buttons, pills, chips, keys, and the tab bar are flat. There is no inset well. A press uses alpha. No glow, no spring, no bounce. Screen inset and card padding are 16dp. Gaps between cards are 12dp.
+
+Type is Doto for numerals at 28sp or larger, Space Grotesk for words, and Space Mono for labels and figures. Do not bundle NDot, SF Pro, or Nothing trademarks. Shapes are a circle, a 48dp pill, and a 24dp squircle. Motion is 150–250ms ease-out. New UI uses `ui/components/Board.kt`.
 
 ## Out of scope
 

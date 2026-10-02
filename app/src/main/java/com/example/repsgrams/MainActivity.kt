@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
                     val settings by container.cycleSettingsRepository.settings.collectAsState(initial = null)
                     RepsGramsTheme(
                         themeMode = settings?.themeMode ?: com.example.repsgrams.data.datastore.ThemeMode.SYSTEM,
+                        manageSystemBars = false,
                     ) {
                         RepsGramsApp(
                             container = container,

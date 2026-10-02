@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -41,18 +42,23 @@ private val LightColorScheme = lightColorScheme(
     onPrimaryContainer = PaperLight,
     secondary = Ink,
     onSecondary = PaperLight,
-    secondaryContainer = CanvasLight,
+    secondaryContainer = PaperLight,
     onSecondaryContainer = Ink,
+    tertiary = Ink,
+    onTertiary = PaperLight,
+    tertiaryContainer = PaperLight,
+    onTertiaryContainer = Ink,
     background = CanvasLight,
     onBackground = Ink,
     surface = PaperLight,
     onSurface = Ink,
-    surfaceVariant = PaperLight,
+    surfaceVariant = InsetLight,
     onSurfaceVariant = LabelLight,
     surfaceContainer = PaperLight,
     surfaceContainerHigh = PaperLight,
     surfaceContainerHighest = PaperLight,
     surfaceContainerLow = CanvasLight,
+    surfaceTint = Color.Transparent,
     outline = HairlineLight,
     outlineVariant = HairlineLight,
     error = SignalRed,
@@ -64,22 +70,27 @@ private val LightColorScheme = lightColorScheme(
 private val DarkColorScheme = darkColorScheme(
     primary = PaperLight,
     onPrimary = Ink,
-    primaryContainer = PaperLight,
-    onPrimaryContainer = Ink,
+    primaryContainer = PaperDark,
+    onPrimaryContainer = PaperLight,
     secondary = PaperLight,
     onSecondary = Ink,
-    secondaryContainer = InkTile,
+    secondaryContainer = PaperDark,
     onSecondaryContainer = PaperLight,
+    tertiary = PaperLight,
+    onTertiary = Ink,
+    tertiaryContainer = PaperDark,
+    onTertiaryContainer = PaperLight,
     background = CanvasDark,
     onBackground = PaperLight,
     surface = PaperDark,
     onSurface = PaperLight,
-    surfaceVariant = InkTile,
+    surfaceVariant = InsetDark,
     onSurfaceVariant = LabelDark,
     surfaceContainer = PaperDark,
     surfaceContainerHigh = PaperDark,
-    surfaceContainerHighest = InkTile,
+    surfaceContainerHighest = PaperDark,
     surfaceContainerLow = CanvasDark,
+    surfaceTint = Color.Transparent,
     outline = HairlineDark,
     outlineVariant = HairlineDark,
     error = SignalRed,
@@ -91,8 +102,15 @@ private val DarkColorScheme = darkColorScheme(
 val LocalDarkTheme = staticCompositionLocalOf { false }
 
 @Composable
+fun doneGreen(): Color = if (LocalDarkTheme.current) DoneGreenOnDark else DoneGreen
+
+@Composable
+fun onDoneGreen(): Color = if (LocalDarkTheme.current) Ink else PaperLight
+
+@Composable
 fun RepsGramsTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    manageSystemBars: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
@@ -100,17 +118,7 @@ fun RepsGramsTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        val window = view.context.findActivity()?.window
-        if (window != null) {
-            SideEffect {
-                val controller = WindowCompat.getInsetsController(window, view)
-                controller.isAppearanceLightStatusBars = !darkTheme
-                controller.isAppearanceLightNavigationBars = !darkTheme
-            }
-        }
-    }
+    if (manageSystemBars) SystemBars(dark = darkTheme)
 
     CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
         MaterialTheme(
@@ -119,6 +127,20 @@ fun RepsGramsTheme(
             typography = Typography,
             content = content,
         )
+    }
+}
+
+/** Status and navigation icon colors. Light icons on a dark surface. */
+@Composable
+fun SystemBars(dark: Boolean) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.isAppearanceLightStatusBars = !dark
+            controller.isAppearanceLightNavigationBars = !dark
+        }
     }
 }
 
